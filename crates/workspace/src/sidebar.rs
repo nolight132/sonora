@@ -44,7 +44,6 @@ pub struct Sidebar {
     open: bool,
     cramped: bool,
     forced: Option<bool>,
-    library_open: bool,
 }
 
 impl Sidebar {
@@ -63,7 +62,6 @@ impl Sidebar {
             open,
             forced: None,
             cramped: false,
-            library_open: true,
         }
     }
 
@@ -142,69 +140,64 @@ impl Render for Sidebar {
                         .hover(move |style| style.bg(sidebar_accent))
                         .child(svg().path(icon).size_4().flex_none().text_color(text))
                         .child(div().text_color(text).child(label))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.library_open = !this.library_open;
-                            cx.notify();
-                        }))
+                        .link(Destination::Library(LibraryTab::Songs))
                         .into_any_element(),
                 );
 
-                if self.library_open {
-                    let middle = nav / 2.;
+                let middle = nav / 2.;
 
-                    rows.push(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .ml_4()
-                            .children(TABS.into_iter().enumerate().map(|(step, (name, tab))| {
-                                let chosen = current == Destination::Library(tab);
-                                let tint = if chosen { foreground } else { muted };
-                                let tail = step + 1 == TABS.len();
+                rows.push(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .ml_4()
+                        .children(TABS.into_iter().enumerate().map(|(step, (name, tab))| {
+                            let chosen = current == Destination::Library(tab);
+                            let tint = if chosen { foreground } else { muted };
+                            let tail = step + 1 == TABS.len();
 
-                                div()
-                                    .relative()
-                                    .flex()
-                                    .items_center()
-                                    .h(nav)
-                                    .pl_3()
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .left_0()
-                                            .top_0()
-                                            .w(px(1.))
-                                            .h(if tail { middle } else { nav })
-                                            .bg(sidebar_border),
-                                    )
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .left_0()
-                                            .top(middle)
-                                            .w(px(6.))
-                                            .h(px(1.))
-                                            .bg(sidebar_border),
-                                    )
-                                    .child(
-                                        div()
-                                            .id(name)
-                                            .flex()
-                                            .flex_1()
-                                            .items_center()
-                                            .h(nav)
-                                            .px_3()
-                                            .rounded(radius)
-                                            .cursor_pointer()
-                                            .when(chosen, |this| this.bg(sidebar_accent))
-                                            .hover(move |style| style.bg(sidebar_accent))
-                                            .child(div().text_color(tint).child(name))
-                                            .link(Destination::Library(tab)),
-                                    )
-                            }))
-                            .into_any_element(),
-                    );
-                }
+                            div()
+                                .relative()
+                                .flex()
+                                .items_center()
+                                .h(nav)
+                                .pl_3()
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .top_0()
+                                        .w(px(1.))
+                                        .h(if tail { middle } else { nav })
+                                        .bg(sidebar_border),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .top(middle)
+                                        .w(px(6.))
+                                        .h(px(1.))
+                                        .bg(sidebar_border),
+                                )
+                                .child(
+                                    div()
+                                        .id(name)
+                                        .flex()
+                                        .flex_1()
+                                        .items_center()
+                                        .h(nav)
+                                        .px_3()
+                                        .rounded(radius)
+                                        .cursor_pointer()
+                                        .when(chosen, |this| this.bg(sidebar_accent))
+                                        .hover(move |style| style.bg(sidebar_accent))
+                                        .child(div().text_color(tint).child(name))
+                                        .link(Destination::Library(tab)),
+                                )
+                        }))
+                        .into_any_element(),
+                );
                 continue;
             }
 
