@@ -512,7 +512,7 @@ impl RenderOnce for Menu {
             .border_1()
             .gap_1()
             .border_color(theme.border)
-            .bg(theme.secondary)
+            .bg(theme.popover)
             .text_color(theme.popover_foreground)
             .occlude()
             .when_some(dismiss, |this, dismiss| {
