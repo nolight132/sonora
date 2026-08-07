@@ -204,6 +204,6 @@ impl Searchable for DetailView {
     }
 
     fn hint() -> SharedString {
-        t!("filter-album")
+        "filter-album".into()
     }
 }

@@ -5,4 +5,5 @@ edition.workspace = true
 
 [dependencies]
 gpui.workspace = true
+i18n.workspace = true
 ui.workspace = true

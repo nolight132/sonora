@@ -3,7 +3,6 @@ mod playlists;
 
 use gpui::prelude::*;
 use gpui::{App, Context, Entity, Pixels, Point, Render, ScrollHandle, SharedString, Window, px};
-use i18n::t;
 use router::{Destination, LibraryTab, navigate};
 use spotify::Track;
 use state::{AppSettings, Library, LibraryState, Playback, Sonora};
@@ -391,6 +390,6 @@ impl Searchable for LibraryView {
     }
 
     fn hint() -> SharedString {
-        t!("filter-library")
+        "filter-library".into()
     }
 }

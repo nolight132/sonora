@@ -1,6 +1,5 @@
 use gpui::prelude::*;
 use gpui::{AnyView, App, Context, Entity, Pixels, Render, SharedString, Window, div, px};
-use i18n::t;
 use input::{Dismiss, Input};
 use ui::Button;
 
@@ -14,7 +13,7 @@ pub trait Searchable: 'static {
         Self: Sized;
 
     fn hint() -> SharedString {
-        t!("common-search")
+        "common-search".into()
     }
 }
 
@@ -69,7 +68,7 @@ impl Filter {
 
     pub fn release(&mut self, cx: &mut Context<Self>) {
         self.clear(cx);
-        self.reset(t!("common-search"), cx);
+        self.reset("common-search".into(), cx);
     }
 
     pub fn focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -108,7 +107,7 @@ impl Filter {
 
     fn reset(&mut self, hint: SharedString, cx: &mut Context<Self>) {
         self.input.update(cx, |input, cx| {
-            input.set_placeholder(hint, cx);
+            input.set_hint(hint, cx);
             input.set_text("", cx);
         });
         cx.notify();

@@ -103,7 +103,7 @@ fn offset_to_utf16(text: &str, offset: usize) -> usize {
 
 pub struct Input {
     focus_handle: FocusHandle,
-    placeholder: SharedString,
+    hint: SharedString,
     icon: Option<SharedString>,
     compact: bool,
     content: SharedString,
@@ -116,10 +116,10 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
+    pub fn new(hint: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
-            placeholder: placeholder.into(),
+            hint: hint.into(),
             icon: None,
             compact: false,
             content: SharedString::default(),
@@ -146,13 +146,16 @@ impl Input {
         &self.content
     }
 
-    pub fn set_placeholder(
-        &mut self,
-        placeholder: impl Into<SharedString>,
-        cx: &mut Context<Self>,
-    ) {
-        self.placeholder = placeholder.into();
+    pub fn set_hint(&mut self, hint: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.hint = hint.into();
         cx.notify();
+    }
+
+    fn placeholder(&self) -> SharedString {
+        match self.hint.is_empty() {
+            true => SharedString::default(),
+            false => i18n::lookup(&self.hint, None),
+        }
     }
 
     pub fn set_text(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
@@ -541,7 +544,7 @@ impl Element for Text {
         let style = window.text_style();
 
         let (text, color) = match empty {
-            true => (input.placeholder.clone(), theme.muted_foreground),
+            true => (input.placeholder(), theme.muted_foreground),
             false => (input.content.clone(), style.color),
         };
 

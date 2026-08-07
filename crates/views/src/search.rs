@@ -38,7 +38,7 @@ impl SearchView {
         playback: Entity<Playback>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let input = cx.new(|cx| Input::new(t!("search-placeholder"), cx).icon("icons/search.svg"));
+        let input = cx.new(|cx| Input::new("search-placeholder", cx).icon("icons/search.svg"));
 
         cx.observe(&input, |this, input, cx| {
             let query = input.read(cx).text().to_owned();
