@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use std::fmt::Write as _;
 
 use librespot_protocol::playlist4_external::{ListAttributes, SelectedListContent as RootList};

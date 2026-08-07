@@ -5,6 +5,8 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.1"
 edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/nolight132/sonora"
 
 [workspace.dependencies]
 audio = { path = "crates/audio" }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use std::cmp::Ordering;
 use std::rc::Rc;
 use ui::ActiveTheme as _;

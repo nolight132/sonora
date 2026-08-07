@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use gpui::{
     Context, Entity, FontWeight, IntoElement, ParentElement as _, Render, SharedString,
     Styled as _, Window, div, px,

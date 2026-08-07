@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, Pixels, Render, ScrollHandle, SharedString, Window, px,

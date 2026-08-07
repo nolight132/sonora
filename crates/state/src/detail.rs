@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use gpui::{Context, Entity, Task};
 use i18n::t;
 use spotify::{Album, AlbumDetail, ArtistRef, Playlist, Track};

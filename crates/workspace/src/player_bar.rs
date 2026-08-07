@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use router::{Destination, Link, navigate};
 use std::time::Duration;
 use ui::ActiveTheme as _;

@@ -123,6 +123,9 @@ jobs:
           chmod +x Sonora.app/Contents/MacOS/sonora
           lipo -info Sonora.app/Contents/MacOS/sonora
           cp assets/macos/sonora.icns Sonora.app/Contents/Resources/
+          cp LICENSE THIRD-PARTY.md Sonora.app/Contents/Resources/
+          cp assets/fonts/LICENSE.txt Sonora.app/Contents/Resources/LICENSE.Inter
+          cp assets/icons/LICENSE Sonora.app/Contents/Resources/LICENSE.Lucide
           sed "s/@VERSION@/$NUMBER/g" assets/macos/Info.plist > Sonora.app/Contents/Info.plist
           plutil -lint Sonora.app/Contents/Info.plist
 
@@ -161,11 +164,25 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
           path: dist
           merge-multiple: true
+
+      - name: stage the licenses
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p licenses
+          cp LICENSE licenses/LICENSE
+          cp THIRD-PARTY.md licenses/THIRD-PARTY.md
+          cp assets/fonts/LICENSE.txt licenses/LICENSE.Inter
+          cp assets/icons/LICENSE licenses/LICENSE.Lucide
+          tar -czf "dist/sonora-$VERSION-licenses.tar.gz" -C licenses .
 
       - name: checksums
         run: cd dist && shasum -a 256 * > SHA256SUMS

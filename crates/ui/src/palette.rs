@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use std::f32::consts::TAU;
 
 use gpui::{App, AppContext as _, Hsla, ImgResourceLoader, Resource, Rgba, SharedUri, Task};

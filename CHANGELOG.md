@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Added an About tab in settings carrying the copyright, the warranty disclaimer and links to the
+  license and the source.
+- Added `THIRD-PARTY.md`, listing every bundled dependency and the full text of every license.
+  Packages and release archives now ship it alongside the Inter and Lucide license files.
+
+### Changed
+
+- **Licensing.** Sonora is now released under the GNU General Public License version 3 or later.
+  Earlier releases carried no license file at all, which left them undistributable; GPUI depends on
+  `zlog` and `ztracing` from the Zed repository, both GPL-3.0-or-later, so every binary ever built
+  from this tree was already covered by the GPL. Versions 0.1.0 and 0.1.1 are therefore to be read
+  as GPL-3.0-or-later as well.
+
 ## [0.1.1] - 2026-08-07
 
 ### Added

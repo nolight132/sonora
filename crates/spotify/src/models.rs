@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

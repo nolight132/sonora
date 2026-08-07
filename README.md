@@ -76,3 +76,26 @@ nix run github:nolight132/sonora#sonora-bin
 
 `sonora-bin` tracks the latest tagged release rather than the working tree, so its version is pinned
 in `flake.nix` and only moves when a release is cut.
+
+## License
+
+Copyright (C) 2026 nolight132.
+
+Sonora is free software, released under the [GNU General Public License version
+3 or later](LICENSE). GPUI depends on `zlog` and `ztracing` from the Zed
+repository, both GPL-3.0-or-later, so any binary built from this tree is covered
+by the GPL regardless; the project follows suit. The complete corresponding
+source is this repository at the matching tag, plus the revisions pinned in
+`Cargo.lock`.
+
+Sonora is an unofficial client and is not affiliated with, endorsed by, or
+sponsored by Spotify AB.
+
+The binary also embeds the [Inter](https://github.com/rsms/inter) typeface (SIL
+Open Font License 1.1) and the [Lucide](https://lucide.dev) icon set (ISC
+License). `THIRD-PARTY.md` lists every bundled dependency, its license and the
+full license texts; regenerate it with:
+
+```sh
+cargo about generate about.hbs > THIRD-PARTY.md
+```

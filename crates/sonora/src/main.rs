@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 nolight132
+
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod actions;
