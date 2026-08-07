@@ -56,15 +56,17 @@ impl ScrubberState {
         };
         reach
             .contains(&position)
-            .then(|| self.fraction_at(position.x))
+            .then(|| self.fraction_at(position.x, pad))
     }
 
-    fn fraction_at(&self, x: Pixels) -> f32 {
+    fn fraction_at(&self, x: Pixels, pad: Pixels) -> f32 {
         let bounds = self.bounds.get();
-        if bounds.size.width <= px(0.) {
+        let pin = thumb(pad);
+        let travel = bounds.size.width - pin;
+        if travel <= px(0.) {
             return 0.;
         }
-        ((x - bounds.origin.x) / bounds.size.width).clamp(0., 1.)
+        ((x - bounds.origin.x - pin / 2.) / travel).clamp(0., 1.)
     }
 }
 
@@ -174,7 +176,7 @@ impl RenderOnce for Scrubber {
             let on_move = on_move.clone();
             move |event: &MouseDownEvent, window: &mut Window, cx: &mut App| {
                 if let Some(handler) = on_move.as_ref() {
-                    handler(&state.fraction_at(event.position.x), window, cx);
+                    handler(&state.fraction_at(event.position.x, pad), window, cx);
                 }
             }
         };
@@ -188,7 +190,7 @@ impl RenderOnce for Scrubber {
                     return;
                 }
                 if let Some(handler) = on_move.as_ref() {
-                    handler(&state.fraction_at(event.event.position.x), window, cx);
+                    handler(&state.fraction_at(event.event.position.x, pad), window, cx);
                 }
             }
         };
@@ -198,6 +200,10 @@ impl RenderOnce for Scrubber {
                 handler(event, window, cx);
             }
         };
+
+        let width = bounds.get().size.width;
+        let travel = (width - pin).max(Pixels::ZERO);
+        let centered = enabled && width > Pixels::ZERO;
 
         div()
             .id(gpui::ElementId::Name(id.clone()))
@@ -222,15 +228,15 @@ impl RenderOnce for Scrubber {
                     .bg(empty)
                     .child(
                         div()
-                            .w(relative(fraction))
                             .h_full()
                             .rounded_full()
-                            .bg(filled),
+                            .bg(filled)
+                            .map(|this| match centered {
+                                true => this.w(pin / 2. + travel * fraction),
+                                false => this.w(relative(fraction)),
+                            }),
                     )
                     .when(enabled, |this| {
-                        let width = bounds.get().size.width;
-                        let travel = (width - pin).max(Pixels::ZERO);
-
                         this.child(
                             div()
                                 .absolute()
@@ -257,7 +263,10 @@ impl RenderOnce for Scrubber {
                                         this.top(Pixels::ZERO - lift)
                                     }
                                 })
-                                .left(relative(at))
+                                .map(|this| match centered {
+                                    true => this.left(pin / 2. + travel * at),
+                                    false => this.left(relative(at)),
+                                })
                                 .ml(Pixels::ZERO - bubble_width / 2.)
                                 .w(bubble_width)
                                 .flex()
@@ -281,5 +290,56 @@ impl RenderOnce for Scrubber {
                             .size_full(),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Bounds, point, px, size};
+
+    use super::{ScrubberState, thumb};
+
+    const PAD: gpui::Pixels = px(8.);
+    const ORIGIN: f32 = 20.;
+    const WIDTH: f32 = 300.;
+
+    fn measured() -> ScrubberState {
+        let state = ScrubberState::new("test");
+        state.bounds.set(Bounds {
+            origin: point(px(ORIGIN), px(0.)),
+            size: size(px(WIDTH), px(4.)),
+        });
+        state
+    }
+
+    #[test]
+    fn the_thumb_lands_under_the_pointer() {
+        let state = measured();
+        let pin = thumb(PAD);
+        let travel = px(WIDTH) - pin;
+
+        for step in 0..=100 {
+            let fraction = step as f32 / 100.;
+            let center = px(ORIGIN) + pin / 2. + travel * fraction;
+            let read = state.fraction_at(center, PAD);
+            assert!((read - fraction).abs() < 1e-4, "{fraction} read as {read}");
+        }
+    }
+
+    #[test]
+    fn the_ends_clamp() {
+        let state = measured();
+
+        assert_eq!(state.fraction_at(px(0.), PAD), 0.);
+        assert_eq!(state.fraction_at(px(ORIGIN), PAD), 0.);
+        assert_eq!(state.fraction_at(px(ORIGIN + WIDTH), PAD), 1.);
+        assert_eq!(state.fraction_at(px(9999.), PAD), 1.);
+    }
+
+    #[test]
+    fn an_unmeasured_track_reads_zero() {
+        let state = ScrubberState::new("test");
+
+        assert_eq!(state.fraction_at(px(50.), PAD), 0.);
     }
 }
