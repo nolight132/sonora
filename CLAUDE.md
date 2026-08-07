@@ -253,6 +253,10 @@ i18n::lookup(key, None)                              // when the key is a runtim
 - Dates are assembled from `month-1`..`month-12` plus `date-full`, never `strftime`.
 - A missing key logs `i18n: … is missing` and falls back to English, then to the key itself.
 - `ColumnSpec::header` and `Slot::Header` hold a **key**, not a label; call `ColumnSpec::label()`.
+- **Never call `t!` in a constructor.** Anything stored on a struct and rendered later must hold the
+  key and resolve in `render`, or it freezes in whatever language was active at construction and
+  never follows a language change. `Input::new`/`set_hint` and `Searchable::hint()` take keys for
+  exactly this reason.
 - Developer-facing text — `.context("cannot …")`, `log::warn!`, `PlaybackState::Failed` — stays
   in English. So do wire values in `crates/spotify`.
 - The language lives in `settings.json` (`language`, default `"auto"`). Changing it calls
