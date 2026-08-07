@@ -97,5 +97,6 @@ License). `THIRD-PARTY.md` lists every bundled dependency, its license and the
 full license texts; regenerate it with:
 
 ```sh
-cargo about generate about.hbs > THIRD-PARTY.md
+cargo install cargo-about --locked --features cli
+python3 scripts/generate-notices.py
 ```

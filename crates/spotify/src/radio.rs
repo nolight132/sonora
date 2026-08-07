@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 nolight132
 
 use anyhow::{Context as _, Result};
 use librespot_core::{Session, SpotifyUri};

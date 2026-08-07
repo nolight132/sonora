@@ -456,10 +456,18 @@ derives every platform artefact from it — a circle for `assets/linux/` (scalab
 PNG set), an Apple squircle for `assets/macos/sonora.icns`, and a rounded rect for
 `assets/windows/sonora.ico`. Change the master and re-run the script; do not touch the outputs.
 
+**`THIRD-PARTY.md` is generated too.** `scripts/generate-notices.py` drives `cargo about` over
+`about.toml` and writes the file; a new dependency means re-running it, not editing the output. The
+binary must ship it alongside `LICENSE`, `assets/fonts/LICENSE.txt` and `assets/icons/LICENSE` —
+`flake.nix` and `.github/workflows/release.yml` both do that, and a package that skips it is
+distributing unlicensed code.
+
 ## Code style
 
 - **Comments: essentially none.** The codebase has almost zero. Name things so they don't need one.
   If a comment is unavoidable it is at most three lowercase words, no trailing period.
+- Every `.rs` file opens with `// SPDX-License-Identifier: GPL-3.0-or-later`; that line is the one
+  comment exempt from the rule above.
 - Names are short and domain-flavored: `Look`, `Metrics`, `Grab`, `Scored`, `wire`, `pb`, `clock`,
   `snapped`. Prefer a noun that reads at the call site over a descriptive compound.
 - `use gpui::prelude::*;` then explicit imports; traits imported anonymously (`use ui::ActiveTheme as _;`).
