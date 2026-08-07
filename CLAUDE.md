@@ -107,9 +107,19 @@ sudo dnf install @development-tools pkgconf-pkg-config mold alsa-lib-devel fontc
 
 ### macOS / Windows
 
-Unsupported as configured. `gpui_platform` is pinned to the `x11` + `wayland` features, the flake
-only declares `x86_64-linux`/`aarch64-linux`, and the mold linker flag targets Linux. Porting means
-changing feature flags and the linker config — do not attempt it as a side effect of another task.
+Released, but not developed against here. `.github/workflows/release.yml` builds both Apple targets
+and `x86_64-pc-windows-msvc`; the `x11`/`wayland` features on `gpui_platform` are inert off Linux,
+so the pin does no harm. There is no local toolchain for either — the release workflow is the only
+thing that exercises them, and it only runs on a tag. The flake declares `x86_64-linux`/`aarch64-linux`
+only, and the mold linker flag targets Linux.
+
+macOS ships as a universal `Sonora.app` inside a disk image: `lipo` merges the two arch builds,
+`codesign --force --sign -` signs it ad-hoc, `hdiutil` wraps it. Ad-hoc signing only makes the
+binary runnable on Apple Silicon — it does not satisfy Gatekeeper, so an unnotarized build still
+needs `xattr -dr com.apple.quarantine` on first launch. Do not add `--deep`; Apple deprecates it for
+signing and the bundle has no nested code.
+
+Windows embeds `assets/windows/sonora.ico` through `crates/sonora/build.rs` and `winresource`.
 
 ### Checks
 
@@ -440,6 +450,11 @@ in the title bar. Don't build a second search box.
 `"icons/<name>.svg"`. Adding a file is not enough — add the stem to the `ICONS` list in
 `crates/sonora/src/assets.rs`, otherwise loading logs `assets: … is not registered` and renders
 nothing. Icons are Lucide (`assets/icons/LICENSE`); the UI font is Inter.
+
+**App icons are generated, never hand-edited.** `assets/icon.svg` is the master; `scripts/generate-icons.py`
+derives every platform artefact from it — a circle for `assets/linux/` (scalable SVG plus the hicolor
+PNG set), an Apple squircle for `assets/macos/sonora.icns`, and a rounded rect for
+`assets/windows/sonora.ico`. Change the master and re-run the script; do not touch the outputs.
 
 ## Code style
 
