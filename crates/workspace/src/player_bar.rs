@@ -102,7 +102,7 @@ impl PlayerBar {
 
     fn shuffle(&self, cx: &mut Context<Self>) -> Button {
         let theme = *cx.theme();
-        let on = self.playback.read(cx).shuffle();
+        let on = self.queue.read(cx).shuffle();
 
         Button::new("shuffle")
             .ghost()
@@ -113,8 +113,7 @@ impl PlayerBar {
                 false => theme.muted_foreground,
             })
             .on_click(cx.listener(|this, _, _, cx| {
-                this.playback
-                    .update(cx, |playback, cx| playback.toggle_shuffle(cx));
+                this.queue.update(cx, |queue, cx| queue.toggle_shuffle(cx));
             }))
     }
 

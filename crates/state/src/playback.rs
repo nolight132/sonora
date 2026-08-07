@@ -65,7 +65,6 @@ pub struct Playback {
     settings: Entity<AppSettings>,
     level: f32,
     normalisation: bool,
-    shuffle: bool,
     repeat: Repeat,
     radio: bool,
     task: Option<Task<()>>,
@@ -108,7 +107,6 @@ impl Playback {
             settings,
             level,
             normalisation,
-            shuffle: false,
             repeat: Repeat::Off,
             radio: false,
             task: None,
@@ -283,15 +281,6 @@ impl Playback {
         cx.notify();
     }
 
-    pub fn shuffle(&self) -> bool {
-        self.shuffle
-    }
-
-    pub fn toggle_shuffle(&mut self, cx: &mut Context<Self>) {
-        self.shuffle = !self.shuffle;
-        cx.notify();
-    }
-
     pub fn repeat(&self) -> Repeat {
         self.repeat
     }
@@ -360,11 +349,7 @@ impl Playback {
     }
 
     fn follow_queue(&mut self, cx: &mut Context<Self>) {
-        let shuffle = self.shuffle;
-        let Some(track) = self.queue.update(cx, |queue, cx| match shuffle {
-            true => queue.next_random(cx),
-            false => queue.next(cx),
-        }) else {
+        let Some(track) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
             return;
         };
         self.load_after(&track, SKIP_DEBOUNCE, cx);

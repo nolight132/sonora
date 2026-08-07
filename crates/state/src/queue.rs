@@ -1,7 +1,38 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use gpui::Context;
 use spotify::Track;
+
+fn scramble(upcoming: &mut VecDeque<Track>) {
+    let mut tracks: Vec<Track> = upcoming.drain(..).collect();
+    fastrand::shuffle(&mut tracks);
+    *upcoming = tracks.into();
+}
+
+fn restore(upcoming: &mut VecDeque<Track>, source: &[Track]) {
+    let mut slots: HashMap<&str, VecDeque<usize>> = HashMap::new();
+    for (index, track) in source.iter().enumerate() {
+        if let Some(id) = track.id.as_deref() {
+            slots.entry(id).or_default().push_back(index);
+        }
+    }
+
+    let mut ranked: Vec<(usize, Track)> = upcoming
+        .drain(..)
+        .map(|track| {
+            let rank = track
+                .id
+                .as_deref()
+                .and_then(|id| slots.get_mut(id))
+                .and_then(|found| found.pop_front())
+                .unwrap_or(usize::MAX);
+            (rank, track)
+        })
+        .collect();
+
+    ranked.sort_by_key(|(rank, _)| *rank);
+    *upcoming = ranked.into_iter().map(|(_, track)| track).collect();
+}
 
 fn move_item<T>(items: &mut VecDeque<T>, from: usize, to: usize) -> bool {
     if from >= items.len() || to >= items.len() || from == to {
@@ -63,6 +94,7 @@ pub struct Queue {
     current: Option<Track>,
     upcoming: VecDeque<Track>,
     source: Vec<Track>,
+    shuffle: bool,
     revision: u64,
 }
 
@@ -79,8 +111,29 @@ impl Queue {
             current: None,
             upcoming: VecDeque::new(),
             source: Vec::new(),
+            shuffle: false,
             revision: 0,
         }
+    }
+
+    pub fn shuffle(&self) -> bool {
+        self.shuffle
+    }
+
+    pub fn set_shuffle(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.shuffle == on {
+            return;
+        }
+        self.shuffle = on;
+        match on {
+            true => scramble(&mut self.upcoming),
+            false => restore(&mut self.upcoming, &self.source),
+        }
+        self.changed(cx);
+    }
+
+    pub fn toggle_shuffle(&mut self, cx: &mut Context<Self>) {
+        self.set_shuffle(!self.shuffle, cx);
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
@@ -173,6 +226,9 @@ impl Queue {
         self.source = tracks.clone();
         let mut past = tracks;
         self.upcoming = past.split_off(index + 1).into();
+        if self.shuffle {
+            scramble(&mut self.upcoming);
+        }
         self.current = past.pop();
         self.past = past;
         self.changed(cx);
@@ -203,21 +259,6 @@ impl Queue {
 
     pub fn next(&mut self, cx: &mut Context<Self>) -> Option<Track> {
         let next = self.upcoming.pop_front()?;
-        if let Some(played) = self.current.replace(next) {
-            self.past.push(played);
-        }
-        self.changed(cx);
-        self.current.clone()
-    }
-
-    pub fn next_random(&mut self, cx: &mut Context<Self>) -> Option<Track> {
-        if self.upcoming.is_empty() {
-            return None;
-        }
-
-        let next = self
-            .upcoming
-            .remove(fastrand::usize(..self.upcoming.len()))?;
         if let Some(played) = self.current.replace(next) {
             self.past.push(played);
         }
@@ -261,8 +302,95 @@ impl Queue {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::time::Duration;
 
-    use super::{gap_target, in_order, move_item, select_past, select_upcoming};
+    use spotify::Track;
+
+    use super::{gap_target, in_order, move_item, restore, scramble, select_past, select_upcoming};
+
+    fn track(id: &str) -> Track {
+        Track {
+            id: Some(id.to_owned()),
+            name: id.to_owned(),
+            playable: true,
+            artists: String::new(),
+            artist_refs: Vec::new(),
+            album: String::new(),
+            album_id: None,
+            cover: None,
+            duration: Duration::from_secs(180),
+            added_at: None,
+            playcount: None,
+            popularity: 0,
+            explicit: false,
+            track_number: 0,
+            disc_number: 0,
+            tags: Vec::new(),
+            languages: Vec::new(),
+            credits: Vec::new(),
+        }
+    }
+
+    fn ids(tracks: &VecDeque<Track>) -> Vec<String> {
+        tracks
+            .iter()
+            .map(|track| track.name.clone())
+            .collect::<Vec<_>>()
+    }
+
+    fn listing(count: usize) -> Vec<Track> {
+        (0..count).map(|index| track(&index.to_string())).collect()
+    }
+
+    #[test]
+    fn scrambling_keeps_every_track() {
+        let source = listing(20);
+        let mut upcoming: VecDeque<Track> = source.iter().cloned().collect();
+
+        scramble(&mut upcoming);
+
+        let mut seen = ids(&upcoming);
+        let mut expected = ids(&source.iter().cloned().collect());
+        seen.sort();
+        expected.sort();
+        assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn restoring_returns_the_source_order() {
+        let source = listing(20);
+        let mut upcoming: VecDeque<Track> = source.iter().cloned().collect();
+
+        scramble(&mut upcoming);
+        restore(&mut upcoming, &source);
+
+        assert_eq!(ids(&upcoming), ids(&source.iter().cloned().collect()));
+    }
+
+    #[test]
+    fn restoring_puts_unknown_tracks_last() {
+        let source = vec![track("a"), track("b"), track("c")];
+        let mut upcoming = VecDeque::from(vec![
+            track("queued-one"),
+            track("c"),
+            track("queued-two"),
+            track("a"),
+        ]);
+
+        restore(&mut upcoming, &source);
+
+        assert_eq!(ids(&upcoming), ["a", "c", "queued-one", "queued-two"]);
+    }
+
+    #[test]
+    fn restoring_keeps_both_copies_of_a_repeated_track() {
+        let source = vec![track("a"), track("b"), track("a")];
+        let mut upcoming = VecDeque::from(vec![track("a"), track("a"), track("b")]);
+
+        restore(&mut upcoming, &source);
+
+        assert_eq!(ids(&upcoming), ["a", "b", "a"]);
+    }
 
     #[test]
     fn spots_a_reordered_queue() {
