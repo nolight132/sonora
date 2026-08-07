@@ -14,6 +14,7 @@ use crate::queue::Queue;
 use crate::{AppSettings, Io, Session, SessionEvent, join};
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
+const PRELOAD_BEFORE_END: Duration = Duration::from_secs(10);
 const SKIP_DEBOUNCE: Duration = Duration::from_millis(250);
 const KEY_COOLDOWN: Duration = Duration::from_secs(6);
 const TAPER_DB: f32 = 50.;
@@ -70,6 +71,7 @@ pub struct Playback {
     task: Option<Task<()>>,
     load: Option<Task<()>>,
     fetch: Option<Task<()>>,
+    preloaded: Option<String>,
     blocked_until: Option<Instant>,
 }
 
@@ -112,6 +114,7 @@ impl Playback {
             task: None,
             load: None,
             fetch: None,
+            preloaded: None,
             blocked_until: None,
         }
     }
@@ -150,6 +153,7 @@ impl Playback {
         self.track = Some(track.clone());
         self.state = PlaybackState::Loading;
         self.position = Duration::ZERO;
+        self.preloaded = None;
         cx.notify();
 
         let wait = self
@@ -270,6 +274,36 @@ impl Playback {
     pub fn next(&mut self, cx: &mut Context<Self>) {
         self.fetch = None;
         self.follow_queue(cx);
+    }
+
+    fn preload_next(&mut self, position: Duration, cx: &Context<Self>) {
+        let Some(duration) = self.track.as_ref().map(|track| track.duration) else {
+            return;
+        };
+        if duration.is_zero()
+            || self.state != PlaybackState::Playing
+            || duration.saturating_sub(position) > PRELOAD_BEFORE_END
+        {
+            return;
+        }
+
+        let next = match self.repeat != Repeat::One {
+            true => self.queue.read(cx).upcoming().next().cloned(),
+            false => None,
+        };
+        let Some(next) = next else {
+            self.preloaded = None;
+            return;
+        };
+        let Some(id) = next.id.clone().filter(|_| next.playable) else {
+            return;
+        };
+        if self.preloaded.as_deref() == Some(id.as_str()) {
+            return;
+        }
+
+        self.preload(&next);
+        self.preloaded = Some(id);
     }
 
     pub fn radio(&self) -> bool {
@@ -542,7 +576,10 @@ impl Playback {
                 self.state = PlaybackState::Paused;
                 self.position = position;
             }
-            AudioEvent::Position(position) => self.position = position,
+            AudioEvent::Position(position) => {
+                self.position = position;
+                self.preload_next(position, cx);
+            }
             AudioEvent::Ended => {
                 let ended = self.track.take();
                 self.state = PlaybackState::Idle;
@@ -571,6 +608,7 @@ impl Playback {
         self.task = None;
         self.load = None;
         self.fetch = None;
+        self.preloaded = None;
         self.blocked_until = None;
         self.engine = None;
         self.track = None;
