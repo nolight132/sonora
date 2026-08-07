@@ -34,11 +34,11 @@
 
           sonora = pkgs.rustPlatform.buildRustPackage {
             pname = "sonora";
-            version = "0.1.0";
+            version = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.version;
 
             src = ./.;
 
-            cargoHash = "sha256-VgzjtVOxlHGwLUvEx2upu+1zI0rRMu6HXuG7Zgw3R6M=";
+            cargoHash = "sha256-pLduNOaYtm36fpu1to7xgvVbnCqneLpY09zGeifQjSo=";
 
             nativeBuildInputs = with pkgs; [
               pkg-config
@@ -51,6 +51,13 @@
             postInstall = ''
               install -Dm444 assets/linux/sonora.desktop \
                 -t "$out/share/applications"
+              install -Dm444 assets/linux/sonora.svg \
+                "$out/share/icons/hicolor/scalable/apps/sonora.svg"
+              for icon in assets/linux/icons/hicolor/*/apps/sonora.png; do
+                size="$(basename "$(dirname "$(dirname "$icon")")")"
+                install -Dm444 "$icon" \
+                  "$out/share/icons/hicolor/$size/apps/sonora.png"
+              done
             '';
 
             postFixup = ''

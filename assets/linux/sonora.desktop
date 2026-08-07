@@ -3,6 +3,7 @@ Type=Application
 Name=sonora
 GenericName=Music Player
 Comment=A minimal native Spotify client
+Icon=sonora
 Exec=sonora
 Terminal=false
 Categories=AudioVideo;Audio;Player;

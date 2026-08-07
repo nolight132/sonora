@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "audio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "cpal",
@@ -3092,7 +3092,7 @@ dependencies = [
 
 [[package]]
 name = "i18n"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fluent-bundle",
  "gpui",
@@ -3303,7 +3303,7 @@ dependencies = [
 
 [[package]]
 name = "input"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui",
  "i18n",
@@ -5807,7 +5807,7 @@ dependencies = [
 
 [[package]]
 name = "router"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui",
  "ui",
@@ -6497,7 +6497,7 @@ dependencies = [
 
 [[package]]
 name = "sonora"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -6512,6 +6512,7 @@ dependencies = [
  "tokio",
  "ui",
  "views",
+ "winresource",
  "workspace",
 ]
 
@@ -6563,7 +6564,7 @@ dependencies = [
 
 [[package]]
 name = "spotify"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6622,7 +6623,7 @@ dependencies = [
 
 [[package]]
 name = "state"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "audio",
@@ -7566,7 +7567,7 @@ dependencies = [
 
 [[package]]
 name = "ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui",
  "i18n",
@@ -7869,7 +7870,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "views"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui",
  "i18n",
@@ -8831,6 +8832,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "winresource"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0986a8b1d586b7d3e4fe3d9ea39fb451ae22869dcea4aa109d287a374d866087"
+dependencies = [
+ "toml 1.1.4+spec-1.1.0",
+ "version_check",
+]
+
+[[package]]
 name = "winsafe"
 version = "0.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8853,7 +8864,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workspace"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui",
  "i18n",

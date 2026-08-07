@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [workspace.dependencies]
@@ -32,6 +32,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "f25b256f
   "x11",
 ] }
 http = "1.3"
+winresource = "0.1"
 image = { version = "0.25", default-features = false }
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 log = "0.4"

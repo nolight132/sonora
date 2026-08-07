@@ -40,11 +40,10 @@ jobs:
         shell: bash
         run: |
           case "$GITHUB_REF" in
-            refs/tags/*) version="$GITHUB_REF_NAME"; number="${GITHUB_REF_NAME#v}" ;;
-            *) version="$(git rev-parse --short HEAD)"; number="0.0.0" ;;
+            refs/tags/*) version="$GITHUB_REF_NAME" ;;
+            *) version="$(git rev-parse --short HEAD)" ;;
           esac
-          echo "name=sonora-$version-${{ matrix.target }}" >> "$GITHUB_OUTPUT"
-          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: system dependencies
         if: runner.os == 'Linux'
@@ -67,51 +66,96 @@ jobs:
       - name: build
         run: cargo build --release --locked --package sonora --target ${{ matrix.target }}
 
-      - name: package
-        if: runner.os == 'Linux'
+      - name: stage the executable
         shell: bash
         env:
-          NAME: ${{ steps.meta.outputs.name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
-          mkdir -p dist stage
-          cp "target/${{ matrix.target }}/release/sonora" stage/
-          cp assets/linux/sonora.desktop stage/
-          tar czf "dist/$NAME.tar.gz" -C stage .
-          cd dist && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
-
-      - name: package
-        if: runner.os == 'macOS'
-        shell: bash
-        env:
-          NAME: ${{ steps.meta.outputs.name }}
-          NUMBER: ${{ steps.meta.outputs.number }}
-        run: |
-          mkdir -p dist stage/sonora.app/Contents/MacOS
-          cp "target/${{ matrix.target }}/release/sonora" stage/sonora.app/Contents/MacOS/
-          sed "s/@VERSION@/$NUMBER/g" assets/macos/Info.plist \
-            > stage/sonora.app/Contents/Info.plist
-          tar czf "dist/$NAME.tar.gz" -C stage sonora.app
-          cd dist && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
-
-      - name: package
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          NAME: ${{ steps.meta.outputs.name }}
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path "target/${{ matrix.target }}/release/sonora.exe" -DestinationPath "dist/$env:NAME.zip"
-          $hash = (Get-FileHash "dist/$env:NAME.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $env:NAME.zip" | Out-File -Encoding ascii "dist/$env:NAME.zip.sha256"
+          set -euo pipefail
+          mkdir -p dist
+          case "$RUNNER_OS" in
+            macOS)   cp "target/$TARGET/release/sonora" "dist/sonora-$TARGET" ;;
+            Windows) cp "target/$TARGET/release/sonora.exe" "dist/sonora-$VERSION-$TARGET.exe" ;;
+            *)       cp "target/$TARGET/release/sonora" "dist/sonora-$VERSION-$TARGET" ;;
+          esac
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.name }}
+          name: "${{ runner.os == 'macOS' && format('darwin-{0}', matrix.target) || format('release-{0}', matrix.target) }}"
+          path: dist/*
+          if-no-files-found: error
+
+  bundle:
+    name: macos app bundle
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: name the artifact
+        id: meta
+        shell: bash
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) version="$GITHUB_REF_NAME"; number="${GITHUB_REF_NAME#v}" ;;
+            *) version="$(git rev-parse --short HEAD)"; number="0.0.0" ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: darwin-*
+          path: darwin
+          merge-multiple: true
+
+      - name: assemble the bundle
+        shell: bash
+        env:
+          NUMBER: ${{ steps.meta.outputs.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p Sonora.app/Contents/MacOS Sonora.app/Contents/Resources
+          lipo -create -output Sonora.app/Contents/MacOS/sonora \
+            darwin/sonora-aarch64-apple-darwin \
+            darwin/sonora-x86_64-apple-darwin
+          chmod +x Sonora.app/Contents/MacOS/sonora
+          lipo -info Sonora.app/Contents/MacOS/sonora
+          cp assets/macos/sonora.icns Sonora.app/Contents/Resources/
+          sed "s/@VERSION@/$NUMBER/g" assets/macos/Info.plist > Sonora.app/Contents/Info.plist
+          plutil -lint Sonora.app/Contents/Info.plist
+
+      - name: sign the bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --force --sign - Sonora.app
+          codesign --verify --strict --verbose=2 Sonora.app
+
+      - name: create the disk image
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist staging
+          cp -R Sonora.app staging/
+          ln -s /Applications staging/Applications
+          hdiutil create \
+            -volname Sonora \
+            -srcfolder staging \
+            -ov -format UDZO \
+            "dist/sonora-$VERSION-macos.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
           path: dist/*
           if-no-files-found: error
 
   release:
-    needs: build
+    needs: [build, bundle]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -119,13 +163,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: dist
           merge-multiple: true
+
+      - name: checksums
+        run: cd dist && shasum -a 256 * > SHA256SUMS
 
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          body: Initial release.
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
