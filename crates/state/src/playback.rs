@@ -16,15 +16,13 @@ use crate::{AppSettings, Io, Session, SessionEvent, join};
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
 const SKIP_DEBOUNCE: Duration = Duration::from_millis(250);
 const KEY_COOLDOWN: Duration = Duration::from_secs(6);
-const TAPER_DB: f32 = 60.;
-const CEILING_DB: f32 = 9.;
+const TAPER_DB: f32 = 50.;
 
 fn gain(level: f32) -> f32 {
-    let level = level.clamp(0., 1.);
-    if level <= 0. {
-        return 0.;
+    match level.clamp(0., 1.) {
+        level if level <= 0. => 0.,
+        level => 10f32.powf(TAPER_DB * (level - 1.) / 20.),
     }
-    10f32.powf((CEILING_DB - TAPER_DB * (1. - level)) / 20.)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -601,5 +599,41 @@ impl Playback {
         log::error!("playback: {problem}");
         self.state = PlaybackState::Failed(problem);
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gain;
+
+    #[test]
+    fn never_amplifies_past_unity() {
+        assert_eq!(gain(1.), 1.);
+        for step in 0..=100 {
+            assert!(gain(step as f32 / 100.) <= 1.);
+        }
+    }
+
+    #[test]
+    fn silences_a_closed_slider() {
+        assert_eq!(gain(0.), 0.);
+        assert_eq!(gain(-1.), 0.);
+        assert_eq!(gain(2.), 1.);
+    }
+
+    #[test]
+    fn rises_with_the_slider() {
+        let mut last = gain(0.);
+        for step in 1..=100 {
+            let next = gain(step as f32 / 100.);
+            assert!(next > last, "gain fell at {step}");
+            last = next;
+        }
+    }
+
+    #[test]
+    fn halves_the_slider_to_the_taper_midpoint() {
+        let expected = 10f32.powf(-super::TAPER_DB / 40.);
+        assert!((gain(0.5) - expected).abs() < 1e-6);
     }
 }
