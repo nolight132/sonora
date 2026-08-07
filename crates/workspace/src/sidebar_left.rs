@@ -163,13 +163,23 @@ impl Render for Sidebar {
 
                     rows.push(
                         div()
+                            .relative()
                             .flex()
                             .flex_col()
+                            .gap_1()
                             .ml_4()
-                            .children(TABS.into_iter().enumerate().map(|(step, (name, tab))| {
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .top_0()
+                                    .bottom(middle)
+                                    .w(px(1.))
+                                    .bg(sidebar_border),
+                            )
+                            .children(TABS.into_iter().map(|(name, tab)| {
                                 let chosen = current == Destination::Library(tab);
                                 let tint = if chosen { foreground } else { muted };
-                                let tail = step + 1 == TABS.len();
 
                                 div()
                                     .relative()
@@ -177,15 +187,6 @@ impl Render for Sidebar {
                                     .items_center()
                                     .h(nav)
                                     .pl_3()
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .left_0()
-                                            .top_0()
-                                            .w(px(1.))
-                                            .h(if tail { middle } else { nav })
-                                            .bg(sidebar_border),
-                                    )
                                     .child(
                                         div()
                                             .absolute()
