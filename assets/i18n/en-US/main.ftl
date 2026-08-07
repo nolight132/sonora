@@ -217,6 +217,16 @@ settings-normalisation-detail = Keeps tracks at a consistent volume
 settings-account = Account
 settings-account-detail = Sign out of Spotify on this device
 settings-sign-out = Sign out
+settings-tab-about = About
+settings-version = Version
+settings-version-detail = The build of sonora you are running
+settings-license = License
+settings-license-detail = GNU General Public License version 3 or later
+settings-license-view = Read the license
+settings-source = Source code
+settings-source-detail = The corresponding source for this build
+settings-source-view = Open the repository
+settings-notice = Copyright © 2026 nolight132. Sonora comes with absolutely no warranty. It is free software, and you are welcome to redistribute it under the terms of the GNU General Public License version 3 or later. Sonora is unofficial and is not affiliated with Spotify AB.
 
 # themes
 theme-dark = Dark

@@ -219,6 +219,16 @@ settings-normalisation-detail = Держит треки на одинаково�
 settings-account = Аккаунт
 settings-account-detail = Выйти из Spotify на этом устройстве
 settings-sign-out = Выйти
+settings-tab-about = О программе
+settings-version = Версия
+settings-version-detail = Сборка sonora, которая сейчас запущена
+settings-license = Лицензия
+settings-license-detail = GNU General Public License версии 3 или новее
+settings-license-view = Прочитать лицензию
+settings-source = Исходный код
+settings-source-detail = Исходный код, соответствующий этой сборке
+settings-source-view = Открыть репозиторий
+settings-notice = Copyright © 2026 nolight132. Sonora поставляется без каких-либо гарантий. Это свободное программное обеспечение, и вы можете распространять его на условиях GNU General Public License версии 3 или новее. Sonora — неофициальный клиент и не связан со Spotify AB.
 
 # themes
 theme-dark = Тёмная
