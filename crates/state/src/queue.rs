@@ -238,7 +238,22 @@ impl Queue {
     }
 
     pub fn append(&mut self, track: Track, cx: &mut Context<Self>) {
-        self.upcoming.push_back(track);
+        self.append_all([track], cx);
+    }
+
+    pub fn append_all(&mut self, tracks: impl IntoIterator<Item = Track>, cx: &mut Context<Self>) {
+        self.upcoming.extend(tracks);
+        self.changed(cx);
+    }
+
+    pub fn prepend(&mut self, track: Track, cx: &mut Context<Self>) {
+        self.prepend_all([track], cx);
+    }
+
+    pub fn prepend_all(&mut self, tracks: impl IntoIterator<Item = Track>, cx: &mut Context<Self>) {
+        let mut upcoming = tracks.into_iter().collect::<VecDeque<_>>();
+        upcoming.append(&mut self.upcoming);
+        self.upcoming = upcoming;
         self.changed(cx);
     }
 

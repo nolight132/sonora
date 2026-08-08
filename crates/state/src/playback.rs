@@ -72,6 +72,7 @@ pub struct Playback {
     task: Option<Task<()>>,
     load: Option<Task<()>>,
     fetch: Option<Task<()>>,
+    enqueue: Option<Task<()>>,
     blocked_until: Option<Instant>,
 }
 
@@ -114,6 +115,7 @@ impl Playback {
             task: None,
             load: None,
             fetch: None,
+            enqueue: None,
             blocked_until: None,
         }
     }
@@ -200,11 +202,45 @@ impl Playback {
         });
     }
 
+    pub fn enqueue(&mut self, track: Track, cx: &mut Context<Self>) {
+        if self.queue.read(cx).current().is_none() {
+            self.begin(vec![track], 0, None, cx);
+            return;
+        }
+        self.queue.update(cx, |queue, cx| queue.prepend(track, cx));
+    }
+
+    pub fn enqueue_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+        if tracks.is_empty() {
+            return;
+        }
+        if self.queue.read(cx).current().is_none() {
+            self.begin(tracks, 0, None, cx);
+            return;
+        }
+        self.queue
+            .update(cx, |queue, cx| queue.prepend_all(tracks, cx));
+    }
+
+    pub fn enqueue_album(&mut self, album: &str, cx: &mut Context<Self>) {
+        let album = album.to_owned();
+        self.enqueue_from("album", cx, move |client| {
+            Box::pin(async move { client.album_tracks(&album).await })
+        });
+    }
+
     pub fn play_album(&mut self, album: &str, cx: &mut Context<Self>) {
         let origin = Origin::Album(album.to_owned());
         let album = album.to_owned();
         self.gather(origin, cx, move |client| {
             Box::pin(async move { client.album_tracks(&album).await })
+        });
+    }
+
+    pub fn enqueue_playlist(&mut self, playlist: &str, cx: &mut Context<Self>) {
+        let playlist = playlist.to_owned();
+        self.enqueue_from("playlist", cx, move |client| {
+            Box::pin(async move { client.playlist_tracks(&playlist).await })
         });
     }
 
@@ -214,6 +250,30 @@ impl Playback {
         self.gather(origin, cx, move |client| {
             Box::pin(async move { client.playlist_tracks(&playlist).await })
         });
+    }
+
+    fn enqueue_from<F>(&mut self, source: &'static str, cx: &mut Context<Self>, tracks: F)
+    where
+        F: FnOnce(Arc<dyn SpotifyApi>) -> Fetch + Send + 'static,
+    {
+        if self.enqueue.is_some() {
+            return;
+        }
+        let Some(client) = self.session.read(cx).client() else {
+            return;
+        };
+        let io = Io::global(cx);
+        self.enqueue = Some(cx.spawn(async move |this, cx| {
+            let loaded = join(io.spawn(async move { tracks(client).await })).await;
+            this.update(cx, |this, cx| {
+                this.enqueue = None;
+                match loaded {
+                    Ok(tracks) => this.enqueue_all(tracks, cx),
+                    Err(error) => log::error!("playback: cannot enqueue {source}: {error:#}"),
+                }
+            })
+            .ok();
+        }));
     }
 
     pub fn origin(&self) -> Option<&Origin> {
@@ -573,6 +633,7 @@ impl Playback {
         self.task = None;
         self.load = None;
         self.fetch = None;
+        self.enqueue = None;
         self.blocked_until = None;
         self.engine = None;
         self.track = None;
