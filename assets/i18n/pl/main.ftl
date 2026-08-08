@@ -7,6 +7,9 @@ common-search = Szukaj
 common-unknown = Nieznane
 common-not-provided = Nie podano
 common-not-available = Brak danych
+common-cancel = Anuluj
+common-save = Zapisz
+common-delete = Usuń
 number-group = { "\u00A0" }
 
 # navigation
@@ -42,6 +45,7 @@ menu-new-playlist = Nowa playlista
 menu-no-playlists = Brak playlist
 menu-add-to-library = Dodaj do biblioteki
 menu-remove-from-library = Usuń z biblioteki
+menu-remove-from-playlist = Usuń z playlisty
 menu-add-to-queue = Dodaj do kolejki
 menu-song-radio = Radio utworu
 menu-go-to-album = Przejdź do albumu
@@ -49,6 +53,22 @@ menu-go-to-artist = Przejdź do wykonawcy
 menu-view-details = Szczegóły
 menu-copy-link = Kopiuj link
 menu-remove-from-queue = Usuń z kolejki
+menu-open-playlist = Otwórz playlistę
+menu-play-playlist = Odtwórz playlistę
+menu-rename-playlist = Zmień nazwę playlisty
+menu-delete-playlist = Usuń playlistę
+menu-make-playlist-public = Ustaw jako publiczną
+menu-make-playlist-private = Ustaw jako prywatną
+menu-open-album = Otwórz album
+menu-play-album = Odtwórz album
+menu-add-album-to-queue = Dodaj album do kolejki
+
+# playlist editor
+playlist-name-placeholder = Nazwa playlisty
+playlist-create-title = Utwórz playlistę
+playlist-rename-title = Zmień nazwę playlisty
+playlist-delete-title = Usuń playlistę
+playlist-delete-confirm = Usunąć „{ $name }”? Tej operacji nie można cofnąć.
 
 # queue panel
 queue-title = Kolejka

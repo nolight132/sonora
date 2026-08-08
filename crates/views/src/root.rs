@@ -106,6 +106,7 @@ impl Root {
                 ALBUM_COLUMNS,
                 true,
                 "album",
+                None,
                 window,
                 cx,
             )
@@ -119,6 +120,7 @@ impl Root {
                 LIBRARY_COLUMNS,
                 true,
                 "playlist",
+                Some(library_view.downgrade()),
                 window,
                 cx,
             )

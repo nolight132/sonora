@@ -4,7 +4,7 @@ use gpui::{App, ClipboardItem, Entity, Styled as _};
 use i18n::t;
 use router::{Destination, navigate};
 use spotify::Track;
-use state::{LibraryState, Sonora};
+use state::{Detail, LibraryState, Sonora};
 use ui::{Menu, MenuItem, Scrollbar, SubmenuState};
 
 #[derive(Clone)]
@@ -29,8 +29,38 @@ impl TrackMenu {
     }
 
     pub fn for_track(&self, track: &Track, cx: &App) -> Menu {
-        let playlists = match Sonora::global(cx).library.read(cx).state() {
-            LibraryState::Ready { playlists, .. } => playlists.clone(),
+        self.build(track, None, None, cx)
+    }
+
+    pub fn for_playlist_track(&self, track: &Track, detail: Entity<Detail>, cx: &App) -> Menu {
+        let playlist_id = detail.read(cx).id().map(str::to_owned);
+        let remove = match track.id.clone() {
+            Some(id) => MenuItem::new("remove-from-playlist", t!("menu-remove-from-playlist"))
+                .icon("icons/x.svg")
+                .on_click(move |_, _, cx| {
+                    detail.update(cx, |detail, cx| detail.remove_from_playlist(id.clone(), cx));
+                }),
+            None => MenuItem::new("remove-from-playlist", t!("menu-remove-from-playlist"))
+                .icon("icons/x.svg")
+                .disabled(),
+        };
+        self.build(track, Some(remove), playlist_id.as_deref(), cx)
+    }
+
+    fn build(
+        &self,
+        track: &Track,
+        library_action: Option<MenuItem>,
+        current_playlist: Option<&str>,
+        cx: &App,
+    ) -> Menu {
+        let library = Sonora::global(cx).library.clone();
+        let playlists = match library.read(cx).state() {
+            LibraryState::Ready { playlists, .. } => playlists
+                .iter()
+                .filter(|playlist| Some(playlist.id.as_str()) != current_playlist)
+                .cloned()
+                .collect(),
             _ => Vec::new(),
         };
         let playlist_menu = if playlists.is_empty() {
@@ -49,9 +79,24 @@ impl TrackMenu {
                 )
                 .item(MenuItem::separator("playlist-separator"))
                 .items(playlists.into_iter().map(|playlist| {
-                    MenuItem::new(format!("playlist-{}", playlist.id), playlist.name)
-                        .artwork(playlist.cover)
-                        .disabled()
+                    let item = MenuItem::new(format!("playlist-{}", playlist.id), playlist.name)
+                        .artwork(playlist.cover);
+                    match track.id.clone() {
+                        Some(track_id) => {
+                            let library = library.clone();
+                            let playlist_id = playlist.id;
+                            item.on_click(move |_, _, cx| {
+                                library.update(cx, |library, cx| {
+                                    library.add_to_playlist(
+                                        playlist_id.clone(),
+                                        track_id.clone(),
+                                        cx,
+                                    )
+                                });
+                            })
+                        }
+                        None => item.disabled(),
+                    }
                 }))
         };
         let copy = match track.id.clone() {
@@ -72,15 +117,14 @@ impl TrackMenu {
                 MenuItem::new("add-to-queue", t!("menu-add-to-queue"))
                     .icon("icons/list-end.svg")
                     .on_click(move |_, _, cx| {
-                        let queue = Sonora::global(cx).queue.clone();
-                        queue.update(cx, |queue, cx| queue.append(track.clone(), cx));
+                        let playback = Sonora::global(cx).playback.clone();
+                        playback.update(cx, |playback, cx| playback.enqueue(track.clone(), cx));
                     })
             }
             false => MenuItem::new("add-to-queue", t!("menu-add-to-queue"))
                 .icon("icons/list-end.svg")
                 .disabled(),
         };
-        let library = Sonora::global(cx).library.clone();
         let toggle_library = match track.id.as_deref() {
             Some(id) if !library.read(cx).pending(id) => {
                 let saved = library.read(cx).saved(id);
@@ -161,7 +205,7 @@ impl TrackMenu {
                     .icon("icons/list-plus.svg")
                     .submenu(playlist_menu, self.playlist_submenu.clone()),
             )
-            .item(toggle_library)
+            .item(library_action.unwrap_or(toggle_library))
             .item(queue)
             .item(
                 MenuItem::new("song-radio", t!("menu-song-radio"))

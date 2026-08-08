@@ -7,6 +7,9 @@ common-search = Пошук
 common-unknown = Невідомо
 common-not-provided = Не вказано
 common-not-available = Немає даних
+common-cancel = Скасувати
+common-save = Зберегти
+common-delete = Видалити
 number-group = { "\u00A0" }
 
 # navigation
@@ -42,6 +45,7 @@ menu-new-playlist = Новий плейлист
 menu-no-playlists = Немає плейлистів
 menu-add-to-library = Додати до медіатеки
 menu-remove-from-library = Вилучити з медіатеки
+menu-remove-from-playlist = Вилучити з плейлиста
 menu-add-to-queue = Додати до черги
 menu-song-radio = Радіо за треком
 menu-go-to-album = Перейти до альбому
@@ -49,6 +53,22 @@ menu-go-to-artist = Перейти до виконавця
 menu-view-details = Докладніше
 menu-copy-link = Копіювати посилання
 menu-remove-from-queue = Вилучити з черги
+menu-open-playlist = Відкрити плейлист
+menu-play-playlist = Відтворити плейлист
+menu-rename-playlist = Перейменувати плейлист
+menu-delete-playlist = Видалити плейлист
+menu-make-playlist-public = Зробити публічним
+menu-make-playlist-private = Зробити приватним
+menu-open-album = Відкрити альбом
+menu-play-album = Відтворити альбом
+menu-add-album-to-queue = Додати альбом до черги
+
+# playlist editor
+playlist-name-placeholder = Назва плейлиста
+playlist-create-title = Створити плейлист
+playlist-rename-title = Перейменувати плейлист
+playlist-delete-title = Видалити плейлист
+playlist-delete-confirm = Видалити «{ $name }»? Цю дію неможливо скасувати.
 
 # queue panel
 queue-title = Черга

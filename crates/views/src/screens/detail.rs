@@ -2,17 +2,20 @@
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Entity, Pixels, Render, ScrollHandle, SharedString, Window, px,
+    AnyElement, App, Context, Entity, MouseButton, Pixels, Point, Render, ScrollHandle,
+    SharedString, WeakEntity, Window, div, px,
 };
 
 use i18n::t;
 use spotify::Track;
 use state::{AppSettings, Collection, Detail, Playback, Sonora};
-use ui::{ActiveTheme as _, SortAxis};
+use ui::{ActiveTheme as _, Button, Popup, SortAxis};
 use ui::{
     ColumnSpec, FlagAxis, GridDelegate, GridEvent, GridState, RangeAxis, Scrollbar, Scroller,
     Table as _, Toggle, Unit, clock, grid,
 };
+
+use super::library::{LibraryView, playlist_context_menu};
 
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero, release_date_label};
 use crate::shared::tracks::{
@@ -45,6 +48,8 @@ pub(crate) struct DetailView {
     settings: Entity<AppSettings>,
     section: &'static str,
     sorted: Option<String>,
+    playlist_menu: Option<Point<Pixels>>,
+    library_view: Option<WeakEntity<LibraryView>>,
     toolbar: Entity<Toolbar>,
 }
 
@@ -55,6 +60,7 @@ impl DetailView {
         columns: &'static [ColumnSpec<TrackField>],
         show_liked: bool,
         section: &'static str,
+        library_view: Option<WeakEntity<LibraryView>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -80,6 +86,10 @@ impl DetailView {
             );
             let source = match show_liked {
                 true => source.with_liked(Sonora::global(cx).library.clone()),
+                false => source,
+            };
+            let source = match section == "playlist" {
+                true => source.with_playlist(detail.clone()),
                 false => source,
             };
             let source = source.table(cx.weak_entity());
@@ -150,6 +160,8 @@ impl DetailView {
             settings,
             section,
             sorted: None,
+            playlist_menu: None,
+            library_view,
             toolbar,
         }
     }
@@ -232,16 +244,56 @@ impl DetailView {
             strip = strip.text(clock(duration));
         }
 
-        PageHero::new("detail-hero", title)
-            .cover(header.and_then(|header| header.cover.clone()))
-            .eyebrow(eyebrow)
-            .meta(strip)
-            .actions(HeroPlayButton::new(
+        let queued_album = queued.clone();
+        let playback = self.playback.clone();
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(HeroPlayButton::new(
                 "play-detail",
                 label,
                 queued,
                 self.playback.clone(),
             ))
+            .when(kind == Collection::Album, |this| {
+                this.child(
+                    Button::new("enqueue-album")
+                        .outline()
+                        .icon("icons/list-end.svg")
+                        .label(t!("menu-add-album-to-queue"))
+                        .on_click(move |_, _, cx| {
+                            playback.update(cx, |playback, cx| {
+                                playback.enqueue_all(queued_album.clone(), cx)
+                            });
+                        }),
+                )
+            });
+
+        let view = cx.weak_entity();
+        div()
+            .id("detail-hero-menu")
+            .when(
+                kind == Collection::Playlist && self.library_view.is_some(),
+                |this| {
+                    this.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        view.update(cx, |this, cx| {
+                            this.playlist_menu = Some(event.position);
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+                },
+            )
+            .child(
+                PageHero::new("detail-hero", title)
+                    .cover(header.and_then(|header| header.cover.clone()))
+                    .eyebrow(eyebrow)
+                    .meta(strip)
+                    .actions(actions),
+            )
             .into_any_element()
     }
 }
@@ -257,17 +309,39 @@ impl Render for DetailView {
         self.table
             .update(cx, |table, _| table.set_viewport(viewport));
 
-        Scroller::new("detail-page", &self.scrollbar)
-            .px(inset)
-            .pt(inset)
-            .pb(inset)
-            .child(self.header(cx))
-            .child(
-                grid(&self.table)
-                    .rounded(theme.radius)
-                    .border_1()
-                    .border_color(theme.border),
+        let playlist_menu = self.playlist_menu.and_then(|position| {
+            let view = self.library_view.clone()?;
+            let id = self.detail.read(cx).id()?.to_owned();
+            let playlist = Sonora::global(cx).library.read(cx).playlist(&id)?.clone();
+            Some(
+                Popup::new(
+                    position,
+                    playlist_context_menu(playlist, self.playback.clone(), view, true),
+                )
+                .on_close(cx.listener(|this, _, _, cx| {
+                    this.playlist_menu = None;
+                    cx.notify();
+                })),
             )
+        });
+
+        div()
+            .relative()
+            .size_full()
+            .child(
+                Scroller::new("detail-page", &self.scrollbar)
+                    .px(inset)
+                    .pt(inset)
+                    .pb(inset)
+                    .child(self.header(cx))
+                    .child(
+                        grid(&self.table)
+                            .rounded(theme.radius)
+                            .border_1()
+                            .border_color(theme.border),
+                    ),
+            )
+            .when_some(playlist_menu, |this, menu| this.child(menu))
     }
 }
 

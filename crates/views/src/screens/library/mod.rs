@@ -5,17 +5,18 @@ mod playlists;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Pixels, Point, Render, ScrollHandle,
+    AnyElement, App, Context, Entity, FontWeight, MouseButton, Pixels, Point, Render, ScrollHandle,
     SharedString, Window, div, px,
 };
 use i18n::t;
+use input::Input;
 use router::{Destination, LibraryTab, navigate};
-use spotify::Track;
+use spotify::{Album, Playlist, Track};
 use state::{AppSettings, Library, LibraryState, Origin, Playback, PlaybackState, Sonora};
 use ui::{
-    ActiveTheme as _, Card, FlagAxis, GridDelegate, GridEvent, GridSource, GridState, Mode,
-    RangeAxis, Scrollbar, Scroller, Sort, SortAxis, Text, Toggle, Unit, Viewport, heading,
-    scrolled,
+    ActiveTheme as _, Button, Card, FlagAxis, GridDelegate, GridEvent, GridSource, GridState, Menu,
+    MenuItem, Mode, Popup, RangeAxis, Scrollbar, Scroller, Sort, SortAxis, Text, Toggle, Unit,
+    Viewport, heading, scrolled,
 };
 use workspace::{Chrome, Columned, Filterable, Searchable, Sortable, Toolbar, Tooled, Viewed};
 
@@ -25,8 +26,9 @@ use crate::shared::tracks::{
     playback_status,
 };
 use crate::shared::{cells, page};
-use albums::AlbumSource;
+use albums::{AlbumSource, context_menu as album_context_menu};
 use playlists::PlaylistSource;
+pub(crate) use playlists::context_menu as playlist_context_menu;
 
 impl From<LibraryTab> for Section {
     fn from(tab: LibraryTab) -> Self {
@@ -56,6 +58,20 @@ pub enum Section {
 }
 
 const PINNED: [&str; 3] = ["cover", "title", "name"];
+
+#[derive(Clone)]
+pub(super) enum Edit {
+    Create,
+    Rename(spotify::Playlist),
+    Delete(spotify::Playlist),
+}
+
+#[derive(Clone)]
+enum LibraryMenu {
+    Background,
+    Album(Album),
+    Playlist(Playlist),
+}
 
 impl Section {
     const ALL: [Self; 3] = [Self::Tracks, Self::Albums, Self::Playlists];
@@ -104,6 +120,10 @@ pub struct LibraryView {
     tracks: Entity<GridState<TrackSource>>,
     albums: Entity<GridState<AlbumSource>>,
     playlists: Entity<GridState<PlaylistSource>>,
+    playlist_name: Entity<Input>,
+    playlist_menu: Option<(LibraryMenu, Point<Pixels>)>,
+    edit: Option<Edit>,
+    view: gpui::WeakEntity<LibraryView>,
     toolbar: Entity<Toolbar>,
 }
 
@@ -162,8 +182,10 @@ impl LibraryView {
             delegate.set_sorting(sorting.flatten(), cx);
             GridState::new(delegate, cx).follow(scroll.clone())
         });
+        let playlist_name = cx.new(|cx| Input::new("playlist-name-placeholder", cx));
+        let view = cx.weak_entity();
         let playlists = cx.new(|cx| {
-            let source = PlaylistSource::new(library.clone(), playback.clone());
+            let source = PlaylistSource::new(library.clone(), playback.clone(), view.clone());
             let mut delegate = GridDelegate::new(source, width, cx);
             let (layout, sorting) = stored(Section::Playlists, cx);
             delegate.set_layout(layout, cx);
@@ -234,8 +256,28 @@ impl LibraryView {
             tracks,
             albums,
             playlists,
+            playlist_name,
+            playlist_menu: None,
+            edit: None,
+            view,
             toolbar,
         }
+    }
+
+    pub(super) fn edit(&mut self, edit: Edit, window: &mut Window, cx: &mut Context<Self>) {
+        let name = match &edit {
+            Edit::Rename(playlist) => playlist.name.clone(),
+            Edit::Create | Edit::Delete(_) => String::new(),
+        };
+        self.playlist_name
+            .update(cx, |input, cx| input.set_text(name, cx));
+        self.playlist_menu = None;
+        self.edit = Some(edit.clone());
+        if !matches!(edit, Edit::Delete(_)) {
+            self.playlist_name
+                .update(cx, |input, cx| input.focus(window, cx));
+        }
+        cx.notify();
     }
 
     pub fn section(&self) -> Section {
@@ -345,6 +387,103 @@ impl LibraryView {
         navigate(Destination::Playlist(playlist.id.into()), cx);
     }
 
+    fn apply_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(edit) = self.edit.take() else {
+            return;
+        };
+        let name = self.playlist_name.read(cx).text().trim().to_owned();
+        match edit {
+            Edit::Create if !name.is_empty() => self
+                .library
+                .update(cx, |library, cx| library.create_playlist(name, cx)),
+            Edit::Rename(playlist) if !name.is_empty() && name != playlist.name => {
+                self.library.update(cx, |library, cx| {
+                    library.rename_playlist(playlist.id, name, cx)
+                })
+            }
+            Edit::Delete(playlist) => self
+                .library
+                .update(cx, |library, cx| library.delete_playlist(playlist.id, cx)),
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    fn editor(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let edit = self.edit.clone()?;
+        let theme = *cx.theme();
+        let deleting = matches!(edit, Edit::Delete(_));
+        let title = match &edit {
+            Edit::Create => t!("playlist-create-title"),
+            Edit::Rename(_) => t!("playlist-rename-title"),
+            Edit::Delete(_) => t!("playlist-delete-title"),
+        };
+        let detail = match &edit {
+            Edit::Delete(playlist) => Some(t!("playlist-delete-confirm", name = &playlist.name)),
+            _ => None,
+        };
+
+        Some(
+            div()
+                .occlude()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(theme.background.opacity(0.8))
+                .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .w(theme.metrics.cover * 1.8)
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .p(theme.metrics.inset)
+                        .rounded(theme.radius)
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.popover)
+                        .child(heading(title, cx))
+                        .when_some(detail, |this, detail| {
+                            this.child(div().text_color(theme.muted_foreground).child(detail))
+                        })
+                        .when(!deleting, |this| this.child(self.playlist_name.clone()))
+                        .child(
+                            div()
+                                .flex()
+                                .justify_end()
+                                .gap_2()
+                                .child(
+                                    Button::new("cancel-playlist-edit")
+                                        .ghost()
+                                        .label(t!("common-cancel"))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.edit = None;
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    Button::new("apply-playlist-edit")
+                                        .when_else(
+                                            deleting,
+                                            |button| button.danger(),
+                                            |button| button.primary(),
+                                        )
+                                        .label(match deleting {
+                                            true => t!("common-delete"),
+                                            false => t!("common-save"),
+                                        })
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.apply_edit(cx)),
+                                        ),
+                                ),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn resize(&mut self, window: &Window, cx: &mut Context<Self>) {
         let width = cells::content_width(window, Pixels::ZERO, cx);
         if (width - self.width).abs() < px(0.5) {
@@ -364,6 +503,7 @@ impl LibraryView {
     }
 
     fn cards(&self, cx: &App) -> AnyElement {
+        let theme = *cx.theme();
         let tiles = match self.section {
             Section::Tracks => deck(&self.tracks, cx, |display, row| {
                 self.track_card(display, row, cx)
@@ -382,6 +522,9 @@ impl LibraryView {
             .gap_x_8()
             .gap_y_6()
             .px_8()
+            .when(self.section == Section::Playlists, |this| {
+                this.pt(theme.metrics.inset)
+            })
             .children(tiles)
             .into_any_element()
     }
@@ -434,8 +577,27 @@ impl LibraryView {
 
     fn album_card(&self, display: usize, row: usize, cx: &App) -> Option<AnyElement> {
         let album = self.albums.read(cx).delegate().source().at(row, cx)?;
+        let context = album.clone();
+        let view = self.view.clone();
 
-        Some(ReleaseCard::new(display, album, self.playback.clone()).into_any_element())
+        Some(
+            div()
+                .id(("library-album", display))
+                .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    let Some(view) = view.upgrade() else {
+                        return;
+                    };
+                    view.update(cx, |this, cx| {
+                        this.playlist_menu =
+                            Some((LibraryMenu::Album(context.clone()), event.position));
+                        cx.notify();
+                    });
+                })
+                .child(ReleaseCard::new(display, album, self.playback.clone()))
+                .into_any_element(),
+        )
     }
 
     fn playlist_card(&self, display: usize, row: usize, cx: &App) -> Option<AnyElement> {
@@ -446,7 +608,9 @@ impl LibraryView {
         let state = self.playback.read(cx).playing_from(&origin);
         let playing = matches!(state, Some(PlaybackState::Playing));
         let played = playlist.id.clone();
-        let opened = SharedString::from(playlist.id);
+        let opened = SharedString::from(playlist.id.clone());
+        let context = playlist.clone();
+        let view = self.view.clone();
 
         Some(
             Card::new(
@@ -467,6 +631,18 @@ impl LibraryView {
                 });
             })
             .press(move |_, _, cx| navigate(Destination::Playlist(opened.clone()), cx))
+            .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                window.prevent_default();
+                cx.stop_propagation();
+                let Some(view) = view.upgrade() else {
+                    return;
+                };
+                view.update(cx, |this, cx| {
+                    this.playlist_menu =
+                        Some((LibraryMenu::Playlist(context.clone()), event.position));
+                    cx.notify();
+                });
+            })
             .into_any_element(),
         )
     }
@@ -481,12 +657,52 @@ impl Render for LibraryView {
         let table = self.table(self.section);
         table.set_viewport(viewport, cx);
 
-        Scroller::new("library-page", &self.scrollbar).child(
-            match self.views[self.section.slot()] {
-                Mode::List => table.element(),
-                Mode::Cards => self.cards(cx),
-            },
-        )
+        let playlist_menu = self.playlist_menu.clone().map(|(target, position)| {
+            let menu = match target {
+                LibraryMenu::Album(album) => album_context_menu(album, self.playback.clone()),
+                LibraryMenu::Playlist(playlist) => {
+                    playlist_context_menu(playlist, self.playback.clone(), cx.weak_entity(), false)
+                }
+                LibraryMenu::Background => Menu::new("playlist-background-menu").item(
+                    MenuItem::new("create-playlist", t!("menu-new-playlist"))
+                        .icon("icons/plus.svg")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.edit(Edit::Create, window, cx)),
+                        ),
+                ),
+            };
+            Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
+                this.playlist_menu = None;
+                cx.notify();
+            }))
+        });
+        let view = cx.entity().downgrade();
+        let section = self.section;
+
+        div()
+            .relative()
+            .size_full()
+            .on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                if section != Section::Playlists {
+                    return;
+                }
+                window.prevent_default();
+                let Some(view) = view.upgrade() else {
+                    return;
+                };
+                view.update(cx, |this, cx| {
+                    this.playlist_menu = Some((LibraryMenu::Background, event.position));
+                    cx.notify();
+                });
+            })
+            .child(Scroller::new("library-page", &self.scrollbar).child(
+                match self.views[self.section.slot()] {
+                    Mode::List => table.element(),
+                    Mode::Cards => self.cards(cx),
+                },
+            ))
+            .when_some(playlist_menu, |this, menu| this.child(menu))
+            .children(self.editor(cx))
     }
 }
 
