@@ -84,6 +84,8 @@ pub fn playlists_from(rootlist: &RootList) -> Vec<models::Playlist> {
                 id: id.to_owned(),
                 name: name.to_owned(),
                 owner: owner.to_owned(),
+                owned: false,
+                public: item.attributes.public(),
                 cover: meta.and_then(|meta| playlist_cover(&meta.attributes)),
                 track_count: meta.map(|meta| meta.length()).unwrap_or_default().max(0) as u32,
             })

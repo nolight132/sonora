@@ -37,6 +37,7 @@ pub struct Detail {
     library: Entity<Library>,
     io: Io,
     task: Option<Task<()>>,
+    mutation: Option<Task<()>>,
 }
 
 impl Detail {
@@ -64,6 +65,7 @@ impl Detail {
             library,
             io,
             task: None,
+            mutation: None,
         }
     }
 
@@ -81,6 +83,42 @@ impl Detail {
 
     pub fn is_loading(&self) -> bool {
         self.loading
+    }
+
+    pub fn remove_from_playlist(&mut self, track_id: String, cx: &mut Context<Self>) {
+        if self.mutation.is_some() {
+            return;
+        }
+        let Some(playlist_id) = self.id.clone() else {
+            return;
+        };
+        let Some(client) = self.session.read(cx).client() else {
+            return;
+        };
+        let io = self.io.clone();
+        self.mutation = Some(cx.spawn(async move |this, cx| {
+            let removed_id = track_id.clone();
+            let removed = join(io.spawn(async move {
+                client
+                    .remove_track_from_playlist(&playlist_id, &removed_id)
+                    .await
+            }))
+            .await;
+            this.update(cx, |this, cx| {
+                this.mutation = None;
+                match removed {
+                    Ok(()) => {
+                        this.tracks
+                            .retain(|track| track.id.as_deref() != Some(&track_id));
+                        cx.notify();
+                    }
+                    Err(error) => {
+                        log::warn!("detail: cannot remove track from playlist: {error:#}")
+                    }
+                }
+            })
+            .ok();
+        }));
     }
 
     pub fn error(&self) -> Option<&str> {
@@ -148,6 +186,7 @@ impl Detail {
 
     fn clear(&mut self) {
         self.task = None;
+        self.mutation = None;
         self.id = None;
         self.header = None;
         self.tracks.clear();

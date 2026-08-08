@@ -48,6 +48,8 @@ pub struct Playlist {
     pub id: String,
     pub name: String,
     pub owner: String,
+    pub owned: bool,
+    pub public: bool,
     pub cover: Option<String>,
     pub track_count: u32,
 }

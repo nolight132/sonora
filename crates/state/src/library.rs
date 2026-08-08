@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -10,6 +12,8 @@ use spotify::{Album, Playlist, SpotifyApi, Track};
 use crate::{Io, Session, SessionEvent, join};
 
 const PAGE_LIMIT: u32 = 10000;
+
+type Mutation = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
 type Loaded = (
     anyhow::Result<Vec<Track>>,
@@ -56,6 +60,7 @@ pub struct Library {
     session: Entity<Session>,
     io: Io,
     task: Option<Task<()>>,
+    playlist_task: Option<Task<()>>,
     pending: HashMap<String, Task<()>>,
 }
 
@@ -70,6 +75,7 @@ impl Library {
             }
             SessionEvent::SignedOut => {
                 this.task = None;
+                this.playlist_task = None;
                 this.pending.clear();
                 this.state = LibraryState::Empty;
                 cx.notify();
@@ -82,6 +88,7 @@ impl Library {
             session,
             io,
             task: None,
+            playlist_task: None,
             pending: HashMap::new(),
         }
     }
@@ -160,6 +167,41 @@ impl Library {
         cx.notify();
     }
 
+    pub fn create_playlist(&mut self, name: String, cx: &mut Context<Self>) {
+        self.mutate_playlist("create playlist", cx, move |client| {
+            Box::pin(async move { client.create_playlist(&name).await })
+        });
+    }
+
+    pub fn rename_playlist(&mut self, id: String, name: String, cx: &mut Context<Self>) {
+        self.mutate_playlist("rename playlist", cx, move |client| {
+            Box::pin(async move { client.rename_playlist(&id, &name).await })
+        });
+    }
+
+    pub fn set_playlist_public(&mut self, id: String, public: bool, cx: &mut Context<Self>) {
+        self.mutate_playlist("change playlist visibility", cx, move |client| {
+            Box::pin(async move { client.set_playlist_public(&id, public).await })
+        });
+    }
+
+    pub fn add_to_playlist(
+        &mut self,
+        playlist_id: String,
+        track_id: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.mutate_playlist("add track to playlist", cx, move |client| {
+            Box::pin(async move { client.add_track_to_playlist(&playlist_id, &track_id).await })
+        });
+    }
+
+    pub fn delete_playlist(&mut self, id: String, cx: &mut Context<Self>) {
+        self.mutate_playlist("delete playlist", cx, move |client| {
+            Box::pin(async move { client.delete_playlist(&id).await })
+        });
+    }
+
     pub fn album(&self, id: &str) -> Option<&Album> {
         let LibraryState::Ready { albums, .. } = &self.state else {
             return None;
@@ -172,6 +214,35 @@ impl Library {
             return None;
         };
         playlists.iter().find(|playlist| playlist.id == id)
+    }
+
+    fn mutate_playlist<F>(&mut self, action: &'static str, cx: &mut Context<Self>, mutation: F)
+    where
+        F: FnOnce(Arc<dyn SpotifyApi>) -> Mutation + Send + 'static,
+    {
+        if self.playlist_task.is_some() {
+            return;
+        }
+        let Some(client) = self.session.read(cx).client() else {
+            return;
+        };
+        let io = self.io.clone();
+        self.playlist_task = Some(cx.spawn(async move |this, cx| {
+            let result = join(io.spawn({
+                let request = client.clone();
+                async move { mutation(request).await }
+            }))
+            .await;
+            this.update(cx, |this, cx| match result {
+                Ok(()) => this.load(client, cx),
+                Err(error) => {
+                    this.playlist_task = None;
+                    log::warn!("library: cannot {action}: {error:#}");
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
     }
 
     fn set_saved(&mut self, track: Track, saved: bool) {
@@ -194,6 +265,7 @@ impl Library {
     }
 
     fn load(&mut self, client: Arc<dyn SpotifyApi>, cx: &mut Context<Self>) {
+        self.playlist_task = None;
         self.pending.clear();
         self.state = LibraryState::Loading;
         cx.notify();

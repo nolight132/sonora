@@ -23,6 +23,12 @@ pub trait SpotifyApi: Send + Sync {
     async fn track(&self, track_id: &str) -> Result<Track>;
     async fn track_playcount(&self, track_id: &str) -> Result<Option<u64>>;
     async fn playlists(&self, limit: u32) -> Result<Vec<Playlist>>;
+    async fn create_playlist(&self, name: &str) -> Result<()>;
+    async fn rename_playlist(&self, playlist_id: &str, name: &str) -> Result<()>;
+    async fn delete_playlist(&self, playlist_id: &str) -> Result<()>;
+    async fn set_playlist_public(&self, playlist_id: &str, public: bool) -> Result<()>;
+    async fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()>;
+    async fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()>;
     async fn saved_albums(&self, limit: u32) -> Result<Vec<Album>>;
     async fn album(&self, album_id: &str) -> Result<AlbumDetail>;
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>>;
@@ -110,6 +116,30 @@ impl SpotifyApi for LibrespotClient {
         search::search(&self.session, query).await
     }
 
+    async fn create_playlist(&self, name: &str) -> Result<()> {
+        playlists::create(&self.session, name).await
+    }
+
+    async fn rename_playlist(&self, playlist_id: &str, name: &str) -> Result<()> {
+        playlists::rename(&self.session, playlist_id, name).await
+    }
+
+    async fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
+        playlists::delete(&self.session, playlist_id).await
+    }
+
+    async fn set_playlist_public(&self, playlist_id: &str, public: bool) -> Result<()> {
+        playlists::set_public(&self.session, playlist_id, public).await
+    }
+
+    async fn add_track_to_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()> {
+        playlists::add_track(&self.session, playlist_id, track_id).await
+    }
+
+    async fn remove_track_from_playlist(&self, playlist_id: &str, track_id: &str) -> Result<()> {
+        playlists::remove_track(&self.session, playlist_id, track_id).await
+    }
+
     async fn playlists(&self, limit: u32) -> Result<Vec<Playlist>> {
         let body = self
             .session
@@ -129,6 +159,7 @@ impl SpotifyApi for LibrespotClient {
         let names = profiles::display_names(&self.session, owners).await;
 
         for playlist in &mut playlists {
+            playlist.owned = playlist.owner == self.session.username();
             if let Some(name) = names.get(&playlist.owner) {
                 playlist.owner = name.clone();
             }
