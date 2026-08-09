@@ -9,6 +9,8 @@ use gpui::{Context, Task};
 use serde::{Deserialize, Serialize};
 use ui::{Layout, Look, Mode, Rounding, Sorting, ThemeKind, ThemeOverrides};
 
+use crate::Repeat;
+
 const SAVE_DELAY: Duration = Duration::from_millis(300);
 const DEFAULT_VOLUME: f32 = 0.7;
 const DEFAULT_SIDEBAR_WIDTH: f32 = 220.;
@@ -24,6 +26,9 @@ struct Values {
     sidebar_width: f32,
     sidebar_open: bool,
     sidebar_right_width: f32,
+    queue_open: bool,
+    shuffle: bool,
+    repeat: Repeat,
     language: String,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     hidden_columns: HashMap<String, Vec<String>>,
@@ -55,6 +60,9 @@ impl Default for Values {
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             sidebar_open: true,
             sidebar_right_width: DEFAULT_SIDEBAR_RIGHT_WIDTH,
+            queue_open: false,
+            shuffle: false,
+            repeat: Repeat::Off,
             language: i18n::AUTO.to_owned(),
             hidden_columns: HashMap::new(),
             tables: HashMap::new(),
@@ -138,6 +146,18 @@ impl AppSettings {
 
     pub fn sidebar_right_width(&self) -> f32 {
         self.values.sidebar_right_width
+    }
+
+    pub fn queue_open(&self) -> bool {
+        self.values.queue_open
+    }
+
+    pub fn shuffle(&self) -> bool {
+        self.values.shuffle
+    }
+
+    pub fn repeat(&self) -> Repeat {
+        self.values.repeat
     }
 
     pub fn language(&self) -> &str {
@@ -249,6 +269,21 @@ impl AppSettings {
 
     pub fn set_sidebar_right_width(&mut self, width: f32, cx: &mut Context<Self>) {
         self.values.sidebar_right_width = width;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_queue_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.values.queue_open = open;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_shuffle(&mut self, shuffle: bool, cx: &mut Context<Self>) {
+        self.values.shuffle = shuffle;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_repeat(&mut self, repeat: Repeat, cx: &mut Context<Self>) {
+        self.values.repeat = repeat;
         self.schedule_save(cx);
     }
 
