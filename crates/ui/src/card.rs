@@ -289,6 +289,7 @@ impl RenderOnce for Card {
         let theme = *cx.theme();
         let height = snapped(theme.metrics.list_row, window);
         let listed = art.is_none() && tile.is_none();
+        let has_trailing = trailing.is_some();
         let art = art
             .or(tile)
             .unwrap_or(theme.metrics.list_row - theme.metrics.pad * 2.);
@@ -376,7 +377,7 @@ impl RenderOnce for Card {
                     .flex_1()
                     .min_w_0()
                     .when(match_art_height, |this| this.h(art).justify_between())
-                    .when(listed, |this| this.min_w(TITLE))
+                    .when(listed && !has_trailing, |this| this.min_w(TITLE))
                     .when(tile.is_some(), |this| this.w_full().flex_none().gap_1())
                     .when_some(spacing, |this, spacing| this.gap(spacing))
                     .when_else(
@@ -442,7 +443,7 @@ impl RenderOnce for Card {
                         },
                     ),
             )
-            .children(trailing.map(|trailing| div().flex_shrink(1.).min_w_0().child(trailing)))
+            .children(trailing.map(|trailing| div().flex_none().child(trailing)))
             .children(action.map(|action| {
                 div()
                     .flex_none()

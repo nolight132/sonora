@@ -24,7 +24,8 @@ use crate::shared::menu::ItemMenu;
 const SEEK_MAX: f32 = 560.;
 const VOLUME_WIDTH: f32 = 110.;
 const VOLUME_TIGHT: f32 = 72.;
-const CLOCK_CHARS: f32 = 3.4;
+const CLOCK_SHORT: f32 = 3.4;
+const CLOCK_LONG: f32 = 5.4;
 const STEP: f32 = 0.004;
 
 pub(crate) struct PlayerBar {
@@ -449,7 +450,6 @@ impl Render for PlayerBar {
             false => ui::snapped(theme.metrics.player_bar, window),
         };
         let clock_text = theme.text(ui::Text::Tiny);
-        let clock_width = clock_text * CLOCK_CHARS;
 
         let show_track = span.fits(Room::Snug);
 
@@ -461,6 +461,11 @@ impl Render for PlayerBar {
             .track()
             .map(|track| track.duration)
             .unwrap_or(Duration::ZERO);
+        let clock_width = clock_text
+            * match total.as_secs() >= 3600 {
+                true => CLOCK_LONG,
+                false => CLOCK_SHORT,
+            };
 
         let seek_bubble = self
             .over_seek
@@ -472,6 +477,7 @@ impl Render for PlayerBar {
                 .child(clock(value))
                 .w(clock_width)
                 .flex_none()
+                .whitespace_nowrap()
                 .text_size(clock_text)
                 .text_color(muted)
                 .when_else(align_end, |this| this.text_right(), |this| this.text_left())
