@@ -108,6 +108,7 @@ impl Render for HomeView {
                         available,
                         page,
                     )
+                    .loading(self.home.read(cx).is_loading(cx))
                     .on_previous(cx.listener(|this, _, _, cx| {
                         this.quick_picks_page = this.quick_picks_page.saturating_sub(1);
                         this.context_menu = None;

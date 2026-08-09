@@ -1000,6 +1000,8 @@ pub trait Table {
     fn set_sorting(&self, sorting: Option<Sorting>, cx: &mut App);
     fn sortables(&self, cx: &App) -> Vec<SortAxis>;
     fn cycle_sort(&self, column: &str, cx: &mut App);
+    fn row_count(&self, cx: &App) -> usize;
+    fn filtering(&self, cx: &App) -> bool;
     fn toggles(&self, cx: &App) -> Vec<Toggle>;
     fn set_width(&self, width: Pixels, cx: &mut App);
     fn set_filter(&self, query: &str, cx: &mut App);
@@ -1047,6 +1049,15 @@ impl<S: GridSource> Table for Entity<GridState<S>> {
 
     fn toggles(&self, cx: &App) -> Vec<Toggle> {
         self.read(cx).delegate().toggles()
+    }
+
+    fn row_count(&self, cx: &App) -> usize {
+        self.read(cx).delegate().row_count()
+    }
+
+    fn filtering(&self, cx: &App) -> bool {
+        let delegate = self.read(cx).delegate();
+        !delegate.query().is_empty() || delegate.source().filtered(cx)
     }
 
     fn set_width(&self, width: Pixels, cx: &mut App) {

@@ -30,6 +30,10 @@ nav-forward = Forward
 nav-sidebar = Toggle sidebar
 library-liked-songs = Liked Songs
 library-play-liked-songs = Play
+library-no-songs = No liked songs yet
+library-no-albums = No saved albums yet
+library-no-playlists = No playlists yet
+library-no-matches = No matches
 
 # app menu
 app-refresh-library = Refresh Library
@@ -169,6 +173,7 @@ release-meta = { $year } • { $kind }
 # home page
 home-quick-picks = Quick picks
 home-quick-picks-eyebrow = Start from a song
+home-quick-picks-empty = Like a few songs and they will show up here
 
 # search page
 search-placeholder = What do you want to listen to?

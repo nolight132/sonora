@@ -30,6 +30,10 @@ nav-forward = Dalej
 nav-sidebar = Pokaż lub ukryj panel boczny
 library-liked-songs = Polubione utwory
 library-play-liked-songs = Odtwórz
+library-no-songs = Brak polubionych utworów
+library-no-albums = Brak zapisanych albumów
+library-no-playlists = Brak playlist
+library-no-matches = Brak wyników
 
 # app menu
 app-refresh-library = Odśwież bibliotekę
@@ -170,6 +174,7 @@ release-meta = { $year } • { $kind }
 # home page
 home-quick-picks = Szybki wybór
 home-quick-picks-eyebrow = Zacznij od utworu
+home-quick-picks-empty = Polub kilka utworów, a pojawią się tutaj
 
 # search page
 search-placeholder = Czego chcesz posłuchać?

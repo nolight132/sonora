@@ -14,7 +14,7 @@ use spotify::Track;
 use state::{AppSettings, Playback, Queue, Sonora};
 use ui::{
     ActiveTheme as _, Button, Card, MIN_CONTENT, Panel, Popup, Room, Scrollbar, Side, Text,
-    eyebrow, snapped,
+    eyebrow, snapped, vacant,
 };
 
 use crate::chrome::Chrome;
@@ -673,15 +673,7 @@ impl Render for SidebarRight {
                     .flex_1()
                     .min_h_0()
                     .when(empty, |this| {
-                        this.child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .justify_center()
-                                .text_color(theme.muted_foreground)
-                                .child(t!("queue-empty")),
-                        )
+                        this.child(vacant(t!("queue-empty"), cx).flex_1())
                     })
                     .when(!empty, |this| {
                         this.child(

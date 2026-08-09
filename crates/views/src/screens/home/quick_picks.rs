@@ -9,7 +9,7 @@ use gpui::{
 use i18n::t;
 use spotify::Track;
 use state::Playback;
-use ui::{ActiveTheme as _, Button, Card, Text, eyebrow, heading};
+use ui::{ActiveTheme as _, Button, Card, Text, eyebrow, heading, vacant};
 
 use crate::shared::cells;
 
@@ -37,6 +37,7 @@ pub(crate) struct QuickPicks {
     active: Option<String>,
     width: Pixels,
     page: usize,
+    loading: bool,
     on_previous: Option<ClickHandler>,
     on_next: Option<ClickHandler>,
     on_context_menu: Option<ContextHandler>,
@@ -56,10 +57,16 @@ impl QuickPicks {
             active,
             width,
             page,
+            loading: false,
             on_previous: None,
             on_next: None,
             on_context_menu: None,
         }
+    }
+
+    pub(crate) fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        self
     }
 
     pub(crate) fn on_previous(
@@ -98,6 +105,7 @@ impl RenderOnce for QuickPicks {
         let end = (start + page_size).min(self.tracks.len());
         let tracks = self.tracks;
         let empty = tracks.is_empty();
+        let barren = empty && !self.loading;
         let on_previous = self.on_previous;
         let on_next = self.on_next;
         let on_context_menu = self.on_context_menu;
@@ -161,37 +169,42 @@ impl RenderOnce for QuickPicks {
                             ),
                     ),
             )
-            .child(div().flex().gap_2().p_2().when_else(
-                empty,
-                |this| {
-                    this.children((0..columns).map(|column| {
-                        column_shell(column, theme.border).children(
-                            (0..ROWS_PER_COLUMN)
-                                .map(|row| skeleton(column * ROWS_PER_COLUMN + row)),
-                        )
-                    }))
-                },
-                |this| {
-                    this.children(tracks[start..end].chunks(ROWS_PER_COLUMN).enumerate().map(
-                        |(column, column_tracks)| {
+            .when(barren, |this| {
+                this.child(vacant(t!("home-quick-picks-empty"), cx))
+            })
+            .when(!barren, |this| {
+                this.child(div().flex().gap_2().p_2().when_else(
+                    empty,
+                    |this| {
+                        this.children((0..columns).map(|column| {
                             column_shell(column, theme.border).children(
-                                column_tracks.iter().enumerate().map(|(row, track)| {
-                                    let place = start + column * ROWS_PER_COLUMN + row;
-                                    pick(
-                                        track,
-                                        place,
-                                        tracks.clone(),
-                                        self.playback.clone(),
-                                        self.active.as_deref(),
-                                        on_context_menu.clone(),
-                                        cx,
-                                    )
-                                }),
+                                (0..ROWS_PER_COLUMN)
+                                    .map(|row| skeleton(column * ROWS_PER_COLUMN + row)),
                             )
-                        },
-                    ))
-                },
-            ))
+                        }))
+                    },
+                    |this| {
+                        this.children(tracks[start..end].chunks(ROWS_PER_COLUMN).enumerate().map(
+                            |(column, column_tracks)| {
+                                column_shell(column, theme.border).children(
+                                    column_tracks.iter().enumerate().map(|(row, track)| {
+                                        let place = start + column * ROWS_PER_COLUMN + row;
+                                        pick(
+                                            track,
+                                            place,
+                                            tracks.clone(),
+                                            self.playback.clone(),
+                                            self.active.as_deref(),
+                                            on_context_menu.clone(),
+                                            cx,
+                                        )
+                                    }),
+                                )
+                            },
+                        ))
+                    },
+                ))
+            })
     }
 }
 

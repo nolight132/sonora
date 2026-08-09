@@ -21,6 +21,21 @@ pub fn upper(label: impl Into<SharedString>) -> SharedString {
     label.into().to_uppercase().into()
 }
 
+pub fn vacant(label: impl Into<SharedString>, cx: &App) -> Div {
+    let theme = cx.theme();
+
+    div()
+        .flex()
+        .w_full()
+        .items_center()
+        .justify_center()
+        .p(theme.metrics.pad * 2.)
+        .text_align(gpui::TextAlign::Center)
+        .text_size(theme.text(Text::Body))
+        .text_color(theme.muted_foreground)
+        .child(label.into())
+}
+
 pub fn heading(label: impl Into<SharedString>, cx: &App) -> Div {
     div()
         .flex_none()
