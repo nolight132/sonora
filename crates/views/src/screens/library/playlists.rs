@@ -148,6 +148,7 @@ impl GridSource for PlaylistSource {
             self.at(row, cx)?,
             self.playback.clone(),
             false,
+            cx,
         ))
     }
 

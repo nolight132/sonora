@@ -12,7 +12,8 @@ use state::{AppSettings, Playback, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller};
 use ui::{
     Avatar, Button, InfoCard, Initials, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Menu, MenuItem,
-    Popover, Popovers, Rounding, Scrubber, ScrubberState, Skeleton, Switch, Text, Theme, ThemeKind,
+    Popover, Popovers, Rounding, Scrubber, ScrubberState, Separator, Skeleton, Switch, Text, Theme,
+    ThemeKind,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -142,7 +143,6 @@ impl SettingsView {
     }
 
     fn panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let border = cx.theme().border;
         let rows: Vec<AnyElement> = match self.tab {
             Tab::Appearance => vec![
                 self.theme_row(cx).into_any_element(),
@@ -180,7 +180,7 @@ impl SettingsView {
         let mut panel = div().flex().flex_col();
         for (index, row) in rows.into_iter().enumerate() {
             if index > 0 {
-                panel = panel.child(div().h(px(1.)).w_full().bg(border));
+                panel = panel.child(Separator::horizontal().w_full());
             }
             panel = panel.child(row);
         }
@@ -856,8 +856,6 @@ fn open_settings_file(path: &Path) -> std::io::Result<()> {
 
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let border = cx.theme().border;
-
         Scroller::new("settings", &self.scrollbar)
             .flex()
             .flex_col()
@@ -871,7 +869,7 @@ impl Render for SettingsView {
                     .max_w(px(640.))
                     .p_6()
                     .child(self.profile(cx))
-                    .child(div().h(px(1.)).w_full().bg(border))
+                    .child(Separator::horizontal().w_full())
                     .child(self.tabs(cx))
                     .child(self.panel(cx))
                     .when(self.tab == Tab::About, |this| {

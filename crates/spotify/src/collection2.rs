@@ -46,6 +46,14 @@ pub(crate) struct SavedItem {
 }
 
 pub async fn set_track_saved(session: &Session, track_id: &str, saved: bool) -> Result<()> {
+    set_saved(session, &format!("spotify:track:{track_id}"), saved).await
+}
+
+pub async fn set_album_saved(session: &Session, album_id: &str, saved: bool) -> Result<()> {
+    set_saved(session, &format!("spotify:album:{album_id}"), saved).await
+}
+
+async fn set_saved(session: &Session, uri: &str, saved: bool) -> Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("cannot read the current time")?;
@@ -58,7 +66,7 @@ pub async fn set_track_saved(session: &Session, track_id: &str, saved: bool) -> 
     };
 
     let mut item = Writer::default();
-    item.string(ITEM_URI, &format!("spotify:track:{track_id}"));
+    item.string(ITEM_URI, uri);
     item.int32(ITEM_ADDED_AT, added_at);
     item.bool(ITEM_REMOVED, !saved);
 

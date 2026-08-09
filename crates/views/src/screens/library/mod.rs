@@ -385,9 +385,9 @@ impl LibraryView {
     }
 
     fn liked_header(&self, cx: &Context<Self>) -> AnyElement {
-        let queued = self.liked(cx);
-        let duration: std::time::Duration = queued.iter().map(|track| track.duration).sum();
-        let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = queued.len()));
+        let liked = self.liked(cx);
+        let duration: std::time::Duration = liked.iter().map(|track| track.duration).sum();
+        let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = liked.len()));
         if !duration.is_zero() {
             strip = strip.text(clock(duration));
         }
@@ -400,7 +400,7 @@ impl LibraryView {
             .actions(HeroPlayButton::new(
                 "play-liked-songs",
                 t!("library-play-liked-songs"),
-                queued,
+                tracks::ordered(&self.tracks, cx),
                 self.playback.clone(),
             ))
             .into_any_element()
@@ -713,9 +713,9 @@ impl Render for LibraryView {
 
         let context_menu = self.context_menu.clone().map(|(target, position)| {
             let menu = match target {
-                LibraryMenu::Album(album) => album_menu(album.id, self.playback.clone(), false),
+                LibraryMenu::Album(album) => album_menu(album, self.playback.clone(), false, cx),
                 LibraryMenu::Playlist(playlist) => {
-                    playlist_menu(playlist, self.playback.clone(), false)
+                    playlist_menu(playlist, self.playback.clone(), false, cx)
                 }
                 LibraryMenu::Background => Menu::new("playlist-background-menu").item(
                     MenuItem::new("create-playlist", t!("menu-new-playlist"))
