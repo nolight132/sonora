@@ -105,5 +105,8 @@ const DURATION: ColumnSpec<TrackField> = ColumnSpec {
 pub(crate) const LIBRARY_COLUMNS: &[ColumnSpec<TrackField>] =
     &[INDEX, COVER, TITLE, ARTISTS, ALBUM, ADDED_AT, DURATION];
 
+pub(crate) const ARTIST_COLUMNS: &[ColumnSpec<TrackField>] =
+    &[INDEX, COVER, TITLE, ARTISTS, ALBUM, PLAYS, DURATION];
+
 pub(crate) const ALBUM_COLUMNS: &[ColumnSpec<TrackField>] =
     &[INDEX, TITLE, ARTISTS, PLAYS, DURATION];

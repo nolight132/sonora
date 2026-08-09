@@ -23,7 +23,7 @@ use ui::{Button, Cell, ColumnSpec, GridSource, GridState, Menu, ROW_GROUP, Scrol
 use crate::shared::cells;
 use crate::shared::hero::release_date_label;
 
-pub(crate) use columns::{ALBUM_COLUMNS, LIBRARY_COLUMNS, TrackField};
+pub(crate) use columns::{ALBUM_COLUMNS, ARTIST_COLUMNS, LIBRARY_COLUMNS, TrackField};
 pub(crate) use sieve::TrackSieve;
 pub(crate) use sort::initial;
 
