@@ -181,6 +181,20 @@ impl ItemMenu {
                 .icon("icons/list-end.svg")
                 .disabled(),
         };
+        let radio = match track.id.is_some() && track.playable {
+            true => {
+                let track = track.clone();
+                MenuItem::new("song-radio", t!("menu-song-radio"))
+                    .icon("icons/radio.svg")
+                    .on_click(move |_, _, cx| {
+                        let playback = Sonora::global(cx).playback.clone();
+                        playback.update(cx, |playback, cx| playback.play_radio(&track, cx));
+                    })
+            }
+            false => MenuItem::new("song-radio", t!("menu-song-radio"))
+                .icon("icons/radio.svg")
+                .disabled(),
+        };
         let toggle_library = match track.id.as_deref() {
             Some(id) if !library.read(cx).pending(id) => {
                 let saved = library.read(cx).saved(id);
@@ -279,11 +293,7 @@ impl ItemMenu {
             .item(library_action.unwrap_or(toggle_library))
             .item(next)
             .item(queue)
-            .item(
-                MenuItem::new("song-radio", t!("menu-song-radio"))
-                    .icon("icons/radio.svg")
-                    .disabled(),
-            )
+            .item(radio)
             .items(album)
             .items(artist)
             .item(details)

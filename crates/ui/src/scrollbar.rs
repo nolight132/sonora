@@ -20,6 +20,7 @@ const RESTING: f32 = 0.35;
 const ACTIVE: f32 = 0.55;
 
 type HoverGuard = Rc<dyn Fn(bool, AnyWindowHandle, &mut App)>;
+type ScrollGuard = Rc<dyn Fn(Pixels, &mut App) -> Option<Pixels>>;
 
 #[derive(Clone)]
 enum Target {
@@ -103,7 +104,9 @@ pub struct Scrollbar {
     hovered: bool,
     always_visible: bool,
     track_inset: Pixels,
+    maximum: Option<Pixels>,
     hover_guard: Option<HoverGuard>,
+    scroll_guard: Option<ScrollGuard>,
     linger: Option<Task<()>>,
 }
 
@@ -117,7 +120,9 @@ impl Scrollbar {
             hovered: false,
             always_visible: false,
             track_inset: Pixels::ZERO,
+            maximum: None,
             hover_guard: None,
+            scroll_guard: None,
             linger: None,
         }
     }
@@ -140,6 +145,24 @@ impl Scrollbar {
 
     pub fn scroll(&self) -> &ScrollHandle {
         &self.scroll
+    }
+
+    pub fn on_scroll(
+        mut self,
+        guard: impl Fn(Pixels, &mut App) -> Option<Pixels> + 'static,
+    ) -> Self {
+        self.scroll_guard = Some(Rc::new(guard));
+        self
+    }
+
+    pub fn set_max_offset(&mut self, maximum: Option<Pixels>, cx: &mut Context<Self>) -> bool {
+        let maximum = maximum.map(|maximum| maximum.max(Pixels::ZERO));
+        if self.maximum == maximum {
+            return false;
+        }
+        self.maximum = maximum;
+        cx.notify();
+        true
     }
 
     fn target(&self) -> Target {
@@ -168,14 +191,25 @@ impl Scrollbar {
             .ok();
         }));
     }
+
+    fn moved(&mut self, offset: Pixels, cx: &mut Context<Self>) {
+        if let Some(maximum) = self
+            .scroll_guard
+            .as_ref()
+            .and_then(|guard| guard(offset, cx))
+        {
+            self.maximum = Some(maximum.max(Pixels::ZERO));
+        }
+        self.wake(cx);
+    }
 }
 
 impl Render for Scrollbar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let target = self.target();
         let viewport = target.viewport();
-        let hidden = target.hidden();
-        let offset = target.offset();
+        let hidden = self.maximum.unwrap_or_else(|| target.hidden());
+        let offset = target.offset().min(hidden);
 
         if offset != self.seen {
             self.seen = offset;
@@ -224,8 +258,9 @@ impl Render for Scrollbar {
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                     let local = event.position.y - jump.top() - this.track_inset - thumb / 2.;
                     let fraction = (local / travel).clamp(0., 1.);
-                    jump.set_offset(hidden * fraction);
-                    this.wake(cx);
+                    let offset = hidden * fraction;
+                    jump.set_offset(offset);
+                    this.moved(offset, cx);
                 }),
             )
             .child(
@@ -283,7 +318,7 @@ impl Render for Scrollbar {
                             let scrolled = base + moved * (hidden / travel);
                             let clamped = scrolled.clamp(Pixels::ZERO, hidden);
                             drag.set_offset(clamped);
-                            this.wake(cx);
+                            this.moved(clamped, cx);
                         }),
                     ),
             )

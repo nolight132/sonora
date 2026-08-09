@@ -138,6 +138,7 @@ impl RenderOnce for QuickPicks {
                                     .small()
                                     .outline()
                                     .icon("icons/chevron-left.svg")
+                                    .tooltip("common-previous")
                                     .disabled(empty || page == 0)
                                     .when_some(on_previous, |button, handler| {
                                         button.on_click(move |event, window, cx| {
@@ -150,6 +151,7 @@ impl RenderOnce for QuickPicks {
                                     .small()
                                     .outline()
                                     .icon("icons/chevron-right.svg")
+                                    .tooltip("common-next")
                                     .disabled(empty || page + 1 >= pages)
                                     .when_some(on_next, |button, handler| {
                                         button.on_click(move |event, window, cx| {

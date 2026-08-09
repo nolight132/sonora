@@ -10,6 +10,11 @@ common-not-available = Немає даних
 common-cancel = Скасувати
 common-save = Зберегти
 common-delete = Видалити
+common-play = Відтворити
+common-more = Ще
+common-previous = Назад
+common-next = Вперед
+common-dismiss = Закрити
 number-group = { "\u00A0" }
 
 # navigation
@@ -20,6 +25,9 @@ nav-settings = Налаштування
 nav-songs = Треки
 nav-albums = Альбоми
 nav-playlists = Плейлисти
+nav-back = Назад
+nav-forward = Вперед
+nav-sidebar = Показати або сховати бічну панель
 library-liked-songs = Вподобані пісні
 library-play-liked-songs = Слухати
 
@@ -82,10 +90,21 @@ queue-up-next = Далі
 queue-reset = Скинути
 queue-clear = Очистити
 queue-empty = Черга порожня
+queue-similar = Схожі треки
+queue-radio = Автовідтворення схожих треків
 
 # player bar
 player-nothing-playing = Нічого не грає
 player-percent = { $value }%
+player-shuffle = Перемішати
+player-repeat = Повтор
+player-repeat-all = Повторювати все
+player-repeat-one = Повторювати трек
+player-mute = Вимкнути звук
+player-unmute = Увімкнути звук
+player-previous = Попередній трек
+player-next = Наступний трек
+player-fullscreen = Повноекранний режим
 
 # filters
 filter-library = Фільтр медіатеки
@@ -99,6 +118,11 @@ filter-playable = Лише доступні
 # view
 view-list = Список
 view-cards = Картки
+
+# toolbar
+tool-columns = Колонки
+tool-sort = Сортування
+tool-filters = Фільтри
 
 # login
 login-signed-out = Увійдіть, щоб завантажити медіатеку Spotify
@@ -238,6 +262,11 @@ settings-tab-playback = Відтворення
 settings-tab-account = Обліковий запис
 settings-theme = Тема
 settings-theme-detail = Кольорова палітра застосунку
+settings-transparent = Прозорий фон
+settings-transparent-detail = Показувати робочий стіл крізь застосунок
+settings-transparency = Прозорість
+settings-transparency-detail = Налаштуйте прозорість фону застосунку
+settings-transparency-value = { $percent }%
 settings-theme-config = Відкрити конфіг
 settings-adaptive = Адаптивна тема
 settings-adaptive-detail = Підфарбовувати палітру обкладинкою альбому, що грає

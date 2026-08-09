@@ -10,6 +10,11 @@ common-not-available = Нет данных
 common-cancel = Отмена
 common-save = Сохранить
 common-delete = Удалить
+common-play = Воспроизвести
+common-more = Ещё
+common-previous = Назад
+common-next = Вперёд
+common-dismiss = Закрыть
 number-group = { "\u00A0" }
 
 # navigation
@@ -20,6 +25,9 @@ nav-settings = Настройки
 nav-songs = Треки
 nav-albums = Альбомы
 nav-playlists = Плейлисты
+nav-back = Назад
+nav-forward = Вперёд
+nav-sidebar = Показать или скрыть боковую панель
 library-liked-songs = Любимые треки
 library-play-liked-songs = Слушать
 
@@ -82,10 +90,21 @@ queue-up-next = Далее
 queue-reset = Сбросить
 queue-clear = Очистить
 queue-empty = Очередь пуста
+queue-similar = Похожие треки
+queue-radio = Автовоспроизведение похожих треков
 
 # player bar
 player-nothing-playing = Ничего не играет
 player-percent = { $value }%
+player-shuffle = Перемешать
+player-repeat = Повтор
+player-repeat-all = Повторять всё
+player-repeat-one = Повторять трек
+player-mute = Выключить звук
+player-unmute = Включить звук
+player-previous = Предыдущий трек
+player-next = Следующий трек
+player-fullscreen = Полноэкранный режим
 
 # filters
 filter-library = Фильтр медиатеки
@@ -99,6 +118,11 @@ filter-playable = Только доступные
 # view
 view-list = Список
 view-cards = Карточки
+
+# toolbar
+tool-columns = Колонки
+tool-sort = Сортировка
+tool-filters = Фильтры
 
 # login
 login-signed-out = Войдите, чтобы загрузить медиатеку Spotify
@@ -238,6 +262,11 @@ settings-tab-playback = Воспроизведение
 settings-tab-account = Аккаунт
 settings-theme = Тема
 settings-theme-detail = Цветовая палитра приложения
+settings-transparent = Прозрачный фон
+settings-transparent-detail = Показывать рабочий стол сквозь приложение
+settings-transparency = Прозрачность
+settings-transparency-detail = Настройте прозрачность фона приложения
+settings-transparency-value = { $percent }%
 settings-theme-config = Открыть конфиг
 settings-adaptive = Адаптивная тема
 settings-adaptive-detail = Подкрашивать палитру обложкой играющего альбома

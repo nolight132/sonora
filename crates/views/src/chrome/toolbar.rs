@@ -142,6 +142,10 @@ impl Render for Toolbar {
                             true => "icons/x.svg",
                             false => "icons/search.svg",
                         })
+                        .tooltip(match self.open {
+                            true => "common-dismiss",
+                            false => "common-search",
+                        })
                         .small()
                         .ghost()
                         .on_click(cx.listener(|this, _, window, cx| this.toggle(window, cx))),

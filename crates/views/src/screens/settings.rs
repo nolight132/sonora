@@ -11,8 +11,8 @@ use i18n::{Language, t};
 use state::{AppSettings, Playback, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller};
 use ui::{
-    Avatar, Button, InfoCard, Initials, Look, MAX_FONT, MIN_FONT, Menu, MenuItem, Popover,
-    Popovers, Rounding, Skeleton, Text, Theme, ThemeKind,
+    Avatar, Button, InfoCard, Initials, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Menu, MenuItem,
+    Popover, Popovers, Rounding, Scrubber, ScrubberState, Skeleton, Text, Theme, ThemeKind,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -103,6 +103,7 @@ pub struct SettingsView {
     settings: Entity<AppSettings>,
     tab: Tab,
     scrollbar: Entity<Scrollbar>,
+    transparency: ScrubberState,
     popovers: Popovers,
 }
 
@@ -121,6 +122,7 @@ impl SettingsView {
             settings,
             tab: Tab::Appearance,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new())),
+            transparency: ScrubberState::new("transparency"),
             popovers: Popovers::default(),
         }
     }
@@ -144,13 +146,22 @@ impl SettingsView {
         let rows: Vec<AnyElement> = match self.tab {
             Tab::Appearance => vec![
                 self.theme_row(cx).into_any_element(),
+                self.transparent_row(cx).into_any_element(),
+            ]
+            .into_iter()
+            .chain(
+                self.settings
+                    .read(cx)
+                    .transparent()
+                    .then(|| self.transparency_row(cx).into_any_element()),
+            )
+            .chain([
                 self.adaptive_row(cx).into_any_element(),
                 self.corners_row(cx).into_any_element(),
                 self.language_row(cx).into_any_element(),
                 self.font_row(cx).into_any_element(),
                 self.auto_hide_row(cx).into_any_element(),
-            ]
-            .into_iter()
+            ])
             .chain(decorated().then(|| self.decorations_row(cx).into_any_element()))
             .chain(decorated().then(|| self.side_row(cx).into_any_element()))
             .collect(),
@@ -504,6 +515,91 @@ impl SettingsView {
             muted,
             small,
             actions.into_any_element(),
+        )
+    }
+
+    fn transparent_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let look = self.look(cx);
+        let overrides = self.settings.read(cx).theme_overrides().clone();
+
+        self.row(
+            t!("settings-transparent"),
+            t!("settings-transparent-detail"),
+            muted,
+            small,
+            Button::new("transparent-background")
+                .label(match look.transparent {
+                    true => t!("common-on"),
+                    false => t!("common-off"),
+                })
+                .small()
+                .outline()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let transparent = !look.transparent;
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_transparent(transparent, cx));
+                    Theme::fade(
+                        Look {
+                            transparent,
+                            ..look
+                        },
+                        &overrides,
+                        cx,
+                    );
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn transparency_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let look = self.look(cx);
+        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let value = look.transparency / MAX_TRANSPARENCY;
+        let percent = (look.transparency * 100.).round() as i64;
+
+        let control = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                div().w(theme.metrics.cover).child(
+                    Scrubber::new(&self.transparency, value)
+                        .colors(theme.progress_bar, theme.muted, theme.foreground)
+                        .on_move(cx.listener(move |this, fraction: &f32, _, cx| {
+                            let transparency = *fraction * MAX_TRANSPARENCY;
+                            this.settings.update(cx, |settings, cx| {
+                                settings.set_transparency(transparency, cx)
+                            });
+                            Theme::set(
+                                Look {
+                                    transparency,
+                                    ..look
+                                },
+                                &overrides,
+                                cx,
+                            );
+                        })),
+                ),
+            )
+            .child(
+                div()
+                    .w(theme.metrics.control)
+                    .text_right()
+                    .child(t!("settings-transparency-value", percent = percent)),
+            );
+
+        self.row(
+            t!("settings-transparency"),
+            t!("settings-transparency-detail"),
+            muted,
+            small,
+            control.into_any_element(),
         )
     }
 
