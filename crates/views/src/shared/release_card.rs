@@ -12,6 +12,7 @@ pub(crate) struct ReleaseCard {
     index: usize,
     album: Album,
     playback: Entity<Playback>,
+    load_art: bool,
     width: Option<Pixels>,
 }
 
@@ -21,8 +22,14 @@ impl ReleaseCard {
             index,
             album,
             playback,
+            load_art: true,
             width: None,
         }
+    }
+
+    pub(crate) fn load_art(mut self, load: bool) -> Self {
+        self.load_art = load;
+        self
     }
 
     pub(crate) fn width(mut self, width: Pixels) -> Self {
@@ -37,11 +44,15 @@ impl RenderOnce for ReleaseCard {
             index,
             album,
             playback,
+            load_art,
             width,
         } = self;
 
         let theme = *cx.theme();
-        let cover = album.cover_large.clone().or_else(|| album.cover.clone());
+        let cover = match load_art {
+            true => album.cover_large.clone().or_else(|| album.cover.clone()),
+            false => None,
+        };
         let artists = crate::shared::cells::artist_links(
             SharedString::from(format!("release-artist-{index}")),
             album.artist_refs.clone(),
