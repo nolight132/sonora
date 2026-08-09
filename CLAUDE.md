@@ -15,6 +15,8 @@ Linux-only today. Cargo workspace, edition 2024, resolver 3.
 4. **Network work runs on the tokio runtime (`Io`), never on GPUI's executor.**
    See [Async: two runtimes](#async-two-runtimes).
 5. **New assets must be registered in `crates/sonora/src/assets.rs`** or they silently fail to load.
+6. **Never push changes without the user's explicit confirmation.** Committing does not imply permission
+   to run `git push`; ask immediately before every push.
 
 ## Crate layout
 
