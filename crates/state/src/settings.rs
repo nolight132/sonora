@@ -46,6 +46,8 @@ struct Appearance {
     adaptive_theme: bool,
     rounding: String,
     font_size: f32,
+    transparent: bool,
+    transparency: f32,
     window_controls: bool,
     controls_on_left: bool,
     theme_overrides: ThemeOverrides,
@@ -92,6 +94,8 @@ impl Default for Appearance {
             adaptive_theme: false,
             rounding: "subtle".to_owned(),
             font_size: DEFAULT_FONT_SIZE,
+            transparent: false,
+            transparency: 0.15,
             window_controls: true,
             controls_on_left: false,
             theme_overrides: ThemeOverrides::default(),
@@ -185,6 +189,8 @@ impl AppSettings {
             kind: ThemeKind::from_id(self.theme()),
             rounding: Rounding::from_id(self.rounding()),
             font: self.font_size(),
+            transparent: self.transparent(),
+            transparency: self.transparency(),
             tint: None,
         }
     }
@@ -202,6 +208,17 @@ impl AppSettings {
             .appearance
             .font_size
             .clamp(ui::MIN_FONT, ui::MAX_FONT)
+    }
+
+    pub fn transparent(&self) -> bool {
+        self.values.appearance.transparent
+    }
+
+    pub fn transparency(&self) -> f32 {
+        self.values
+            .appearance
+            .transparency
+            .clamp(0., ui::MAX_TRANSPARENCY)
     }
 
     pub fn theme_overrides(&self) -> &ThemeOverrides {
@@ -326,6 +343,16 @@ impl AppSettings {
 
     pub fn set_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
         self.values.appearance.font_size = size.clamp(ui::MIN_FONT, ui::MAX_FONT);
+        self.schedule_save(cx);
+    }
+
+    pub fn set_transparent(&mut self, transparent: bool, cx: &mut Context<Self>) {
+        self.values.appearance.transparent = transparent;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_transparency(&mut self, transparency: f32, cx: &mut Context<Self>) {
+        self.values.appearance.transparency = transparency.clamp(0., ui::MAX_TRANSPARENCY);
         self.schedule_save(cx);
     }
 

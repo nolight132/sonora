@@ -514,7 +514,7 @@ impl Render for PlayerBar {
             .flex_none()
             .px_5()
             .when(stacked, |this| this.py_2())
-            .bg(theme.secondary)
+            .when(!theme.transparent, |this| this.bg(theme.secondary))
             .border_t_1()
             .border_color(theme.border)
             .on_mouse_move(cx.listener(Self::hover));
