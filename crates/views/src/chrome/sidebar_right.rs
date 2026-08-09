@@ -223,6 +223,7 @@ impl SidebarRight {
         });
         let settings = Sonora::global(cx).settings.clone();
         let width = px(settings.read(cx).sidebar_right_width()).clamp(MIN_WIDTH, MAX_WIDTH);
+        let open = settings.read(cx).queue_open();
 
         Self {
             queue,
@@ -235,8 +236,8 @@ impl SidebarRight {
             settings,
             width,
             past_len: 0,
-            anchor: false,
-            open: false,
+            anchor: open,
+            open,
         }
     }
 
@@ -266,6 +267,7 @@ impl SidebarRight {
     pub(crate) fn toggle(&mut self, cx: &mut Context<Self>) {
         self.open = !self.open;
         self.anchor = self.open;
+        self.remember(cx);
         cx.notify();
     }
 
@@ -273,7 +275,14 @@ impl SidebarRight {
         self.track_menu.reset();
         self.context_menu = None;
         self.open = false;
+        self.remember(cx);
         cx.notify();
+    }
+
+    fn remember(&self, cx: &mut Context<Self>) {
+        let open = self.open;
+        self.settings
+            .update(cx, |settings, cx| settings.set_queue_open(open, cx));
     }
 
     fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
