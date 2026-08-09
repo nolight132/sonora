@@ -31,7 +31,11 @@ impl ItemMenu {
     }
 
     pub fn for_track(&self, track: &Track, cx: &App) -> Menu {
-        self.build(track, None, None, cx)
+        self.build(track, None, None, None, cx)
+    }
+
+    pub fn for_album_track(&self, track: &Track, album_id: &str, cx: &App) -> Menu {
+        self.build(track, None, None, Some(album_id), cx)
     }
 
     pub fn for_playlist_track(&self, track: &Track, detail: Entity<Detail>, cx: &App) -> Menu {
@@ -46,7 +50,7 @@ impl ItemMenu {
                 .icon("icons/x.svg")
                 .disabled(),
         };
-        self.build(track, Some(remove), playlist_id.as_deref(), cx)
+        self.build(track, Some(remove), playlist_id.as_deref(), None, cx)
     }
 
     fn build(
@@ -54,6 +58,7 @@ impl ItemMenu {
         track: &Track,
         library_action: Option<MenuItem>,
         current_playlist: Option<&str>,
+        current_album: Option<&str>,
         cx: &App,
     ) -> Menu {
         let library = Sonora::global(cx).library.clone();
@@ -168,12 +173,17 @@ impl ItemMenu {
         };
 
         let album = match track.album_id.clone() {
-            Some(id) => MenuItem::new("go-to-album", t!("menu-go-to-album"))
-                .icon("icons/disc-3.svg")
-                .on_click(move |_, _, cx| navigate(Destination::Album(id.clone().into()), cx)),
-            None => MenuItem::new("go-to-album", t!("menu-go-to-album"))
-                .icon("icons/disc-3.svg")
-                .disabled(),
+            Some(id) if Some(id.as_str()) == current_album => None,
+            Some(id) => Some(
+                MenuItem::new("go-to-album", t!("menu-go-to-album"))
+                    .icon("icons/disc-3.svg")
+                    .on_click(move |_, _, cx| navigate(Destination::Album(id.clone().into()), cx)),
+            ),
+            None => Some(
+                MenuItem::new("go-to-album", t!("menu-go-to-album"))
+                    .icon("icons/disc-3.svg")
+                    .disabled(),
+            ),
         };
 
         let artists = track
@@ -234,7 +244,7 @@ impl ItemMenu {
                     .icon("icons/radio.svg")
                     .disabled(),
             )
-            .item(album)
+            .items(album)
             .item(artist)
             .item(details)
             .item(copy)

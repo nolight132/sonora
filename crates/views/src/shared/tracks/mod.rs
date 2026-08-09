@@ -55,6 +55,7 @@ pub(crate) struct TrackSource {
     provider: Rc<dyn Tracks>,
     playback: Entity<Playback>,
     is_liked: Option<Entity<Library>>,
+    album: Option<Entity<Detail>>,
     playlist: Option<Entity<Detail>>,
     menu: ItemMenu,
     table: Option<WeakEntity<GridState<TrackSource>>>,
@@ -73,6 +74,7 @@ impl TrackSource {
             provider: Rc::new(provider),
             playback,
             is_liked: None,
+            album: None,
             playlist: None,
             menu: ItemMenu::new(playlist_scrollbar),
             table: None,
@@ -118,6 +120,11 @@ impl TrackSource {
 
     pub(crate) fn with_playlist(mut self, detail: Entity<Detail>) -> Self {
         self.playlist = Some(detail);
+        self
+    }
+
+    pub(crate) fn with_album(mut self, detail: Entity<Detail>) -> Self {
+        self.album = Some(detail);
         self
     }
 
@@ -337,9 +344,13 @@ impl GridSource for TrackSource {
 
     fn context_menu(&self, row: usize, cx: &App) -> Option<Menu> {
         let track = self.provider.tracks(cx).get(row)?;
-        Some(match &self.playlist {
-            Some(detail) => self.menu.for_playlist_track(track, detail.clone(), cx),
-            None => self.menu.for_track(track, cx),
+        Some(match (&self.album, &self.playlist) {
+            (Some(detail), _) => {
+                let id = detail.read(cx).id()?;
+                self.menu.for_album_track(track, id, cx)
+            }
+            (_, Some(detail)) => self.menu.for_playlist_track(track, detail.clone(), cx),
+            (None, None) => self.menu.for_track(track, cx),
         })
     }
 

@@ -93,6 +93,10 @@ impl DetailView {
                 true => source.with_playlist(detail.clone()),
                 false => source,
             };
+            let source = match section == "album" {
+                true => source.with_album(detail.clone()),
+                false => source,
+            };
             let source = source.table(cx.weak_entity());
             let mut delegate = GridDelegate::new(source, width, cx);
             delegate.set_layout(saved, cx);
