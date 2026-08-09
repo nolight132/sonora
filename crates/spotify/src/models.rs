@@ -107,6 +107,13 @@ pub struct PlaylistDetail {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtistProfile {
+    pub name: String,
+    pub cover_large: Option<String>,
+    pub biography: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Artist {
     pub name: String,
     pub cover_large: Option<String>,

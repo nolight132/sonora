@@ -10,7 +10,7 @@ use librespot_protocol::metadata::image::Size as ImageSize;
 use librespot_protocol::metadata::{Artist as ArtistMessage, Image};
 use protobuf::{EnumOrUnknown, Message as _};
 
-use crate::models::{Album, Artist, Track};
+use crate::models::{Album, Artist, ArtistProfile, Track};
 use crate::{albums, collection, pathfinder, wire};
 
 const ARTIST_PREFIX: &str = "spotify:artist:";
@@ -19,15 +19,49 @@ const TRACK_PREFIX: &str = "spotify:track:";
 const LARGE_PORTRAIT: i32 = 300;
 
 pub async fn artist(session: &Session, artist_id: &str) -> Result<Artist> {
-    let uri = SpotifyUri::from_uri(&format!("{ARTIST_PREFIX}{artist_id}"))
-        .context("invalid artist ID")?;
-    let body = session
-        .spclient()
-        .get_artist_metadata(&uri)
-        .await
-        .context("cannot read artist metadata")?;
-    let message =
-        ArtistMessage::parse_from_bytes(&body).context("cannot decode artist metadata protobuf")?;
+    match pathfinder::artist(session, artist_id).await {
+        Ok(overview) => return overview_artist(session, overview).await,
+        Err(error) => log::warn!("artists: cannot load Pathfinder artist: {error:#}"),
+    }
+
+    legacy_artist(session, artist_id).await
+}
+
+pub async fn profile(session: &Session, artist_id: &str) -> Result<ArtistProfile> {
+    Ok(profile_from(&metadata(session, artist_id).await?))
+}
+
+async fn overview_artist(session: &Session, overview: pathfinder::Overview) -> Result<Artist> {
+    let track_uris: Vec<_> = overview.tracks.iter().map(|(uri, _)| uri.clone()).collect();
+    let mut known_tracks = match track_uris.is_empty() {
+        true => HashMap::new(),
+        false => collection::metadata(session, &track_uris).await?,
+    };
+    let top_tracks = overview
+        .tracks
+        .into_iter()
+        .filter_map(|(uri, playcount)| {
+            let mut track = known_tracks.remove(&uri)?;
+            track.playcount = playcount;
+            Some(track)
+        })
+        .collect();
+
+    Ok(Artist {
+        name: overview.name,
+        cover_large: overview.cover_large,
+        biography: overview
+            .biography
+            .map(|biography| plain_text(&biography))
+            .filter(|biography| !biography.is_empty()),
+        monthly_listeners: overview.monthly_listeners,
+        top_tracks,
+        albums: overview.albums,
+    })
+}
+
+async fn legacy_artist(session: &Session, artist_id: &str) -> Result<Artist> {
+    let message = metadata(session, artist_id).await?;
 
     let track_uris = top_track_uris(&message, &session.country());
     let release_uris = release_uris(&message);
@@ -43,33 +77,30 @@ pub async fn artist(session: &Session, artist_id: &str) -> Result<Artist> {
             false => albums::metadata(session, &release_uris).await,
         }
     };
-    let overview = pathfinder::artist(session, artist_id);
-    let (tracks, releases, overview) = tokio::join!(tracks, releases, overview);
+    let (tracks, releases) = tokio::join!(tracks, releases);
     let mut known_tracks = tracks?;
     let mut known_albums = releases?;
-    let overview = overview.unwrap_or_else(|error| {
-        log::warn!("artists: cannot load overview: {error:#}");
-        pathfinder::Overview::default()
-    });
     let top_tracks = track_uris
         .iter()
-        .filter_map(|uri| {
-            let mut track = known_tracks.remove(uri)?;
-            track.playcount = overview.playcounts.get(uri).copied();
-            Some(track)
-        })
+        .filter_map(|uri| known_tracks.remove(uri))
         .collect();
     let releases = release_uris
         .iter()
         .filter_map(|uri| known_albums.remove(uri))
         .collect();
 
-    Ok(artist_from(
-        &message,
-        top_tracks,
-        releases,
-        overview.monthly_listeners,
-    ))
+    Ok(artist_from(&message, top_tracks, releases))
+}
+
+async fn metadata(session: &Session, artist_id: &str) -> Result<ArtistMessage> {
+    let uri = SpotifyUri::from_uri(&format!("{ARTIST_PREFIX}{artist_id}"))
+        .context("invalid artist ID")?;
+    let body = session
+        .spclient()
+        .get_artist_metadata(&uri)
+        .await
+        .context("cannot read artist metadata")?;
+    ArtistMessage::parse_from_bytes(&body).context("cannot decode artist metadata protobuf")
 }
 
 pub async fn images(session: &Session, ids: &[String]) -> Result<HashMap<String, String>> {
@@ -119,15 +150,23 @@ pub async fn images(session: &Session, ids: &[String]) -> Result<HashMap<String,
     Ok(found)
 }
 
-fn artist_from(
-    artist: &ArtistMessage,
-    top_tracks: Vec<Track>,
-    albums: Vec<Album>,
-    monthly_listeners: Option<u64>,
-) -> Artist {
-    let portraits = portraits(artist);
+fn artist_from(artist: &ArtistMessage, top_tracks: Vec<Track>, albums: Vec<Album>) -> Artist {
+    let profile = profile_from(artist);
 
     Artist {
+        name: profile.name,
+        cover_large: profile.cover_large,
+        biography: profile.biography,
+        monthly_listeners: None,
+        top_tracks,
+        albums,
+    }
+}
+
+fn profile_from(artist: &ArtistMessage) -> ArtistProfile {
+    let portraits = portraits(artist);
+
+    ArtistProfile {
         name: artist.name().to_owned(),
         cover_large: portraits
             .iter()
@@ -142,9 +181,6 @@ fn artist_from(
                 .map(plain_text)
                 .filter(|text| !text.is_empty())
         }),
-        monthly_listeners,
-        top_tracks,
-        albums,
     }
 }
 
