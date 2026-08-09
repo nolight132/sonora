@@ -826,6 +826,7 @@ impl<S: GridSource> GridState<S> {
                                 this.delegate.source.context_menu_will_open(row, cx);
                                 window.focus(&this.focus.clone(), cx);
                                 window.prevent_default();
+                                cx.stop_propagation();
                                 this.context_menu = Some((row, event.position));
                                 cx.notify();
                             }
