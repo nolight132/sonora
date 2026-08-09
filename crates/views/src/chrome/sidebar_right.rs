@@ -13,7 +13,8 @@ use i18n::t;
 use spotify::Track;
 use state::{AppSettings, Playback, Queue, Sonora};
 use ui::{
-    ActiveTheme as _, Button, Card, Panel, Popup, Room, Scrollbar, Side, Text, eyebrow, snapped,
+    ActiveTheme as _, Button, Card, MIN_CONTENT, Panel, Popup, Room, Scrollbar, Side, Text,
+    eyebrow, snapped,
 };
 
 use crate::chrome::Chrome;
@@ -243,17 +244,14 @@ impl SidebarRight {
         self.open
     }
 
-    pub(crate) fn covers_content(&self, window: &Window, cx: &App) -> bool {
-        let content = window.viewport_size().width - Chrome::sidebar_left(cx);
-        self.open && fills_content(content)
+    pub(crate) fn covers_content(&self, window: &Window) -> bool {
+        self.open && fills_content(window.viewport_size().width)
     }
 
-    pub(crate) fn occupied_width(&self, window: &Window, cx: &App) -> Pixels {
+    pub(crate) fn occupied_width(&self, window: &Window) -> Pixels {
         match self.open {
             false => Pixels::ZERO,
-            true if self.covers_content(window, cx) => {
-                window.viewport_size().width - Chrome::sidebar_left(cx)
-            }
+            true if self.covers_content(window) => window.viewport_size().width,
             true => self.width,
         }
     }
@@ -570,8 +568,7 @@ impl Render for SidebarRight {
         }
 
         let theme = *cx.theme();
-        let content_width = window.viewport_size().width - Chrome::sidebar_left(cx);
-        let fullscreen = fills_content(content_width);
+        let fullscreen = fills_content(window.viewport_size().width);
         let queue = self.queue.read(cx);
         let sections = Sections {
             past: queue.past().len(),
@@ -593,6 +590,7 @@ impl Render for SidebarRight {
 
         Panel::new("sidebar-right", Side::Right, self.width)
             .limits(MIN_WIDTH, MAX_WIDTH)
+            .reach(super::cap(MIN_WIDTH, MAX_WIDTH, MIN_CONTENT, window))
             .fill(fullscreen)
             .on_resize(cx.listener(|this, width: &Pixels, _, cx| {
                 this.width = *width;
