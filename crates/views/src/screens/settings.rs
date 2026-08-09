@@ -75,7 +75,7 @@ pub struct SettingsView {
     settings: Entity<AppSettings>,
     tab: SettingsTab,
     scrollbar: Entity<Scrollbar>,
-    transparency: ScrubberState,
+    opacity: ScrubberState,
     popovers: Popovers,
 }
 
@@ -94,7 +94,7 @@ impl SettingsView {
             settings,
             tab: SettingsTab::General,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new())),
-            transparency: ScrubberState::new("transparency"),
+            opacity: ScrubberState::new("opacity"),
             popovers: Popovers::default(),
         }
     }
@@ -113,7 +113,7 @@ impl SettingsView {
             ],
             SettingsTab::Appearance => vec![
                 self.theme_row(cx).into_any_element(),
-                self.transparent_row(cx).into_any_element(),
+                self.opacity_row(cx).into_any_element(),
             ]
             .into_iter()
             .chain([
@@ -468,7 +468,7 @@ impl SettingsView {
         )
     }
 
-    fn transparent_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn opacity_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
@@ -478,8 +478,8 @@ impl SettingsView {
             true => look.transparency,
             false => 0.,
         };
-        let value = transparency / MAX_TRANSPARENCY;
-        let percent = (transparency * 100.).round() as i64;
+        let value = 1. - transparency / MAX_TRANSPARENCY;
+        let percent = ((1. - transparency) * 100.).round() as i64;
 
         let control = div()
             .flex()
@@ -487,10 +487,10 @@ impl SettingsView {
             .gap_2()
             .child(
                 div().w(theme.metrics.cover).child(
-                    Scrubber::new(&self.transparency, value)
+                    Scrubber::new(&self.opacity, value)
                         .colors(theme.progress_bar, theme.muted, theme.foreground)
                         .on_move(cx.listener(move |this, fraction: &f32, _, cx| {
-                            let transparency = *fraction * MAX_TRANSPARENCY;
+                            let transparency = (1. - *fraction) * MAX_TRANSPARENCY;
                             let transparent = transparency > 0.;
                             this.settings.update(cx, |settings, cx| {
                                 settings.set_transparent(transparent, cx);
@@ -510,14 +510,16 @@ impl SettingsView {
             )
             .child(
                 div()
-                    .w(theme.metrics.control)
+                    .flex_none()
+                    .w(theme.metrics.control * 1.5)
+                    .whitespace_nowrap()
                     .text_right()
-                    .child(t!("settings-transparency-value", percent = percent)),
+                    .child(t!("settings-opacity-value", percent = percent)),
             );
 
         self.row(
-            t!("settings-transparent"),
-            t!("settings-transparent-detail"),
+            t!("settings-opacity"),
+            t!("settings-opacity-detail"),
             muted,
             small,
             control.into_any_element(),

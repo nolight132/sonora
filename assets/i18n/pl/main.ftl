@@ -263,10 +263,9 @@ settings-tab-appearance = Wygląd
 settings-tab-playback = Odtwarzanie
 settings-theme = Motyw
 settings-theme-detail = Paleta kolorów aplikacji
-settings-transparent = Przezroczyste tło
-settings-transparent-detail = Pokazuj pulpit przez aplikację
-
-settings-transparency-value = { $percent }%
+settings-opacity = Krycie
+settings-opacity-detail = Dostosuj krycie tła aplikacji
+settings-opacity-value = { $percent }%
 settings-theme-config = Otwórz konfigurację
 settings-adaptive = Motyw adaptacyjny
 settings-adaptive-detail = Zabarw paletę okładką odtwarzanego albumu

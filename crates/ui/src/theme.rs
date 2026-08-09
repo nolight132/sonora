@@ -10,7 +10,7 @@ use crate::metrics::{Metrics, Rounding, Text};
 
 pub const MIN_FONT: f32 = 10.;
 pub const MAX_FONT: f32 = 24.;
-pub const MAX_TRANSPARENCY: f32 = 0.9;
+pub const MAX_TRANSPARENCY: f32 = 1.;
 
 const FADE: Duration = Duration::from_millis(320);
 const FRAME: Duration = Duration::from_millis(8);

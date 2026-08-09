@@ -260,10 +260,9 @@ settings-tab-appearance = Appearance
 settings-tab-playback = Playback
 settings-theme = Theme
 settings-theme-detail = Choose the application colour palette
-settings-transparent = Transparent background
-settings-transparent-detail = Show the desktop through the application
-
-settings-transparency-value = { $percent }%
+settings-opacity = Opacity
+settings-opacity-detail = Adjust the app background opacity
+settings-opacity-value = { $percent }%
 settings-theme-config = Open config
 settings-adaptive = Adaptive theme
 settings-adaptive-detail = Tint the palette with the artwork of the playing album

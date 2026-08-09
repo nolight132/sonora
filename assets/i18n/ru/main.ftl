@@ -263,10 +263,9 @@ settings-tab-appearance = Внешний вид
 settings-tab-playback = Воспроизведение
 settings-theme = Тема
 settings-theme-detail = Цветовая палитра приложения
-settings-transparent = Прозрачный фон
-settings-transparent-detail = Показывать рабочий стол сквозь приложение
-
-settings-transparency-value = { $percent }%
+settings-opacity = Непрозрачность
+settings-opacity-detail = Настройте непрозрачность фона приложения
+settings-opacity-value = { $percent }%
 settings-theme-config = Открыть конфиг
 settings-adaptive = Адаптивная тема
 settings-adaptive-detail = Подкрашивать палитру обложкой играющего альбома

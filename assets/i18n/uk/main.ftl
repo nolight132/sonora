@@ -263,10 +263,9 @@ settings-tab-appearance = Вигляд
 settings-tab-playback = Відтворення
 settings-theme = Тема
 settings-theme-detail = Кольорова палітра застосунку
-settings-transparent = Прозорий фон
-settings-transparent-detail = Показувати робочий стіл крізь застосунок
-
-settings-transparency-value = { $percent }%
+settings-opacity = Непрозорість
+settings-opacity-detail = Налаштуйте непрозорість фону застосунку
+settings-opacity-value = { $percent }%
 settings-theme-config = Відкрити конфіг
 settings-adaptive = Адаптивна тема
 settings-adaptive-detail = Підфарбовувати палітру обкладинкою альбому, що грає
