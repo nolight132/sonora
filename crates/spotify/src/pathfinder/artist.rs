@@ -9,8 +9,6 @@ use serde::Deserialize;
 use super::query;
 use crate::models::{Album, ArtistRef, ReleaseType};
 
-const HASH: &str = "ae0e2958a4ab645b35ca19ac04d0495ae12d9c5d7b7286217674801a9aab281a";
-
 pub(crate) struct Overview {
     pub(crate) name: String,
     pub(crate) cover_large: Option<String>,
@@ -159,7 +157,7 @@ struct Stats {
 
 pub(crate) async fn artist(session: &Session, artist_id: &str) -> Result<Overview> {
     let variables = variables(artist_id);
-    let data = query::<Data>(session, "queryArtistOverview", HASH, variables).await?;
+    let data = query::<Data>(session, "queryArtistOverview", variables).await?;
     overview(data, artist_id)
 }
 

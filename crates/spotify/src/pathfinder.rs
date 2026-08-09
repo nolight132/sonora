@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 
 mod album;
 mod artist;
+mod hashes;
 mod plays;
 
 pub(crate) use album::album;
@@ -34,8 +35,30 @@ struct GraphqlError {
 async fn query<T: DeserializeOwned>(
     session: &Session,
     operation: &str,
-    hash: &str,
     variables: serde_json::Value,
+) -> Result<T> {
+    let hash = hashes::resolve(session, operation).await?;
+    let rejected = match send(session, operation, &hash.value, &variables).await {
+        Ok(data) => return Ok(data),
+        Err(error) => error,
+    };
+    if hash.tried {
+        return Err(rejected);
+    }
+    let Some(latest) = hashes::refresh(session, operation).await else {
+        return Err(rejected);
+    };
+    if latest == hash.value {
+        return Err(rejected);
+    }
+    send(session, operation, &latest, &variables).await
+}
+
+async fn send<T: DeserializeOwned>(
+    session: &Session,
+    operation: &str,
+    hash: &str,
+    variables: &serde_json::Value,
 ) -> Result<T> {
     let body = serde_json::to_vec(&serde_json::json!({
         "operationName": operation,
