@@ -118,6 +118,20 @@ impl ItemMenu {
                 .icon("icons/link.svg")
                 .disabled(),
         };
+        let next = match track.playable {
+            true => {
+                let track = track.clone();
+                MenuItem::new("play-next", t!("menu-play-next"))
+                    .icon("icons/list-plus.svg")
+                    .on_click(move |_, _, cx| {
+                        let playback = Sonora::global(cx).playback.clone();
+                        playback.update(cx, |playback, cx| playback.play_next(track.clone(), cx));
+                    })
+            }
+            false => MenuItem::new("play-next", t!("menu-play-next"))
+                .icon("icons/list-plus.svg")
+                .disabled(),
+        };
         let queue = match track.playable {
             true => {
                 let track = track.clone();
@@ -213,6 +227,7 @@ impl ItemMenu {
                     .submenu(playlist_menu, self.playlist_submenu.clone()),
             )
             .item(library_action.unwrap_or(toggle_library))
+            .item(next)
             .item(queue)
             .item(
                 MenuItem::new("song-radio", t!("menu-song-radio"))
@@ -229,8 +244,10 @@ impl ItemMenu {
 pub(crate) fn album_menu(album_id: String, playback: Entity<Playback>, opened_here: bool) -> Menu {
     let opened = album_id.clone();
     let played = album_id.clone();
+    let next = album_id.clone();
     let queued = album_id;
     let playing = playback.clone();
+    let nexting = playback.clone();
     let queueing = playback;
 
     let menu = match opened_here {
@@ -250,6 +267,13 @@ pub(crate) fn album_menu(album_id: String, playback: Entity<Playback>, opened_he
             }),
     )
     .item(
+        MenuItem::new("play-album-next", t!("menu-play-next"))
+            .icon("icons/list-plus.svg")
+            .on_click(move |_, _, cx| {
+                nexting.update(cx, |playback, cx| playback.play_album_next(&next, cx));
+            }),
+    )
+    .item(
         MenuItem::new("enqueue-album", t!("menu-add-album-to-queue"))
             .icon("icons/list-end.svg")
             .on_click(move |_, _, cx| {
@@ -265,8 +289,10 @@ pub(crate) fn playlist_menu(
 ) -> Menu {
     let opened = playlist.id.clone();
     let played = playlist.id.clone();
+    let next = playlist.id.clone();
     let queued = playlist.id.clone();
     let playing = playback.clone();
+    let nexting = playback.clone();
     let queueing = playback;
     let id = playlist.id.clone();
     let public = playlist.public;
@@ -333,6 +359,13 @@ pub(crate) fn playlist_menu(
             .icon("icons/play.svg")
             .on_click(move |_, _, cx| {
                 playing.update(cx, |playback, cx| playback.play_playlist(&played, cx));
+            }),
+    )
+    .item(
+        MenuItem::new("play-playlist-next", t!("menu-play-next"))
+            .icon("icons/list-plus.svg")
+            .on_click(move |_, _, cx| {
+                nexting.update(cx, |playback, cx| playback.play_playlist_next(&next, cx));
             }),
     )
     .item(

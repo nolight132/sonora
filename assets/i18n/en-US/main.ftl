@@ -46,6 +46,7 @@ menu-no-playlists = No playlists
 menu-add-to-library = Add to Library
 menu-remove-from-library = Remove from Library
 menu-remove-from-playlist = Remove from playlist
+menu-play-next = Play next
 menu-add-to-queue = Add to queue
 menu-song-radio = Go to song radio
 menu-go-to-album = Go to album
