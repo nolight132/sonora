@@ -9,6 +9,12 @@ use ui::{Menu, MenuItem, Scrollbar, SubmenuState};
 
 use crate::shared::playlist_editor::{Edit, PlaylistEditor};
 
+#[derive(Clone, Copy, Default)]
+pub(crate) struct TrackColumns {
+    pub album: bool,
+    pub artists: bool,
+}
+
 #[derive(Clone)]
 pub(crate) struct ItemMenu {
     playlist_submenu: SubmenuState,
@@ -31,10 +37,30 @@ impl ItemMenu {
     }
 
     pub fn for_track(&self, track: &Track, cx: &App) -> Menu {
-        self.build(track, None, None, cx)
+        self.build(track, None, None, None, TrackColumns::default(), cx)
     }
 
-    pub fn for_playlist_track(&self, track: &Track, detail: Entity<Detail>, cx: &App) -> Menu {
+    pub fn for_table_track(&self, track: &Track, columns: TrackColumns, cx: &App) -> Menu {
+        self.build(track, None, None, None, columns, cx)
+    }
+
+    pub fn for_album_track(
+        &self,
+        track: &Track,
+        album_id: &str,
+        columns: TrackColumns,
+        cx: &App,
+    ) -> Menu {
+        self.build(track, None, None, Some(album_id), columns, cx)
+    }
+
+    pub fn for_playlist_track(
+        &self,
+        track: &Track,
+        detail: Entity<Detail>,
+        columns: TrackColumns,
+        cx: &App,
+    ) -> Menu {
         let playlist_id = detail.read(cx).id().map(str::to_owned);
         let remove = match track.id.clone() {
             Some(id) => MenuItem::new("remove-from-playlist", t!("menu-remove-from-playlist"))
@@ -46,7 +72,14 @@ impl ItemMenu {
                 .icon("icons/x.svg")
                 .disabled(),
         };
-        self.build(track, Some(remove), playlist_id.as_deref(), cx)
+        self.build(
+            track,
+            Some(remove),
+            playlist_id.as_deref(),
+            None,
+            columns,
+            cx,
+        )
     }
 
     fn build(
@@ -54,6 +87,8 @@ impl ItemMenu {
         track: &Track,
         library_action: Option<MenuItem>,
         current_playlist: Option<&str>,
+        current_album: Option<&str>,
+        columns: TrackColumns,
         cx: &App,
     ) -> Menu {
         let library = Sonora::global(cx).library.clone();
@@ -167,13 +202,19 @@ impl ItemMenu {
                 .disabled(),
         };
 
-        let album = match track.album_id.clone() {
-            Some(id) => MenuItem::new("go-to-album", t!("menu-go-to-album"))
-                .icon("icons/disc-3.svg")
-                .on_click(move |_, _, cx| navigate(Destination::Album(id.clone().into()), cx)),
-            None => MenuItem::new("go-to-album", t!("menu-go-to-album"))
-                .icon("icons/disc-3.svg")
-                .disabled(),
+        let album = match (columns.album, track.album_id.clone()) {
+            (true, _) => None,
+            (false, Some(id)) if Some(id.as_str()) == current_album => None,
+            (false, Some(id)) => Some(
+                MenuItem::new("go-to-album", t!("menu-go-to-album"))
+                    .icon("icons/disc-3.svg")
+                    .on_click(move |_, _, cx| navigate(Destination::Album(id.clone().into()), cx)),
+            ),
+            (false, None) => Some(
+                MenuItem::new("go-to-album", t!("menu-go-to-album"))
+                    .icon("icons/disc-3.svg")
+                    .disabled(),
+            ),
         };
 
         let artists = track
@@ -184,17 +225,24 @@ impl ItemMenu {
                 Some((artist.name.clone(), id))
             })
             .collect::<Vec<_>>();
-        let artist = match artists.len() {
-            0 => MenuItem::new("go-to-artist", t!("menu-go-to-artist"))
-                .icon("icons/user.svg")
-                .disabled(),
-            1 => {
-                let id = artists[0].1.clone();
+        let artist = match (columns.artists, artists.len()) {
+            (true, _) => None,
+            (false, 0) => Some(
                 MenuItem::new("go-to-artist", t!("menu-go-to-artist"))
                     .icon("icons/user.svg")
-                    .on_click(move |_, _, cx| navigate(Destination::Artist(id.clone().into()), cx))
+                    .disabled(),
+            ),
+            (false, 1) => {
+                let id = artists[0].1.clone();
+                Some(
+                    MenuItem::new("go-to-artist", t!("menu-go-to-artist"))
+                        .icon("icons/user.svg")
+                        .on_click(move |_, _, cx| {
+                            navigate(Destination::Artist(id.clone().into()), cx)
+                        }),
+                )
             }
-            _ => {
+            (false, _) => {
                 let artist_menu = Menu::new("artist-submenu")
                     .w(gpui::px(220.))
                     .max_h(gpui::px(360.))
@@ -203,9 +251,11 @@ impl ItemMenu {
                             navigate(Destination::Artist(id.clone().into()), cx)
                         })
                     }));
-                MenuItem::new("go-to-artist", t!("menu-go-to-artist"))
-                    .icon("icons/user.svg")
-                    .submenu(artist_menu, self.artist_submenu.clone())
+                Some(
+                    MenuItem::new("go-to-artist", t!("menu-go-to-artist"))
+                        .icon("icons/user.svg")
+                        .submenu(artist_menu, self.artist_submenu.clone()),
+                )
             }
         };
 
@@ -234,8 +284,8 @@ impl ItemMenu {
                     .icon("icons/radio.svg")
                     .disabled(),
             )
-            .item(album)
-            .item(artist)
+            .items(album)
+            .items(artist)
             .item(details)
             .item(copy)
     }
@@ -245,7 +295,8 @@ pub(crate) fn album_menu(album_id: String, playback: Entity<Playback>, opened_he
     let opened = album_id.clone();
     let played = album_id.clone();
     let next = album_id.clone();
-    let queued = album_id;
+    let queued = album_id.clone();
+    let copied = album_id;
     let playing = playback.clone();
     let nexting = playback.clone();
     let queueing = playback;
@@ -280,6 +331,27 @@ pub(crate) fn album_menu(album_id: String, playback: Entity<Playback>, opened_he
                 queueing.update(cx, |playback, cx| playback.enqueue_album(&queued, cx));
             }),
     )
+    .item(
+        MenuItem::new("copy-album-link", t!("menu-copy-link"))
+            .icon("icons/link.svg")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://open.spotify.com/album/{copied}"
+                )));
+            }),
+    )
+}
+
+pub(crate) fn artist_menu(artist_id: String) -> Menu {
+    Menu::new("artist-context-menu").item(
+        MenuItem::new("copy-artist-link", t!("menu-copy-link"))
+            .icon("icons/link.svg")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://open.spotify.com/artist/{artist_id}"
+                )));
+            }),
+    )
 }
 
 pub(crate) fn playlist_menu(
@@ -291,6 +363,7 @@ pub(crate) fn playlist_menu(
     let played = playlist.id.clone();
     let next = playlist.id.clone();
     let queued = playlist.id.clone();
+    let copied = playlist.id.clone();
     let playing = playback.clone();
     let nexting = playback.clone();
     let queueing = playback;
@@ -373,6 +446,15 @@ pub(crate) fn playlist_menu(
             .icon("icons/list-end.svg")
             .on_click(move |_, _, cx| {
                 queueing.update(cx, |playback, cx| playback.enqueue_playlist(&queued, cx));
+            }),
+    )
+    .item(
+        MenuItem::new("copy-playlist-link", t!("menu-copy-link"))
+            .icon("icons/link.svg")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://open.spotify.com/playlist/{copied}"
+                )));
             }),
     )
     .items(actions)

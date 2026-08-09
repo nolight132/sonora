@@ -8,7 +8,9 @@ use librespot_core::Session;
 use librespot_protocol::playlist4_external::SelectedListContent as RootList;
 use protobuf::Message as _;
 
-use crate::models::{Album, AlbumDetail, Artist, Playlist, PlaylistDetail, Track, UserProfile};
+use crate::models::{
+    Album, AlbumDetail, Artist, ArtistProfile, Playlist, PlaylistDetail, Track, UserProfile,
+};
 use crate::{
     albums, artists, collection, collection2, pathfinder, playlists, profiles, radio, search, wire,
 };
@@ -17,6 +19,7 @@ use crate::{
 pub trait SpotifyApi: Send + Sync {
     async fn profile(&self) -> Result<UserProfile>;
     async fn artist(&self, artist_id: &str) -> Result<Artist>;
+    async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile>;
     async fn artist_images(&self, ids: Vec<String>) -> Result<HashMap<String, String>>;
     async fn saved_tracks(&self, limit: u32) -> Result<Vec<Track>>;
     async fn set_track_saved(&self, track_id: &str, saved: bool) -> Result<()>;
@@ -72,6 +75,10 @@ impl SpotifyApi for LibrespotClient {
 
     async fn artist(&self, artist_id: &str) -> Result<Artist> {
         artists::artist(&self.session, artist_id).await
+    }
+
+    async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
+        artists::profile(&self.session, artist_id).await
     }
 
     async fn artist_images(&self, ids: Vec<String>) -> Result<HashMap<String, String>> {

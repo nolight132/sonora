@@ -158,6 +158,7 @@ pub(crate) struct PageHero {
     id: ElementId,
     title: SharedString,
     cover: Option<String>,
+    fallback: Option<SharedString>,
     eyebrow: Option<SharedString>,
     meta: Option<AnyElement>,
     actions: Option<AnyElement>,
@@ -172,6 +173,7 @@ impl PageHero {
             id: id.into(),
             title: title.into(),
             cover: None,
+            fallback: None,
             eyebrow: None,
             meta: None,
             actions: None,
@@ -191,6 +193,11 @@ impl PageHero {
 
     pub(crate) fn cover(mut self, cover: Option<String>) -> Self {
         self.cover = cover;
+        self
+    }
+
+    pub(crate) fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
+        self.fallback = Some(icon.into());
         self
     }
 
@@ -229,6 +236,7 @@ impl RenderOnce for PageHero {
             .art_radius(theme.radius * 1.5)
             .match_art_height()
             .cover(self.cover)
+            .when_some(self.fallback, Card::fallback)
             .size(Text::Display)
             .weight(FontWeight::BOLD)
             .explicit_gap(theme.metrics.pad * 1.5)

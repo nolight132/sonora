@@ -13,7 +13,7 @@ use ui::ActiveTheme as _;
 
 use crate::chrome::{TitleBar, TitleBarEvent, TitleBarOptions, Toolbar, Tooled};
 use crate::screens::search::SearchView;
-use crate::shared::tracks::{ALBUM_COLUMNS, LIBRARY_COLUMNS};
+use crate::shared::tracks::{ALBUM_COLUMNS, ARTIST_COLUMNS, LIBRARY_COLUMNS};
 use crate::shells::Shell;
 use crate::shells::workspace::Workspace;
 use crate::{
@@ -185,8 +185,8 @@ impl Root {
         }
 
         let detail = cx.new(|cx| ArtistDetail::new(self.session.clone(), self.io.clone(), cx));
-        let view = cx
-            .new(|cx| ArtistView::new(detail.clone(), self.playback.clone(), LIBRARY_COLUMNS, cx));
+        let view =
+            cx.new(|cx| ArtistView::new(detail.clone(), self.playback.clone(), ARTIST_COLUMNS, cx));
         self.screens.artist = Some(view.clone());
         self.screens.artist_detail = Some(detail.clone());
         (view, detail)

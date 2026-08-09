@@ -236,7 +236,8 @@ fn track_from(track: PathTrack, album: &Album) -> Result<Track> {
                 format!("invalid album play count for track {id}")
             })
         })
-        .transpose()?;
+        .transpose()?
+        .and_then(super::reported);
 
     Ok(Track {
         id: track.uri.strip_prefix(TRACK_PREFIX).map(str::to_owned),

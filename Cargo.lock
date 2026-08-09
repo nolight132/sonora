@@ -7569,7 +7569,6 @@ version = "0.4.1"
 dependencies = [
  "gpui",
  "i18n",
- "image",
  "serde",
 ]
 

@@ -20,6 +20,8 @@ nav-settings = Ustawienia
 nav-songs = Utwory
 nav-albums = Albumy
 nav-playlists = Playlisty
+library-liked-songs = Polubione utwory
+library-play-liked-songs = Odtwórz
 
 # app menu
 app-refresh-library = Odśwież bibliotekę
@@ -118,6 +120,11 @@ play-loading = Ładowanie…
 
 # artist page
 artist-eyebrow = Wykonawca
+artist-monthly-listeners = { $count ->
+    [one] { $value } słuchacz miesięcznie
+    [few] { $value } słuchaczy miesięcznie
+   *[other] { $value } słuchaczy miesięcznie
+}
 artist-play = Odtwórz
 artist-popular = Popularne
 artist-releases = Wydawnictwa

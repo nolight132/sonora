@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, ScrollHandle, SharedString,
-    Window, div, px,
+    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, ScrollHandle,
+    SharedString, Window, div, px,
 };
 
 use crate::chrome::Chrome;
+use crate::shared::cells;
 use i18n::t;
 use spotify::{ReleaseType, Track};
 use state::{AppSettings, ArtistDetail, Playback, Sonora};
 use ui::ActiveTheme as _;
 use ui::{
-    Button, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Scrollbar, Scroller, Text,
-    grid,
+    Button, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Popover, Popovers,
+    Scrollbar, Scroller, Text, grid,
 };
 
-use crate::shared::hero::{HeroPlayButton, PageHero};
+use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
+use crate::shared::menu::artist_menu;
 use crate::shared::page;
 use crate::shared::release_card::ReleaseCard;
 use crate::shared::tracks::{PlaybackStatus, TrackField, TrackSource, Tracks, playback_status};
@@ -79,9 +84,17 @@ pub(crate) struct ArtistView {
     playback_status: PlaybackStatus,
     release_filter: ReleaseFilter,
     width: Pixels,
+    release_layout: Rc<RefCell<ReleaseLayout>>,
     scrollbar: Entity<Scrollbar>,
     table: Entity<GridState<TrackSource>>,
     settings: Entity<AppSettings>,
+    popovers: Popovers,
+}
+
+#[derive(Default)]
+struct ReleaseLayout {
+    bounds: Vec<Bounds<Pixels>>,
+    offset: Pixels,
 }
 
 const SECTION: &str = "artist";
@@ -121,6 +134,7 @@ impl ArtistView {
 
         cx.observe(&detail, |this, _, cx| {
             this.release_filter = ReleaseFilter::All;
+            this.release_layout.borrow_mut().bounds.clear();
             this.scrollbar
                 .read(cx)
                 .scroll()
@@ -162,9 +176,11 @@ impl ArtistView {
             playback_status: current_playback,
             release_filter: ReleaseFilter::All,
             width,
+            release_layout: Rc::new(RefCell::new(ReleaseLayout::default())),
             scrollbar,
             table,
             settings,
+            popovers: Popovers::default(),
         }
     }
 
@@ -189,16 +205,45 @@ impl ArtistView {
         let title = artist
             .map(|artist| SharedString::from(artist.name.clone()))
             .unwrap_or_default();
-
-        PageHero::new("artist-hero", title)
-            .cover(artist.and_then(|artist| artist.cover_large.clone()))
-            .eyebrow(t!("artist-eyebrow"))
-            .actions(HeroPlayButton::new(
+        let listeners = artist
+            .and_then(|artist| artist.monthly_listeners)
+            .map(|count| {
+                let value = cells::count(count);
+                t!("artist-monthly-listeners", count = count, value = &value)
+            });
+        let overflow = self.detail.read(cx).id().map(|id| {
+            Popover::new("artist-overflow", self.popovers.clone())
+                .commands()
+                .button(
+                    Button::new("artist-overflow-button")
+                        .outline()
+                        .icon("icons/ellipsis.svg"),
+                )
+                .menu(
+                    artist_menu(id.to_owned())
+                        .top(cx.theme().metrics.control)
+                        .left_0(),
+                )
+        });
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(HeroPlayButton::new(
                 "play-artist",
                 t!("artist-play"),
                 self.detail.read(cx).tracks().to_vec(),
                 self.playback.clone(),
             ))
+            .children(overflow);
+
+        PageHero::new("artist-hero", title)
+            .cover(artist.and_then(|artist| artist.cover_large.clone()))
+            .eyebrow(t!("artist-eyebrow"))
+            .when_some(listeners, |hero, listeners| {
+                hero.meta(HeroMetaStrip::new().text(listeners))
+            })
+            .actions(actions)
             .circle()
             .into_any_element()
     }
@@ -209,6 +254,27 @@ impl ArtistView {
         if albums.is_empty() {
             return None;
         }
+
+        let scroll = self.scrollbar.read(cx).scroll().clone();
+        let layout = self.release_layout.borrow();
+        let gap = theme.font_size * 2.;
+        let columns = (((self.width + gap) / (theme.metrics.cover + gap)).floor() as usize).max(1);
+        let initial = columns * 2;
+        let overdraw = theme.metrics.cover * 2.;
+        let cards = albums
+            .iter()
+            .filter(|album| self.release_filter.matches(album.release_type))
+            .cloned()
+            .enumerate()
+            .map(|(index, album)| {
+                let load_art = release_near(&layout.bounds, index, &scroll, overdraw, initial);
+                ReleaseCard::new(index, album, self.playback.clone()).load_art(load_art)
+            })
+            .collect::<Vec<_>>();
+        drop(layout);
+        let release_layout = self.release_layout.clone();
+        let observed_scroll = scroll.clone();
+        let view = cx.entity().downgrade();
 
         Some(
             div()
@@ -234,21 +300,30 @@ impl ArtistView {
                                 .selected(self.release_filter == filter)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.release_filter = filter;
+                                    this.release_layout.borrow_mut().bounds.clear();
                                     cx.notify();
                                 }))
                         })),
                 )
                 .child(
-                    div().flex().flex_wrap().gap_8().children(
-                        albums
-                            .iter()
-                            .filter(|album| self.release_filter.matches(album.release_type))
-                            .cloned()
-                            .enumerate()
-                            .map(|(index, album)| {
-                                ReleaseCard::new(index, album, self.playback.clone())
-                            }),
-                    ),
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_8()
+                        .children(cards)
+                        .on_children_prepainted(move |bounds, _, cx| {
+                            let offset = observed_scroll.offset().y;
+                            let changed = {
+                                let mut layout = release_layout.borrow_mut();
+                                let changed = layout.bounds != bounds || layout.offset != offset;
+                                layout.bounds = bounds;
+                                layout.offset = offset;
+                                changed
+                            };
+                            if changed {
+                                view.update(cx, |_, cx| cx.notify()).ok();
+                            }
+                        }),
                 )
                 .into_any_element(),
         )
@@ -264,6 +339,22 @@ impl ArtistView {
                 .into_any_element(),
         )
     }
+}
+
+fn release_near(
+    bounds: &[Bounds<Pixels>],
+    index: usize,
+    scroll: &ScrollHandle,
+    overdraw: Pixels,
+    initial: usize,
+) -> bool {
+    let Some(bounds) = bounds.get(index) else {
+        return index < initial;
+    };
+    let viewport = scroll.bounds();
+    let offset = scroll.offset().y;
+    bounds.bottom() + offset >= viewport.top() - overdraw
+        && bounds.top() + offset <= viewport.bottom() + overdraw
 }
 
 impl Render for ArtistView {

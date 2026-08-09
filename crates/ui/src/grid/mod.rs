@@ -57,7 +57,7 @@ pub trait GridSource: 'static {
     fn rows(&self, cx: &App) -> usize;
     fn cell(&self, cell: Cell<Self::Field>, cx: &mut App) -> AnyElement;
 
-    fn context_menu(&self, _row: usize, _cx: &App) -> Option<Menu> {
+    fn context_menu(&self, _row: usize, _visible: &[Self::Field], _cx: &App) -> Option<Menu> {
         None
     }
 
@@ -196,6 +196,13 @@ impl<S: GridSource> GridDelegate<S> {
 
     pub fn row_count(&self) -> usize {
         self.order.len()
+    }
+
+    fn visible(&self) -> Vec<S::Field> {
+        self.columns
+            .iter()
+            .map(|column| column.spec.field)
+            .collect()
     }
 
     fn relayout(&mut self, cx: &App) {
@@ -809,7 +816,13 @@ impl<S: GridSource> GridState<S> {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            if this.delegate.source.context_menu(row, cx).is_some() {
+                            let visible = this.delegate.visible();
+                            if this
+                                .delegate
+                                .source
+                                .context_menu(row, &visible, cx)
+                                .is_some()
+                            {
                                 this.delegate.source.context_menu_will_open(row, cx);
                                 window.focus(&this.focus.clone(), cx);
                                 window.prevent_default();
@@ -900,12 +913,16 @@ impl<S: GridSource> Render for GridState<S> {
         let pinned = self.viewport.top.clamp(Pixels::ZERO, height - head);
         let top = unpinned(self.corners, pinned);
         let context_menu = self.context_menu.and_then(|(row, position)| {
-            self.delegate.source.context_menu(row, cx).map(|menu| {
-                Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
-                    this.context_menu = None;
-                    cx.notify();
-                }))
-            })
+            let visible = self.delegate.visible();
+            self.delegate
+                .source
+                .context_menu(row, &visible, cx)
+                .map(|menu| {
+                    Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
+                        this.context_menu = None;
+                        cx.notify();
+                    }))
+                })
         });
 
         div()

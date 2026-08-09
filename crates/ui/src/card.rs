@@ -40,6 +40,7 @@ pub struct Card {
     bare: bool,
     trailing: Option<AnyElement>,
     cover: Option<String>,
+    fallback: Option<SharedString>,
     art: Option<Pixels>,
     art_radius: Option<Pixels>,
     match_art_height: bool,
@@ -74,6 +75,7 @@ impl Card {
             bare: false,
             trailing: None,
             cover: None,
+            fallback: None,
             art: None,
             art_radius: None,
             match_art_height: false,
@@ -130,6 +132,11 @@ impl Card {
 
     pub fn cover(mut self, cover: Option<String>) -> Self {
         self.cover = cover;
+        self
+    }
+
+    pub fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
+        self.fallback = Some(icon.into());
         self
     }
 
@@ -258,6 +265,7 @@ impl RenderOnce for Card {
             bare,
             trailing,
             cover,
+            fallback,
             art,
             art_radius,
             match_art_height,
@@ -281,6 +289,7 @@ impl RenderOnce for Card {
         let theme = *cx.theme();
         let height = snapped(theme.metrics.list_row, window);
         let listed = art.is_none() && tile.is_none();
+        let has_trailing = trailing.is_some();
         let art = art
             .or(tile)
             .unwrap_or(theme.metrics.list_row - theme.metrics.pad * 2.);
@@ -300,6 +309,7 @@ impl RenderOnce for Card {
             false => Artwork::new(cover)
                 .size(art)
                 .when_some(art_radius, Artwork::corner_radius)
+                .when_some(fallback, Artwork::fallback)
                 .into_any_element(),
         };
         let leading = match play {
@@ -367,7 +377,7 @@ impl RenderOnce for Card {
                     .flex_1()
                     .min_w_0()
                     .when(match_art_height, |this| this.h(art).justify_between())
-                    .when(listed, |this| this.min_w(TITLE))
+                    .when(listed && !has_trailing, |this| this.min_w(TITLE))
                     .when(tile.is_some(), |this| this.w_full().flex_none().gap_1())
                     .when_some(spacing, |this, spacing| this.gap(spacing))
                     .when_else(
@@ -433,7 +443,7 @@ impl RenderOnce for Card {
                         },
                     ),
             )
-            .children(trailing.map(|trailing| div().flex_shrink(1.).min_w_0().child(trailing)))
+            .children(trailing.map(|trailing| div().flex_none().child(trailing)))
             .children(action.map(|action| {
                 div()
                     .flex_none()

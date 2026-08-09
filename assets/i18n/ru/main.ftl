@@ -20,6 +20,8 @@ nav-settings = Настройки
 nav-songs = Треки
 nav-albums = Альбомы
 nav-playlists = Плейлисты
+library-liked-songs = Любимые треки
+library-play-liked-songs = Слушать
 
 # app menu
 app-refresh-library = Обновить медиатеку
@@ -118,6 +120,11 @@ play-loading = Загрузка…
 
 # artist page
 artist-eyebrow = Исполнитель
+artist-monthly-listeners = { $count ->
+    [one] { $value } слушатель в месяц
+    [few] { $value } слушателя в месяц
+   *[other] { $value } слушателей в месяц
+}
 artist-play = Слушать
 artist-popular = Популярное
 artist-releases = Релизы

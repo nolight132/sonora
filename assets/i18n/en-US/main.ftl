@@ -20,6 +20,8 @@ nav-settings = Settings
 nav-songs = Songs
 nav-albums = Albums
 nav-playlists = Playlists
+library-liked-songs = Liked Songs
+library-play-liked-songs = Play
 
 # app menu
 app-refresh-library = Refresh Library
@@ -118,6 +120,10 @@ play-loading = Loading…
 
 # artist page
 artist-eyebrow = Artist
+artist-monthly-listeners = { $count ->
+    [one] { $value } monthly listener
+   *[other] { $value } monthly listeners
+}
 artist-play = Play now
 artist-popular = Popular
 artist-releases = Releases

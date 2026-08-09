@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui::{Context, Entity, Task};
-use spotify::{AlbumDetail, Artist, Track};
+use spotify::{AlbumDetail, ArtistProfile, Track};
 use tokio::task::AbortHandle;
 
 use crate::{Io, Session, SessionEvent, join};
@@ -12,7 +12,7 @@ pub struct SongDetail {
     id: Option<String>,
     track: Option<Track>,
     album: Option<AlbumDetail>,
-    artist: Option<Artist>,
+    artist: Option<ArtistProfile>,
     portraits: HashMap<String, String>,
     playcount: Option<u64>,
     loading: bool,
@@ -54,7 +54,7 @@ impl SongDetail {
     pub fn album(&self) -> Option<&AlbumDetail> {
         self.album.as_ref()
     }
-    pub fn artist(&self) -> Option<&Artist> {
+    pub fn artist(&self) -> Option<&ArtistProfile> {
         self.artist.as_ref()
     }
     pub fn portraits(&self) -> &HashMap<String, String> {
@@ -92,7 +92,7 @@ impl SongDetail {
                     .artist_refs
                     .first()
                     .and_then(|artist| artist.id.clone());
-                let credit_ids = track
+                let mut credit_ids = track
                     .credits
                     .iter()
                     .filter_map(|credit| credit.id.clone())
@@ -105,6 +105,10 @@ impl SongDetail {
                     .collect::<HashSet<_>>()
                     .into_iter()
                     .collect::<Vec<_>>();
+                if let Some(artist_id) = artist_id.as_deref() {
+                    credit_ids.retain(|id| id != artist_id);
+                }
+                let primary_artist = artist_id.clone();
                 let album = async {
                     match album_id {
                         Some(album_id) => client.album(&album_id).await.ok(),
@@ -113,7 +117,7 @@ impl SongDetail {
                 };
                 let artist = async {
                     match artist_id {
-                        Some(artist_id) => client.artist(&artist_id).await.ok(),
+                        Some(artist_id) => client.artist_profile(&artist_id).await.ok(),
                         None => None,
                     }
                 };
@@ -123,20 +127,32 @@ impl SongDetail {
                         false => client.artist_images(credit_ids).await.unwrap_or_default(),
                     }
                 };
-                let playcount = async {
-                    match track.id.as_deref() {
-                        Some(track_id) => match client.track_playcount(track_id).await {
-                            Ok(playcount) => playcount,
-                            Err(error) => {
-                                log::warn!("song: cannot read track play count: {error:#}");
-                                None
-                            }
-                        },
-                        None => None,
-                    }
+                let (album, artist, mut portraits) = tokio::join!(album, artist, portraits);
+                if let (Some(id), Some(cover)) = (
+                    primary_artist,
+                    artist
+                        .as_ref()
+                        .and_then(|artist| artist.cover_large.clone()),
+                ) {
+                    portraits.insert(id, cover);
+                }
+                let album_track = album.as_ref().and_then(|album| {
+                    album
+                        .tracks
+                        .iter()
+                        .find(|album_track| album_track.id == track.id)
+                });
+                let playcount = match (album_track, track.id.as_deref()) {
+                    (Some(album_track), _) => album_track.playcount,
+                    (None, Some(track_id)) => match client.track_playcount(track_id).await {
+                        Ok(playcount) => playcount,
+                        Err(error) => {
+                            log::warn!("song: cannot read track play count: {error:#}");
+                            None
+                        }
+                    },
+                    (None, None) => None,
                 };
-                let (album, artist, portraits, playcount) =
-                    tokio::join!(album, artist, portraits, playcount);
                 anyhow::Ok((track, album, artist, portraits, playcount))
             }
         });

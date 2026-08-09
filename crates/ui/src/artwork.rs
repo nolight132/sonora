@@ -4,67 +4,108 @@ use crate::skeleton::Skeleton;
 use crate::theme::ActiveTheme as _;
 use gpui::prelude::*;
 use gpui::{
-    App, Asset, Div, Hsla, ImageCacheError, ImageSource, ImgResourceLoader, Interactivity,
+    App, Div, Entity, Global, Hsla, ImageCache, ImageCacheError, ImgResourceLoader, Interactivity,
     ObjectFit, Pixels, RenderImage, Resource, SharedString, SharedUri, StyleRefinement, Styled,
     Window, div, img, px, svg,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 const FALLBACK_ICON: &str = "icons/music.svg";
 const ROUNDED: Pixels = px(4.);
+const CACHE_BYTES: usize = 128 * 1024 * 1024;
+const CACHE_ITEMS: usize = 512;
 
-#[derive(Clone)]
-enum SquareImageLoader {}
+struct Cached {
+    value: Result<Arc<RenderImage>, ImageCacheError>,
+    bytes: usize,
+    used: u64,
+}
 
-impl Asset for SquareImageLoader {
-    type Source = Resource;
-    type Output = Result<Arc<RenderImage>, ImageCacheError>;
+struct ArtworkCache {
+    items: HashMap<Resource, Cached>,
+    bytes: usize,
+    clock: u64,
+}
 
-    fn load(
-        source: Self::Source,
+struct Installed(Entity<ArtworkCache>);
+
+impl Global for Installed {}
+
+impl ArtworkCache {
+    fn entity(cx: &mut App) -> Entity<Self> {
+        if cx.try_global::<Installed>().is_none() {
+            let cache = cx.new(|_| Self {
+                items: HashMap::new(),
+                bytes: 0,
+                clock: 0,
+            });
+            cx.set_global(Installed(cache));
+        }
+        cx.global::<Installed>().0.clone()
+    }
+
+    fn insert(
+        &mut self,
+        resource: Resource,
+        value: Result<Arc<RenderImage>, ImageCacheError>,
+        window: &mut Window,
         cx: &mut App,
-    ) -> impl Future<Output = Self::Output> + Send + 'static {
-        let (image, _) = cx.fetch_asset::<ImgResourceLoader>(&source);
-        async move { image.await.map(crop_square) }
+    ) {
+        let bytes = value.as_ref().map_or(0, |image| image_bytes(image));
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.items.insert(
+            resource,
+            Cached {
+                value,
+                bytes,
+                used: self.clock,
+            },
+        );
+
+        while (self.bytes > CACHE_BYTES || self.items.len() > CACHE_ITEMS) && self.items.len() > 1 {
+            let Some(resource) = self
+                .items
+                .iter()
+                .min_by_key(|(_, cached)| cached.used)
+                .map(|(resource, _)| resource.clone())
+            else {
+                break;
+            };
+            let Some(cached) = self.items.remove(&resource) else {
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(cached.bytes);
+            cx.remove_asset::<ImgResourceLoader>(&resource);
+            if let Ok(image) = cached.value {
+                cx.drop_image(image, Some(window));
+            }
+        }
     }
 }
 
-fn crop_square(image: Arc<RenderImage>) -> Arc<RenderImage> {
-    if image.frame_count() == 0
-        || (0..image.frame_count()).all(|frame| {
-            let size = image.size(frame);
-            size.width == size.height
-        })
-    {
-        return image;
+impl ImageCache for ArtworkCache {
+    fn load(
+        &mut self,
+        resource: &Resource,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
+        self.clock = self.clock.saturating_add(1);
+        if let Some(cached) = self.items.get_mut(resource) {
+            cached.used = self.clock;
+            return Some(cached.value.clone());
+        }
+
+        let value = window.use_asset::<ImgResourceLoader>(resource, cx)?;
+        self.insert(resource.clone(), value.clone(), window, cx);
+        Some(value)
     }
+}
 
-    let frames = (0..image.frame_count())
-        .map(|frame| {
-            let size = image.size(frame);
-            let width = u32::from(size.width);
-            let height = u32::from(size.height);
-            let side = width.min(height);
-            let left = (width - side) / 2;
-            let top = (height - side) / 2;
-            let source = image
-                .as_bytes(frame)
-                .expect("render image frame should have pixel data");
-            let row_bytes = side as usize * 4;
-            let mut pixels = Vec::with_capacity(row_bytes * side as usize);
-
-            for row in 0..side {
-                let start = (((top + row) * width + left) * 4) as usize;
-                pixels.extend_from_slice(&source[start..start + row_bytes]);
-            }
-
-            let buffer = image::RgbaImage::from_raw(side, side, pixels)
-                .expect("square crop should contain one complete image");
-            image::Frame::from_parts(buffer, 0, 0, image.delay(frame))
-        })
-        .collect::<Vec<_>>();
-
-    Arc::new(RenderImage::new(frames))
+fn image_bytes(image: &RenderImage) -> usize {
+    (0..image.frame_count())
+        .filter_map(|frame| image.as_bytes(frame))
+        .fold(0, |bytes, frame| bytes.saturating_add(frame.len()))
 }
 
 #[derive(IntoElement)]
@@ -100,6 +141,7 @@ pub struct Artwork {
     size: Pixels,
     circle: bool,
     radius: Option<Pixels>,
+    fallback: SharedString,
     interactivity: Interactivity,
 }
 
@@ -111,6 +153,7 @@ impl Artwork {
             size: px(28.),
             circle: false,
             radius: None,
+            fallback: FALLBACK_ICON.into(),
             interactivity: Interactivity::new(),
         }
     }
@@ -127,6 +170,11 @@ impl Artwork {
 
     pub fn corner_radius(mut self, radius: Pixels) -> Self {
         self.radius = Some(radius);
+        self
+    }
+
+    pub fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
+        self.fallback = icon.into();
         self
     }
 }
@@ -150,6 +198,7 @@ impl RenderOnce for Artwork {
             size,
             circle,
             radius,
+            fallback,
             interactivity,
         } = self;
         let muted = cx.theme().muted_foreground;
@@ -158,17 +207,17 @@ impl RenderOnce for Artwork {
             (false, Some(radius)) => radius,
             (false, None) => cx.theme().radius.min(ROUNDED),
         };
-        let placeholder = move || blank(size, rounded, muted).into_any_element();
+        let placeholder = {
+            let fallback = fallback.clone();
+            move || blank(size, rounded, muted, fallback.clone()).into_any_element()
+        };
 
         match url {
             Some(url) => {
-                let resource = Resource::Uri(SharedUri::from(url.to_string()));
-                let source = ImageSource::from(move |window: &mut Window, cx: &mut App| {
-                    window.use_asset::<SquareImageLoader>(&resource, cx)
-                });
-
+                let cache = ArtworkCache::entity(cx);
                 refined(
-                    img(source)
+                    img(SharedUri::from(url))
+                        .image_cache(&cache)
                         .size(size)
                         .object_fit(ObjectFit::Cover)
                         .rounded(rounded)
@@ -183,7 +232,9 @@ impl RenderOnce for Artwork {
                 )
                 .into_any_element()
             }
-            None => refined(blank(size, rounded, muted), interactivity).into_any_element(),
+            None => {
+                refined(blank(size, rounded, muted, fallback), interactivity).into_any_element()
+            }
         }
     }
 }
@@ -196,7 +247,7 @@ fn refined<T: Styled + InteractiveElement>(mut element: T, mut caller: Interacti
     element
 }
 
-fn blank(size: Pixels, rounded: Pixels, muted: Hsla) -> Div {
+fn blank(size: Pixels, rounded: Pixels, muted: Hsla, fallback: SharedString) -> Div {
     div()
         .size(size)
         .rounded(rounded)
@@ -206,32 +257,8 @@ fn blank(size: Pixels, rounded: Pixels, muted: Hsla) -> Div {
         .justify_center()
         .child(
             svg()
-                .path(FALLBACK_ICON)
+                .path(fallback)
                 .size(size * 0.46)
                 .text_color(muted.opacity(0.5)),
         )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rectangular_images_are_center_cropped_to_square_pixels() {
-        let buffer =
-            image::RgbaImage::from_fn(4, 2, |x, y| image::Rgba([x as u8, y as u8, 0, 255]));
-        let source = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
-
-        let cropped = crop_square(source);
-        let size = cropped.size(0);
-        let red_channels = cropped
-            .as_bytes(0)
-            .unwrap()
-            .chunks_exact(4)
-            .map(|pixel| pixel[0])
-            .collect::<Vec<_>>();
-
-        assert_eq!((u32::from(size.width), u32::from(size.height)), (2, 2));
-        assert_eq!(red_channels, [1, 2, 1, 2]);
-    }
 }

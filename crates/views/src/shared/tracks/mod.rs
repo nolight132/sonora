@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 use ui::ActiveTheme as _;
 
-use crate::shared::menu::ItemMenu;
+use crate::shared::menu::{ItemMenu, TrackColumns};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, Hsla, InteractiveElement as _, IntoElement as _, SharedString,
@@ -23,7 +23,7 @@ use ui::{Button, Cell, ColumnSpec, GridSource, GridState, Menu, ROW_GROUP, Scrol
 use crate::shared::cells;
 use crate::shared::hero::release_date_label;
 
-pub(crate) use columns::{ALBUM_COLUMNS, LIBRARY_COLUMNS, TrackField};
+pub(crate) use columns::{ALBUM_COLUMNS, ARTIST_COLUMNS, LIBRARY_COLUMNS, TrackField};
 pub(crate) use sieve::TrackSieve;
 pub(crate) use sort::initial;
 
@@ -55,6 +55,7 @@ pub(crate) struct TrackSource {
     provider: Rc<dyn Tracks>,
     playback: Entity<Playback>,
     is_liked: Option<Entity<Library>>,
+    album: Option<Entity<Detail>>,
     playlist: Option<Entity<Detail>>,
     menu: ItemMenu,
     table: Option<WeakEntity<GridState<TrackSource>>>,
@@ -73,6 +74,7 @@ impl TrackSource {
             provider: Rc::new(provider),
             playback,
             is_liked: None,
+            album: None,
             playlist: None,
             menu: ItemMenu::new(playlist_scrollbar),
             table: None,
@@ -118,6 +120,11 @@ impl TrackSource {
 
     pub(crate) fn with_playlist(mut self, detail: Entity<Detail>) -> Self {
         self.playlist = Some(detail);
+        self
+    }
+
+    pub(crate) fn with_album(mut self, detail: Entity<Detail>) -> Self {
+        self.album = Some(detail);
         self
     }
 
@@ -335,11 +342,21 @@ impl GridSource for TrackSource {
         }
     }
 
-    fn context_menu(&self, row: usize, cx: &App) -> Option<Menu> {
+    fn context_menu(&self, row: usize, visible: &[TrackField], cx: &App) -> Option<Menu> {
         let track = self.provider.tracks(cx).get(row)?;
-        Some(match &self.playlist {
-            Some(detail) => self.menu.for_playlist_track(track, detail.clone(), cx),
-            None => self.menu.for_track(track, cx),
+        let columns = TrackColumns {
+            album: visible.contains(&TrackField::Album),
+            artists: visible.contains(&TrackField::Artists),
+        };
+        Some(match (&self.album, &self.playlist) {
+            (Some(detail), _) => {
+                let id = detail.read(cx).id()?;
+                self.menu.for_album_track(track, id, columns, cx)
+            }
+            (_, Some(detail)) => self
+                .menu
+                .for_playlist_track(track, detail.clone(), columns, cx),
+            (None, None) => self.menu.for_table_track(track, columns, cx),
         })
     }
 
