@@ -145,7 +145,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/shuffle.svg")
-            .tooltip("player-shuffle")
+            .tooltip_above("player-shuffle")
             .tint(match on {
                 true => theme.primary,
                 false => theme.muted_foreground,
@@ -166,7 +166,7 @@ impl PlayerBar {
                 Repeat::One => "icons/repeat-one.svg",
                 _ => "icons/repeat.svg",
             })
-            .tooltip(match repeat {
+            .tooltip_above(match repeat {
                 Repeat::Off => "player-repeat",
                 Repeat::All => "player-repeat-all",
                 Repeat::One => "player-repeat-one",
@@ -198,7 +198,7 @@ impl PlayerBar {
                     .ghost()
                     .small()
                     .icon(volume_icon(level))
-                    .tooltip(match level <= 0.001 {
+                    .tooltip_above(match level <= 0.001 {
                         true => "player-unmute",
                         false => "player-mute",
                     })
@@ -238,7 +238,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/skip-back.svg")
-            .tooltip("player-previous")
+            .tooltip_above("player-previous")
             .disabled(!enabled)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.playback
@@ -253,7 +253,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/skip-forward.svg")
-            .tooltip("player-next")
+            .tooltip_above("player-next")
             .disabled(!enabled)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.playback.update(cx, |playback, cx| playback.next(cx));
@@ -270,7 +270,7 @@ impl PlayerBar {
                 .hoverless()
                 .small()
                 .icon("icons/list.svg")
-                .tooltip("queue-title")
+                .tooltip_above("queue-title")
                 .selected(open)
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let Some(sidebar_right) = &this.sidebar_right {
@@ -286,6 +286,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/maximize.svg")
+            .tooltip_above("player-fullscreen")
             .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleFullscreen), cx))
     }
 
@@ -294,16 +295,17 @@ impl PlayerBar {
         let playing = matches!(state, PlaybackState::Playing);
         let idle = matches!(state, PlaybackState::Idle | PlaybackState::Failed(_));
 
-        let (id, icon) = if playing {
-            ("pause", "icons/pause.svg")
+        let (id, icon, tooltip) = if playing {
+            ("pause", "icons/pause.svg", "play-pause")
         } else {
-            ("play", "icons/play.svg")
+            ("play", "icons/play.svg", "play-resume")
         };
 
         Button::new(id)
             .ghost()
             .small()
             .icon(icon)
+            .tooltip_above(tooltip)
             .disabled(idle)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.playback
@@ -324,6 +326,10 @@ impl PlayerBar {
             .icon(match saved {
                 true => "icons/heart-filled.svg",
                 false => "icons/heart.svg",
+            })
+            .tooltip_above(match saved {
+                true => "menu-remove-from-library",
+                false => "menu-add-to-library",
             })
             .tint(match saved {
                 true => theme.primary,

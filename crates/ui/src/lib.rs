@@ -66,5 +66,5 @@ pub use skeleton::{Initials, Skeleton};
 pub use theme::{ActiveTheme, Look, MAX_FONT, MIN_FONT, Theme, ThemeKind, ThemeOverrides};
 pub use time::clock;
 pub use toast::Toast;
-pub use tooltip::Tooltip;
+pub use tooltip::{Perch, Tooltip};
 pub use view::Mode;
