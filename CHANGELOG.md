@@ -15,6 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The seek and volume sliders have a taller grab area, so they are easier to hit without looking
+  any thicker.
 - Library cards are virtualized, artist release artwork loads only once it is scrolled to, and the
   artwork image cache is bounded, so large libraries stay responsive.
 - Headings, quick pick titles and queue track names are lighter and no longer bold.
@@ -23,6 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The percentage and timecode bubbles no longer appear below a slider, where a click would not land.
 - Timestamps an hour or longer carry an hours field instead of overflowing the minutes.
 - Track menus no longer offer a link to the page that is already open.
 - A right-click on a table row no longer also opens the menu behind it.
