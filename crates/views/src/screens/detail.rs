@@ -337,33 +337,34 @@ impl DetailView {
             }
         };
 
+        let heart = Button::new("detail-toggle-library")
+            .outline()
+            .icon(match saved {
+                true => "icons/heart-filled.svg",
+                false => "icons/heart.svg",
+            })
+            .tooltip(match saved {
+                true => "menu-remove-from-library",
+                false => "menu-add-to-library",
+            })
+            .disabled(busy);
+
         Some(
-            Button::new("detail-toggle-library")
-                .outline()
-                .icon(match saved {
-                    true => "icons/heart-filled.svg",
-                    false => "icons/heart.svg",
-                })
-                .tooltip(match saved {
-                    true => "menu-remove-from-library",
-                    false => "menu-add-to-library",
-                })
-                .tint(match saved {
-                    true => theme.primary,
-                    false => theme.muted_foreground,
-                })
-                .disabled(busy)
-                .on_click(move |_, _, cx| {
-                    library.update(cx, |library, cx| match &target {
-                        Saveable::Album(album) => library.toggle_album(album.clone(), cx),
-                        Saveable::Playlist(playlist) if saved => {
-                            library.remove_playlist_from_library(playlist.id.clone(), cx)
-                        }
-                        Saveable::Playlist(playlist) => {
-                            library.add_playlist_to_library(playlist.clone(), cx)
-                        }
-                    });
-                }),
+            match saved {
+                true => heart.tint(theme.primary),
+                false => heart,
+            }
+            .on_click(move |_, _, cx| {
+                library.update(cx, |library, cx| match &target {
+                    Saveable::Album(album) => library.toggle_album(album.clone(), cx),
+                    Saveable::Playlist(playlist) if saved => {
+                        library.remove_playlist_from_library(playlist.id.clone(), cx)
+                    }
+                    Saveable::Playlist(playlist) => {
+                        library.add_playlist_to_library(playlist.clone(), cx)
+                    }
+                });
+            }),
         )
     }
 
