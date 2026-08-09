@@ -42,7 +42,6 @@ struct Values {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 struct Appearance {
-    auto_hide_sidebar: bool,
     theme: String,
     adaptive_theme: bool,
     rounding: String,
@@ -91,7 +90,6 @@ impl Values {
 impl Default for Appearance {
     fn default() -> Self {
         Self {
-            auto_hide_sidebar: true,
             theme: "dark".to_owned(),
             adaptive_theme: false,
             rounding: "subtle".to_owned(),
@@ -315,11 +313,6 @@ impl AppSettings {
         self.values.language = language.into();
         i18n::set(i18n::resolve(&self.values.language));
         cx.refresh_windows();
-        self.schedule_save(cx);
-    }
-
-    pub fn set_auto_hide_sidebar(&mut self, auto_hide: bool, cx: &mut Context<Self>) {
-        self.values.appearance.auto_hide_sidebar = auto_hide;
         self.schedule_save(cx);
     }
 
