@@ -33,6 +33,7 @@ fn playcount(data: Data) -> Result<Option<u64>> {
         .playcount
         .map(|count| count.parse().context("invalid track play count"))
         .transpose()
+        .map(|count| count.and_then(super::reported))
 }
 
 #[cfg(test)]
@@ -44,5 +45,11 @@ mod tests {
         let data: Data =
             serde_json::from_slice(br#"{"trackUnion":{"playcount":"1234567"}}"#).unwrap();
         assert_eq!(playcount(data).unwrap(), Some(1_234_567));
+    }
+
+    #[test]
+    fn treats_zero_as_missing() {
+        let data: Data = serde_json::from_slice(br#"{"trackUnion":{"playcount":"0"}}"#).unwrap();
+        assert_eq!(playcount(data).unwrap(), None);
     }
 }

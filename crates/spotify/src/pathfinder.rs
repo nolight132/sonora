@@ -97,6 +97,10 @@ fn decoded<T: DeserializeOwned>(bytes: &[u8], operation: &str) -> Result<T> {
         .with_context(|| format!("{operation} Pathfinder response has no data"))
 }
 
+fn reported(count: u64) -> Option<u64> {
+    (count > 0).then_some(count)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
