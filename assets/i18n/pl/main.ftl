@@ -10,6 +10,11 @@ common-not-available = Brak danych
 common-cancel = Anuluj
 common-save = Zapisz
 common-delete = Usuń
+common-play = Odtwórz
+common-more = Więcej
+common-previous = Wstecz
+common-next = Dalej
+common-dismiss = Zamknij
 number-group = { "\u00A0" }
 
 # navigation
@@ -20,6 +25,9 @@ nav-settings = Ustawienia
 nav-songs = Utwory
 nav-albums = Albumy
 nav-playlists = Playlisty
+nav-back = Wstecz
+nav-forward = Dalej
+nav-sidebar = Pokaż lub ukryj panel boczny
 library-liked-songs = Polubione utwory
 library-play-liked-songs = Odtwórz
 
@@ -82,10 +90,21 @@ queue-up-next = Następne
 queue-reset = Resetuj
 queue-clear = Wyczyść
 queue-empty = Twoja kolejka jest pusta
+queue-similar = Podobne utwory
+queue-radio = Automatycznie odtwarzaj podobne utwory
 
 # player bar
 player-nothing-playing = Nic nie jest odtwarzane
 player-percent = { $value }%
+player-shuffle = Losowo
+player-repeat = Powtarzaj
+player-repeat-all = Powtarzaj wszystko
+player-repeat-one = Powtarzaj utwór
+player-mute = Wycisz
+player-unmute = Wyłącz wyciszenie
+player-previous = Poprzedni utwór
+player-next = Następny utwór
+player-fullscreen = Pełny ekran
 
 # filters
 filter-library = Filtruj bibliotekę
@@ -99,6 +118,11 @@ filter-playable = Tylko dostępne
 # view
 view-list = Lista
 view-cards = Kafelki
+
+# toolbar
+tool-columns = Kolumny
+tool-sort = Sortowanie
+tool-filters = Filtry
 
 # login
 login-signed-out = Zaloguj się, aby wczytać bibliotekę Spotify

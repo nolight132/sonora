@@ -810,6 +810,7 @@ impl Tooled for LibraryView {
         let create = (self.section == Section::Playlists).then(|| {
             Button::new("new-playlist")
                 .icon("icons/plus.svg")
+                .tooltip("menu-new-playlist")
                 .small()
                 .ghost()
                 .on_click(move |_, window, cx| {

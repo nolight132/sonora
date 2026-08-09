@@ -145,6 +145,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/shuffle.svg")
+            .tooltip("player-shuffle")
             .tint(match on {
                 true => theme.primary,
                 false => theme.muted_foreground,
@@ -164,6 +165,11 @@ impl PlayerBar {
             .icon(match repeat {
                 Repeat::One => "icons/repeat-one.svg",
                 _ => "icons/repeat.svg",
+            })
+            .tooltip(match repeat {
+                Repeat::Off => "player-repeat",
+                Repeat::All => "player-repeat-all",
+                Repeat::One => "player-repeat-one",
             })
             .tint(match repeat {
                 Repeat::Off => theme.muted_foreground,
@@ -192,6 +198,10 @@ impl PlayerBar {
                     .ghost()
                     .small()
                     .icon(volume_icon(level))
+                    .tooltip(match level <= 0.001 {
+                        true => "player-unmute",
+                        false => "player-mute",
+                    })
                     .tint(theme.muted_foreground)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let wanted = match level <= 0.001 {
@@ -228,6 +238,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/skip-back.svg")
+            .tooltip("player-previous")
             .disabled(!enabled)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.playback
@@ -242,6 +253,7 @@ impl PlayerBar {
             .ghost()
             .small()
             .icon("icons/skip-forward.svg")
+            .tooltip("player-next")
             .disabled(!enabled)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.playback.update(cx, |playback, cx| playback.next(cx));
@@ -258,6 +270,7 @@ impl PlayerBar {
                 .hoverless()
                 .small()
                 .icon("icons/list.svg")
+                .tooltip("queue-title")
                 .selected(open)
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let Some(sidebar_right) = &this.sidebar_right {

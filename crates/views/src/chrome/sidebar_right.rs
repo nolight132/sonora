@@ -39,11 +39,12 @@ fn section_label(key: &'static str, window: &Window, cx: &App) -> Div {
         .child(eyebrow(i18n::lookup(key, None), cx))
 }
 
-fn track(queue: &Queue, position: QueuePosition) -> Option<Track> {
+fn track(queue: &Queue, similar: &[Track], position: QueuePosition) -> Option<Track> {
     match position {
         QueuePosition::Past(index) => queue.past().nth(index).cloned(),
         QueuePosition::Current => queue.current().cloned(),
         QueuePosition::Upcoming(index) => queue.upcoming().nth(index).cloned(),
+        QueuePosition::Similar(index) => similar.get(index).cloned(),
     }
 }
 
@@ -67,6 +68,7 @@ enum QueuePosition {
     Past(usize),
     Current,
     Upcoming(usize),
+    Similar(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,6 +82,7 @@ struct Sections {
     past: usize,
     current: bool,
     upcoming: usize,
+    similar: usize,
 }
 
 impl Sections {
@@ -94,9 +97,17 @@ impl Sections {
         self.past_end() + 2 * usize::from(self.current)
     }
 
-    fn len(self) -> usize {
+    fn upcoming_end(self) -> usize {
         self.current_end()
             + match self.upcoming {
+                0 => 0,
+                count => count + 1,
+            }
+    }
+
+    fn len(self) -> usize {
+        self.upcoming_end()
+            + match self.similar {
                 0 => 0,
                 count => count + 1,
             }
@@ -119,9 +130,15 @@ impl Sections {
                 false => Slot::Track(QueuePosition::Current),
             };
         }
-        match index == self.current_end() {
-            true => Slot::Header("queue-up-next"),
-            false => Slot::Track(QueuePosition::Upcoming(index - self.current_end() - 1)),
+        if index < self.upcoming_end() {
+            return match index == self.current_end() {
+                true => Slot::Header("queue-up-next"),
+                false => Slot::Track(QueuePosition::Upcoming(index - self.current_end() - 1)),
+            };
+        }
+        match index == self.upcoming_end() {
+            true => Slot::Header("queue-similar"),
+            false => Slot::Track(QueuePosition::Similar(index - self.upcoming_end() - 1)),
         }
     }
 }
@@ -144,14 +161,21 @@ impl QueuePosition {
     fn past(self) -> Option<usize> {
         match self {
             Self::Past(index) => Some(index),
-            Self::Current | Self::Upcoming(_) => None,
+            _ => None,
         }
     }
 
     fn upcoming(self) -> Option<usize> {
         match self {
             Self::Upcoming(index) => Some(index),
-            Self::Past(_) | Self::Current => None,
+            _ => None,
+        }
+    }
+
+    fn similar(self) -> Option<usize> {
+        match self {
+            Self::Similar(index) => Some(index),
+            _ => None,
         }
     }
 }
@@ -211,6 +235,7 @@ impl SidebarRight {
             cx.notify();
         })
         .detach();
+        cx.observe(&playback, |_, _, cx| cx.notify()).detach();
         let chrome = Chrome::entity(cx);
         cx.observe(&chrome, |_, _, cx| cx.notify()).detach();
 
@@ -302,10 +327,11 @@ impl SidebarRight {
         let theme = *cx.theme();
         let past_index = position.past();
         let queue_index = position.upcoming();
+        let similar_index = position.similar();
         let title = match position {
             QueuePosition::Past(_) => theme.muted_foreground,
             QueuePosition::Current => theme.primary,
-            QueuePosition::Upcoming(_) => theme.foreground,
+            QueuePosition::Upcoming(_) | QueuePosition::Similar(_) => theme.foreground,
         };
         let dragged = queue_index.map(|index| DraggedTrack {
             index,
@@ -366,6 +392,7 @@ impl SidebarRight {
                     .ghost()
                     .small()
                     .icon("icons/x.svg")
+                    .tooltip("menu-remove-from-queue")
                     .tint(theme.muted_foreground)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
@@ -403,6 +430,12 @@ impl SidebarRight {
                         }
                     });
                 }
+            }))
+        })
+        .when_some(similar_index, |this, target| {
+            this.press(cx.listener(move |this, _, _, cx| {
+                this.playback
+                    .update(cx, |playback, cx| playback.play_similar(target, cx));
             }))
         })
         .when_some(dragged, |this, dragged| {
@@ -466,6 +499,7 @@ impl SidebarRight {
                             .ghost()
                             .small()
                             .icon("icons/radio.svg")
+                            .tooltip("queue-radio")
                             .tint(match self.playback.read(cx).radio() {
                                 true => theme.primary,
                                 false => theme.muted_foreground,
@@ -521,6 +555,7 @@ impl SidebarRight {
 
     fn rows(&self, sections: Sections, cx: &mut Context<Self>) -> gpui::UniformList {
         let queue = self.queue.clone();
+        let playback = self.playback.clone();
         let drop_gap = self.drop_gap;
         let upcoming = sections.upcoming;
 
@@ -530,13 +565,14 @@ impl SidebarRight {
             cx.processor(move |_, range: Range<usize>, window, cx| {
                 let (revision, slots) = {
                     let queue = queue.read(cx);
+                    let similar = playback.read(cx).similar();
                     let slots = range
                         .clone()
                         .map(|index| {
                             let slot = sections.slot(index);
                             let found = match slot {
                                 Slot::Header(_) => None,
-                                Slot::Track(position) => track(queue, position),
+                                Slot::Track(position) => track(queue, similar, position),
                             };
                             (index, slot, found)
                         })
@@ -582,6 +618,7 @@ impl Render for SidebarRight {
             past: queue.past().len(),
             current: queue.current().is_some(),
             upcoming: queue.upcoming().len(),
+            similar: self.playback.read(cx).similar().len(),
         };
         let empty = sections.len() == 0;
         if !cx.has_active_drag() {
@@ -674,6 +711,7 @@ mod tests {
             past: 2,
             current: true,
             upcoming: 2,
+            similar: 2,
         };
 
         assert_eq!(sections.current_index(), Some(4));
@@ -688,6 +726,29 @@ mod tests {
                 Slot::Header("queue-up-next"),
                 Slot::Track(QueuePosition::Upcoming(0)),
                 Slot::Track(QueuePosition::Upcoming(1)),
+                Slot::Header("queue-similar"),
+                Slot::Track(QueuePosition::Similar(0)),
+                Slot::Track(QueuePosition::Similar(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn suggests_similar_tracks_without_anything_up_next() {
+        let sections = Sections {
+            past: 0,
+            current: true,
+            upcoming: 0,
+            similar: 1,
+        };
+
+        assert_eq!(
+            slots(sections),
+            [
+                Slot::Header("queue-now-playing"),
+                Slot::Track(QueuePosition::Current),
+                Slot::Header("queue-similar"),
+                Slot::Track(QueuePosition::Similar(0)),
             ]
         );
     }
@@ -698,6 +759,7 @@ mod tests {
             past: 0,
             current: true,
             upcoming: 1,
+            similar: 0,
         };
 
         assert_eq!(sections.current_index(), Some(1));
@@ -718,6 +780,7 @@ mod tests {
             past: 1,
             current: false,
             upcoming: 0,
+            similar: 0,
         };
 
         assert_eq!(sections.current_index(), None);
@@ -736,6 +799,7 @@ mod tests {
             past: 0,
             current: false,
             upcoming: 0,
+            similar: 0,
         };
 
         assert_eq!(sections.len(), 0);

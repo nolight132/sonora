@@ -86,6 +86,7 @@ impl TitleBar {
                 Button::new("history-back")
                     .ghost()
                     .icon("icons/chevron-left.svg")
+                    .tooltip("nav-back")
                     .tint(muted)
                     .disabled(!can_back)
                     .size_8()
@@ -103,6 +104,7 @@ impl TitleBar {
                 Button::new("history-forward")
                     .ghost()
                     .icon("icons/chevron-right.svg")
+                    .tooltip("nav-forward")
                     .tint(muted)
                     .disabled(!can_forward)
                     .size_8()
@@ -136,6 +138,7 @@ impl TitleBar {
                     .flex()
                     .small()
                     .icon(icon)
+                    .tooltip("nav-sidebar")
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(TitleBarEvent::ToggleSidebar))),
             )
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use gpui::{Context, Entity};
 use spotify::Track;
@@ -159,6 +159,15 @@ impl Queue {
 
     pub fn upcoming(&self) -> impl ExactSizeIterator<Item = &Track> {
         self.upcoming.iter()
+    }
+
+    pub fn ids(&self) -> HashSet<String> {
+        self.past
+            .iter()
+            .chain(self.current.as_ref())
+            .chain(self.upcoming.iter())
+            .filter_map(|track| track.id.clone())
+            .collect()
     }
 
     pub fn len(&self) -> usize {
