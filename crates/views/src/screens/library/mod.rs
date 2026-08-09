@@ -408,6 +408,7 @@ impl LibraryView {
 
         PageHero::new("liked-songs-hero", t!("library-liked-songs"))
             .fallback("icons/heart-filled.svg")
+            .accent()
             .eyebrow(t!("detail-playlist"))
             .meta(strip)
             .actions(HeroPlayButton::new(

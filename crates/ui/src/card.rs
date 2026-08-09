@@ -41,6 +41,7 @@ pub struct Card {
     trailing: Option<AnyElement>,
     cover: Option<String>,
     fallback: Option<SharedString>,
+    accent: bool,
     art: Option<Pixels>,
     art_radius: Option<Pixels>,
     match_art_height: bool,
@@ -76,6 +77,7 @@ impl Card {
             trailing: None,
             cover: None,
             fallback: None,
+            accent: false,
             art: None,
             art_radius: None,
             match_art_height: false,
@@ -137,6 +139,11 @@ impl Card {
 
     pub fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
         self.fallback = Some(icon.into());
+        self
+    }
+
+    pub fn accent(mut self) -> Self {
+        self.accent = true;
         self
     }
 
@@ -266,6 +273,7 @@ impl RenderOnce for Card {
             trailing,
             cover,
             fallback,
+            accent,
             art,
             art_radius,
             match_art_height,
@@ -310,6 +318,7 @@ impl RenderOnce for Card {
                 .size(art)
                 .when_some(art_radius, Artwork::corner_radius)
                 .when_some(fallback, Artwork::fallback)
+                .when(accent, Artwork::accent)
                 .into_any_element(),
         };
         let leading = match play {
