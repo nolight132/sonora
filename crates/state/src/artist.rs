@@ -43,6 +43,10 @@ impl ArtistDetail {
         self.artist.as_ref()
     }
 
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+
     pub fn tracks(&self) -> &[Track] {
         self.artist
             .as_ref()

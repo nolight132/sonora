@@ -12,11 +12,12 @@ use spotify::{ReleaseType, Track};
 use state::{AppSettings, ArtistDetail, Playback, Sonora};
 use ui::ActiveTheme as _;
 use ui::{
-    Button, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Scrollbar, Scroller, Text,
-    grid,
+    Button, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Popover, Popovers,
+    Scrollbar, Scroller, Text, grid,
 };
 
 use crate::shared::hero::{HeroPlayButton, PageHero};
+use crate::shared::menu::artist_menu;
 use crate::shared::page;
 use crate::shared::release_card::ReleaseCard;
 use crate::shared::tracks::{PlaybackStatus, TrackField, TrackSource, Tracks, playback_status};
@@ -82,6 +83,7 @@ pub(crate) struct ArtistView {
     scrollbar: Entity<Scrollbar>,
     table: Entity<GridState<TrackSource>>,
     settings: Entity<AppSettings>,
+    popovers: Popovers,
 }
 
 const SECTION: &str = "artist";
@@ -165,6 +167,7 @@ impl ArtistView {
             scrollbar,
             table,
             settings,
+            popovers: Popovers::default(),
         }
     }
 
@@ -189,16 +192,36 @@ impl ArtistView {
         let title = artist
             .map(|artist| SharedString::from(artist.name.clone()))
             .unwrap_or_default();
-
-        PageHero::new("artist-hero", title)
-            .cover(artist.and_then(|artist| artist.cover_large.clone()))
-            .eyebrow(t!("artist-eyebrow"))
-            .actions(HeroPlayButton::new(
+        let overflow = self.detail.read(cx).id().map(|id| {
+            Popover::new("artist-overflow", self.popovers.clone())
+                .commands()
+                .button(
+                    Button::new("artist-overflow-button")
+                        .outline()
+                        .icon("icons/ellipsis.svg"),
+                )
+                .menu(
+                    artist_menu(id.to_owned())
+                        .top(cx.theme().metrics.control)
+                        .left_0(),
+                )
+        });
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(HeroPlayButton::new(
                 "play-artist",
                 t!("artist-play"),
                 self.detail.read(cx).tracks().to_vec(),
                 self.playback.clone(),
             ))
+            .children(overflow);
+
+        PageHero::new("artist-hero", title)
+            .cover(artist.and_then(|artist| artist.cover_large.clone()))
+            .eyebrow(t!("artist-eyebrow"))
+            .actions(actions)
             .circle()
             .into_any_element()
     }

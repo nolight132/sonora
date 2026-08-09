@@ -245,7 +245,8 @@ pub(crate) fn album_menu(album_id: String, playback: Entity<Playback>, opened_he
     let opened = album_id.clone();
     let played = album_id.clone();
     let next = album_id.clone();
-    let queued = album_id;
+    let queued = album_id.clone();
+    let copied = album_id;
     let playing = playback.clone();
     let nexting = playback.clone();
     let queueing = playback;
@@ -280,6 +281,27 @@ pub(crate) fn album_menu(album_id: String, playback: Entity<Playback>, opened_he
                 queueing.update(cx, |playback, cx| playback.enqueue_album(&queued, cx));
             }),
     )
+    .item(
+        MenuItem::new("copy-album-link", t!("menu-copy-link"))
+            .icon("icons/link.svg")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://open.spotify.com/album/{copied}"
+                )));
+            }),
+    )
+}
+
+pub(crate) fn artist_menu(artist_id: String) -> Menu {
+    Menu::new("artist-context-menu").item(
+        MenuItem::new("copy-artist-link", t!("menu-copy-link"))
+            .icon("icons/link.svg")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://open.spotify.com/artist/{artist_id}"
+                )));
+            }),
+    )
 }
 
 pub(crate) fn playlist_menu(
@@ -291,6 +313,7 @@ pub(crate) fn playlist_menu(
     let played = playlist.id.clone();
     let next = playlist.id.clone();
     let queued = playlist.id.clone();
+    let copied = playlist.id.clone();
     let playing = playback.clone();
     let nexting = playback.clone();
     let queueing = playback;
@@ -373,6 +396,15 @@ pub(crate) fn playlist_menu(
             .icon("icons/list-end.svg")
             .on_click(move |_, _, cx| {
                 queueing.update(cx, |playback, cx| playback.enqueue_playlist(&queued, cx));
+            }),
+    )
+    .item(
+        MenuItem::new("copy-playlist-link", t!("menu-copy-link"))
+            .icon("icons/link.svg")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(format!(
+                    "https://open.spotify.com/playlist/{copied}"
+                )));
             }),
     )
     .items(actions)
