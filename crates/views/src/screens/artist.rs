@@ -115,6 +115,7 @@ struct ReleaseEnd {
     count: usize,
     metrics: Option<ReleaseMetrics>,
     frame: Option<ReleaseFrame>,
+    ready: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -126,8 +127,8 @@ struct ReleaseFrame {
 }
 
 struct ReleaseUpdate {
-    end: bool,
-    bar: bool,
+    next: bool,
+    settle: bool,
 }
 
 impl ReleaseEnd {
@@ -138,6 +139,7 @@ impl ReleaseEnd {
             count: 0,
             metrics: None,
             frame: None,
+            ready: false,
         }
     }
 
@@ -147,13 +149,19 @@ impl ReleaseEnd {
     }
 
     fn select(&mut self, count: usize, depth: Pixels, viewport: Pixels) -> bool {
-        let hold = match self.metrics {
-            Some(metrics) => {
+        let hold = match (self.metrics, self.ready) {
+            (Some(metrics), true) => {
                 self.natural += metrics.height(count) - metrics.height(self.count);
                 (depth - self.natural).max(Pixels::ZERO)
             }
-            None if depth > Pixels::ZERO => depth + viewport,
-            None => Pixels::ZERO,
+            _ if depth > Pixels::ZERO => {
+                self.ready = false;
+                depth + viewport
+            }
+            _ => {
+                self.ready = false;
+                Pixels::ZERO
+            }
         };
         self.count = count;
         let changed = self.hold != hold;
@@ -164,6 +172,7 @@ impl ReleaseEnd {
     fn resize(&mut self, depth: Pixels, viewport: Pixels) -> bool {
         self.metrics = None;
         self.frame = None;
+        self.ready = false;
         let hold = match depth > Pixels::ZERO {
             true => depth + viewport,
             false => Pixels::ZERO,
@@ -173,11 +182,28 @@ impl ReleaseEnd {
         changed
     }
 
+    fn retreat(&mut self, depth: Pixels) -> bool {
+        if !self.ready {
+            return false;
+        }
+        let hold = match depth > Pixels::ZERO {
+            true => (depth - self.natural).max(Pixels::ZERO).min(self.hold),
+            false => Pixels::ZERO,
+        };
+        let changed = self.hold != hold;
+        self.hold = hold;
+        changed
+    }
+
+    fn maximum(&self) -> Option<Pixels> {
+        self.ready
+            .then(|| (self.natural + self.hold).max(Pixels::ZERO))
+    }
+
     fn observe(
         &mut self,
         bounds: &[Bounds<Pixels>],
         maximum: Pixels,
-        depth: Pixels,
         columns: usize,
         count: usize,
     ) -> ReleaseUpdate {
@@ -195,19 +221,17 @@ impl ReleaseEnd {
         self.metrics = metrics;
         if !stable {
             return ReleaseUpdate {
-                end: false,
-                bar: changed,
+                next: changed,
+                settle: false,
             };
         }
 
         self.natural = maximum - self.hold;
-        let hold = match depth > Pixels::ZERO {
-            true => (depth - self.natural).max(Pixels::ZERO).min(self.hold),
-            false => Pixels::ZERO,
-        };
-        let end = self.hold != hold;
-        self.hold = hold;
-        ReleaseUpdate { end, bar: end }
+        self.ready = true;
+        ReleaseUpdate {
+            next: false,
+            settle: true,
+        }
     }
 }
 
@@ -241,7 +265,18 @@ impl ArtistView {
         let saved = settings.read(cx).table(SECTION);
         let sorting = settings.read(cx).sorting(SECTION);
         let release_end = cx.new(|_| ReleaseEnd::new());
-        let scrollbar = cx.new(|_| Scrollbar::new(ScrollHandle::new()));
+        let release_scroll = release_end.clone();
+        let scrollbar = cx.new(|_| {
+            Scrollbar::new(ScrollHandle::new()).on_scroll(move |depth, cx| {
+                release_scroll.update(cx, |end, cx| {
+                    if !end.retreat(depth) {
+                        return None;
+                    }
+                    cx.notify();
+                    end.maximum()
+                })
+            })
+        });
         let scroll = scrollbar.read(cx).scroll().clone();
         let table = cx.new(|cx| {
             let playlist_scrollbar = cx.new(|_| {
@@ -266,10 +301,10 @@ impl ArtistView {
         cx.observe(&detail, |this, _, cx| {
             this.release_filter = ReleaseFilter::All;
             this.release_end.update(cx, |end, cx| end.reset(cx));
-            this.scrollbar
-                .read(cx)
-                .scroll()
-                .set_offset(gpui::Point::default());
+            this.scrollbar.update(cx, |bar, cx| {
+                bar.set_max_offset(None, cx);
+                bar.scroll().set_offset(gpui::Point::default());
+            });
             this.rebuild(cx);
             cx.notify();
         })
@@ -400,23 +435,14 @@ impl ArtistView {
         let scrollbar = self.scrollbar.clone();
         let releases = AlbumGrid::new("artist-release", self.width, albums, self.playback.clone())
             .on_layout(move |bounds, window, cx| {
-                let update = release_end.update(cx, |end, cx| {
-                    let update = end.observe(
-                        &bounds,
-                        scroll.max_offset().y,
-                        (-scroll.offset().y).max(Pixels::ZERO),
-                        columns,
-                        count,
-                    );
-                    if update.end {
-                        cx.notify();
-                    }
-                    update
+                let update = release_end.update(cx, |end, _| {
+                    end.observe(&bounds, scroll.max_offset().y, columns, count)
                 });
-                if update.bar {
+                if update.next {
                     scrollbar.update(cx, |_, cx| cx.notify());
+                    window.request_animation_frame();
                 }
-                if update.end || update.bar {
+                if update.settle && scrollbar.update(cx, |bar, cx| bar.set_max_offset(None, cx)) {
                     window.request_animation_frame();
                 }
             });
@@ -457,10 +483,14 @@ impl ArtistView {
                                     let scroll = this.scrollbar.read(cx).scroll().clone();
                                     let depth = (-scroll.offset().y).max(Pixels::ZERO);
                                     let viewport = scroll.bounds().size.height;
-                                    this.release_end.update(cx, |end, cx| {
+                                    let maximum = this.release_end.update(cx, |end, cx| {
                                         if end.select(count, depth, viewport) {
                                             cx.notify();
                                         }
+                                        end.maximum()
+                                    });
+                                    this.scrollbar.update(cx, |bar, cx| {
+                                        bar.set_max_offset(maximum, cx);
                                     });
                                     this.release_filter = filter;
                                     cx.notify();
@@ -501,15 +531,40 @@ impl Render for ArtistView {
                     cx.notify();
                 }
             });
+            self.scrollbar
+                .update(cx, |bar, cx| bar.set_max_offset(None, cx));
         }
         let viewport = page::viewport(&scroll, inset, window);
         self.table
             .update(cx, |table, _| table.set_viewport(viewport));
 
+        let release_end = self.release_end.clone();
+        let scrollbar = self.scrollbar.clone();
+        let wheel = scroll.clone();
         Scroller::new("artist-page", &self.scrollbar)
             .px(inset)
             .pt(inset)
             .pb(inset)
+            .on_scroll_wheel(move |_, window, _| {
+                let release_end = release_end.clone();
+                let scrollbar = scrollbar.clone();
+                let scroll = wheel.clone();
+                window.on_next_frame(move |_, cx| {
+                    let depth = (-scroll.offset().y).max(Pixels::ZERO);
+                    let maximum = release_end.update(cx, |end, cx| {
+                        if !end.retreat(depth) {
+                            return None;
+                        }
+                        cx.notify();
+                        end.maximum()
+                    });
+                    if let Some(maximum) = maximum {
+                        scrollbar.update(cx, |bar, cx| {
+                            bar.set_max_offset(Some(maximum), cx);
+                        });
+                    }
+                });
+            })
             .child(
                 div()
                     .child(self.header(cx))
@@ -564,12 +619,14 @@ mod tests {
             count: 50,
             metrics: Some(metrics),
             frame: None,
+            ready: true,
         };
 
         assert!(end.select(5, px(1500.), px(800.)));
         let natural = px(1800.) + metrics.height(5) - metrics.height(50);
         assert_eq!(end.natural, natural);
         assert_eq!(end.natural + end.hold, px(1500.));
+        assert_eq!(end.maximum(), Some(px(1500.)));
     }
 
     #[test]
@@ -579,27 +636,18 @@ mod tests {
             card: px(170.),
             gap: px(24.),
         };
-        let frame = ReleaseFrame {
-            count: 5,
-            columns: 5,
-            height: metrics.height(5),
-            hold: px(600.),
-        };
         let mut end = ReleaseEnd {
             hold: px(600.),
             natural: px(300.),
             count: 5,
             metrics: Some(metrics),
-            frame: Some(frame),
+            frame: None,
+            ready: true,
         };
 
-        let bounds = [Bounds::new(
-            gpui::point(Pixels::ZERO, Pixels::ZERO),
-            gpui::size(px(170.), px(170.)),
-        )];
-        let update = end.observe(&bounds, px(900.), px(700.), 5, 5);
-        assert!(update.end);
+        assert!(end.retreat(px(700.)));
         assert_eq!(end.hold, px(400.));
+        assert_eq!(end.maximum(), Some(px(700.)));
     }
 
     #[test]
@@ -609,26 +657,49 @@ mod tests {
             card: px(170.),
             gap: px(24.),
         };
-        let frame = ReleaseFrame {
-            count: 5,
-            columns: 5,
-            height: metrics.height(5),
-            hold: px(1200.),
-        };
         let mut end = ReleaseEnd {
             hold: px(1200.),
             natural: px(-300.),
             count: 5,
             metrics: Some(metrics),
+            frame: None,
+            ready: true,
+        };
+
+        assert!(end.retreat(Pixels::ZERO));
+        assert_eq!(end.hold, Pixels::ZERO);
+        assert_eq!(end.maximum(), Some(Pixels::ZERO));
+    }
+
+    #[test]
+    fn measuring_only_calibrates_the_extent() {
+        let metrics = ReleaseMetrics {
+            columns: 5,
+            card: px(170.),
+            gap: px(24.),
+        };
+        let frame = ReleaseFrame {
+            count: 5,
+            columns: 5,
+            height: metrics.height(5),
+            hold: px(600.),
+        };
+        let mut end = ReleaseEnd {
+            hold: px(600.),
+            natural: Pixels::ZERO,
+            count: 5,
+            metrics: Some(metrics),
             frame: Some(frame),
+            ready: true,
         };
         let bounds = [Bounds::new(
             gpui::point(Pixels::ZERO, Pixels::ZERO),
             gpui::size(px(170.), px(170.)),
         )];
 
-        let update = end.observe(&bounds, px(900.), Pixels::ZERO, 5, 5);
-        assert!(update.end);
-        assert_eq!(end.hold, Pixels::ZERO);
+        let update = end.observe(&bounds, px(900.), 5, 5);
+        assert!(update.settle);
+        assert_eq!(end.natural, px(300.));
+        assert_eq!(end.hold, px(600.));
     }
 }
