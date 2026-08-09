@@ -7,7 +7,7 @@ use ui::ActiveTheme as _;
 use gpui::prelude::*;
 use gpui::{
     Context, Entity, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    Render, ScrollHandle, SharedString,
+    Render, ScrollHandle, ScrollWheelEvent, SharedString,
 };
 use gpui::{Window, div, px};
 use i18n::t;
@@ -27,6 +27,7 @@ const VOLUME_TIGHT: f32 = 72.;
 const CLOCK_SHORT: f32 = 3.4;
 const CLOCK_LONG: f32 = 5.4;
 const STEP: f32 = 0.004;
+const NOTCH: f32 = 0.05;
 
 pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
@@ -175,6 +176,28 @@ impl PlayerBar {
             }))
     }
 
+    fn turn_volume(
+        &mut self,
+        event: &ScrollWheelEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let delta = event.delta.pixel_delta(window.line_height()).y;
+        if delta == Pixels::ZERO {
+            return;
+        }
+        cx.stop_propagation();
+
+        let notch = match delta > Pixels::ZERO {
+            true => NOTCH,
+            false => -NOTCH,
+        };
+        let level = (self.playback.read(cx).volume() + notch).clamp(0., 1.);
+        self.muted = None;
+        self.playback
+            .update(cx, |playback, cx| playback.set_volume(level, cx));
+    }
+
     fn sound(&self, width: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let empty = theme.muted_foreground.opacity(0.3);
@@ -187,6 +210,7 @@ impl PlayerBar {
             .flex_none()
             .items_center()
             .gap_1()
+            .on_scroll_wheel(cx.listener(Self::turn_volume))
             .child(
                 Button::new("volume")
                     .ghost()

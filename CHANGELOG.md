@@ -12,6 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Copy link actions for tracks, albums, playlists and artists.
 - Monthly listeners on the artist page, and play counts beside an artist's popular tracks.
 - Toasts confirming queue and playlist additions.
+- The volume can be set by scrolling the mouse wheel over the volume control.
 
 ### Changed
 
