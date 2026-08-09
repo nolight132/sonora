@@ -34,14 +34,19 @@ pub async fn create(session: &Session, name: &str) -> Result<String> {
 
     rename(session, &id, name).await?;
 
-    let uri = format!("{PLAYLIST_PREFIX}{id}");
+    add_to_library(session, &id).await?;
+
+    Ok(id)
+}
+
+pub async fn add_to_library(session: &Session, playlist_id: &str) -> Result<()> {
+    let uri = format!("{PLAYLIST_PREFIX}{playlist_id}");
     let rootlist = fetch_rootlist(session).await?;
     let body = changes(rootlist.revision.as_deref(), add_op(&uri));
     rootlist_edit(session, &body)
         .await
         .context("cannot add the playlist to the library")?;
-
-    Ok(id)
+    Ok(())
 }
 
 pub async fn rename(session: &Session, playlist_id: &str, name: &str) -> Result<()> {
