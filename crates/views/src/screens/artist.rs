@@ -20,11 +20,10 @@ use ui::{
     Scrollbar, Scroller, Text, grid,
 };
 
-use crate::shared::card_grid::CardGrid;
+use crate::shared::album_grid::AlbumGrid;
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::menu::artist_menu;
 use crate::shared::page;
-use crate::shared::release_card::ReleaseCard;
 use crate::shared::tracks::{PlaybackStatus, TrackField, TrackSource, Tracks, playback_status};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -257,9 +256,8 @@ impl ArtistView {
         }
 
         let scroll = self.scrollbar.read(cx).scroll().clone();
-        let layout = self.release_layout.borrow();
-        let grid = CardGrid::layout(self.width);
-        let initial = 2;
+        let grid = AlbumGrid::layout(self.width);
+        let initial = grid.columns * 2;
         let overdraw = grid.card * 2.;
         let albums = albums
             .iter()
@@ -267,24 +265,33 @@ impl ArtistView {
             .cloned()
             .enumerate()
             .collect::<Vec<_>>();
-        let rows = albums
-            .chunks(grid.columns)
-            .enumerate()
-            .map(|(row, albums)| {
-                let load_art = release_near(&layout.bounds, row, &scroll, overdraw, initial);
-                let cards = albums.iter().cloned().map(|(index, album)| {
-                    ReleaseCard::new(index, album, self.playback.clone())
-                        .load_art(load_art)
-                        .width(grid.card)
-                        .into_any_element()
-                });
-                CardGrid::new(self.width).children(cards)
-            })
-            .collect::<Vec<_>>();
-        drop(layout);
+        let load_layout = self.release_layout.clone();
+        let load_scroll = scroll.clone();
         let release_layout = self.release_layout.clone();
-        let observed_scroll = scroll.clone();
         let view = cx.entity().downgrade();
+        let releases = AlbumGrid::new("artist-release", self.width, albums, self.playback.clone())
+            .load_art_when(move |index| {
+                release_near(
+                    &load_layout.borrow().bounds,
+                    index,
+                    &load_scroll,
+                    overdraw,
+                    initial,
+                )
+            })
+            .on_layout(move |bounds, cx| {
+                let offset = scroll.offset().y;
+                let changed = {
+                    let mut layout = release_layout.borrow_mut();
+                    let changed = layout.bounds != bounds || layout.offset != offset;
+                    layout.bounds = bounds;
+                    layout.offset = offset;
+                    changed
+                };
+                if changed {
+                    view.update(cx, |_, cx| cx.notify()).ok();
+                }
+            });
 
         Some(
             div()
@@ -315,26 +322,7 @@ impl ArtistView {
                                 }))
                         })),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_6()
-                        .children(rows)
-                        .on_children_prepainted(move |bounds, _, cx| {
-                            let offset = observed_scroll.offset().y;
-                            let changed = {
-                                let mut layout = release_layout.borrow_mut();
-                                let changed = layout.bounds != bounds || layout.offset != offset;
-                                layout.bounds = bounds;
-                                layout.offset = offset;
-                                changed
-                            };
-                            if changed {
-                                view.update(cx, |_, cx| cx.notify()).ok();
-                            }
-                        }),
-                )
+                .child(releases)
                 .into_any_element(),
         )
     }

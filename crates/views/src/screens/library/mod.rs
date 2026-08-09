@@ -25,9 +25,8 @@ use ui::{
     Unit, Viewport, clock, grid, heading, scrolled,
 };
 
-use crate::shared::card_grid::{CARD_MAX, CardGrid};
+use crate::shared::album_grid::{AlbumGrid, CARD_MAX, CardGrid};
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
-use crate::shared::release_card::ReleaseCard;
 use crate::shared::tracks::{
     self, LIBRARY_COLUMNS, PlaybackStatus, TrackField, TrackSieve, TrackSource, Tracks,
     playback_status,
@@ -516,16 +515,26 @@ impl LibraryView {
                                 .into_any_element()
                         }
                         DeckRow::Cards(cards) => {
-                            let cards = cards.iter().filter_map(|&(display, row)| match section {
-                                Section::Tracks => view.track_card(display, row, card, cx),
-                                Section::Albums => view.album_card(display, row, card, cx),
-                                Section::Playlists => view.playlist_card(display, row, card, cx),
-                            });
+                            let row = match section {
+                                Section::Tracks => CardGrid::new(room)
+                                    .children(cards.iter().filter_map(|&(display, row)| {
+                                        view.track_card(display, row, card, cx)
+                                    }))
+                                    .into_any_element(),
+                                Section::Albums => {
+                                    view.album_grid(cards, room, cx).into_any_element()
+                                }
+                                Section::Playlists => CardGrid::new(room)
+                                    .children(cards.iter().filter_map(|&(display, row)| {
+                                        view.playlist_card(display, row, card, cx)
+                                    }))
+                                    .into_any_element(),
+                            };
 
                             div()
                                 .px(inset)
                                 .when(separated, |this| this.pb_6())
-                                .child(CardGrid::new(room).children(cards))
+                                .child(row)
                                 .into_any_element()
                         }
                     }
@@ -583,28 +592,27 @@ impl LibraryView {
         )
     }
 
-    fn album_card(&self, display: usize, row: usize, card: Pixels, cx: &App) -> Option<AnyElement> {
-        let album = self.albums.read(cx).delegate().source().at(row, cx)?;
-        let context = album.clone();
+    fn album_grid(&self, cards: &[(usize, usize)], room: Pixels, cx: &App) -> AlbumGrid {
+        let albums = cards.iter().filter_map(|&(display, row)| {
+            self.albums
+                .read(cx)
+                .delegate()
+                .source()
+                .at(row, cx)
+                .map(|album| (display, album))
+        });
         let view = self.me.clone();
 
-        Some(
-            div()
-                .id(("library-album", display))
-                .on_mouse_down(MouseButton::Right, move |event, window, cx| {
-                    window.prevent_default();
-                    cx.stop_propagation();
-                    let Some(view) = view.upgrade() else {
-                        return;
-                    };
-                    view.update(cx, |this, cx| {
-                        this.context_menu =
-                            Some((LibraryMenu::Album(context.clone()), event.position));
-                        cx.notify();
-                    });
-                })
-                .child(ReleaseCard::new(display, album, self.playback.clone()).width(card))
-                .into_any_element(),
+        AlbumGrid::new("library-album", room, albums, self.playback.clone()).on_context(
+            move |album, position, cx| {
+                let Some(view) = view.upgrade() else {
+                    return;
+                };
+                view.update(cx, |this, cx| {
+                    this.context_menu = Some((LibraryMenu::Album(album.clone()), position));
+                    cx.notify();
+                });
+            },
         )
     }
 
