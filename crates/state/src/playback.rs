@@ -23,13 +23,9 @@ enum Start {
 impl Start {
     fn debounce(self) -> Duration {
         match self {
-            Self::Skip | Self::Burst => SKIP_DEBOUNCE,
-            Self::Pick | Self::Segue => Duration::ZERO,
+            Self::Burst => SKIP_DEBOUNCE,
+            Self::Pick | Self::Skip | Self::Segue => Duration::ZERO,
         }
-    }
-
-    fn immediate(self) -> bool {
-        self != Self::Burst
     }
 }
 
@@ -202,7 +198,6 @@ impl Playback {
             return self.failed(format!("{} is not available to stream", track.name), cx);
         }
 
-        let ready = start.immediate() && self.preloaded.as_deref() == Some(id.as_str());
         self.track = Some(track.clone());
         self.state = PlaybackState::Loading;
         self.position = Duration::ZERO;
@@ -213,10 +208,7 @@ impl Playback {
             .blocked_until
             .and_then(|until| until.checked_duration_since(Instant::now()))
             .unwrap_or_default()
-            .max(match ready {
-                true => Duration::ZERO,
-                false => start.debounce(),
-            });
+            .max(start.debounce());
 
         self.load = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(wait).await;
