@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use i18n::t;
-use spotify::Track;
+use spotify::{Album, Playlist, Track};
 use state::{AppSettings, Collection, Detail, LibraryEvent, Playback, Sonora};
 use ui::{ActiveTheme as _, Button, Menu, Popover, Popovers, Popup, SortAxis};
 use ui::{
@@ -26,6 +26,11 @@ use crate::shared::tracks::{
 use crate::shared::{cells, page};
 
 const PINNED: [&str; 3] = ["cover", "title", "name"];
+
+enum Saveable {
+    Album(Album),
+    Playlist(Playlist),
+}
 
 struct DetailTracks(Entity<Detail>);
 
@@ -114,13 +119,14 @@ impl DetailView {
         })
         .detach();
 
-        if show_liked {
-            let library = Sonora::global(cx).library.clone();
-            cx.observe(&library, |this, _, cx| {
+        let library = Sonora::global(cx).library.clone();
+        cx.observe(&library, move |this, _, cx| {
+            if show_liked {
                 this.table.update(cx, |table, cx| table.refresh(cx));
-            })
-            .detach();
-        }
+            }
+            cx.notify();
+        })
+        .detach();
 
         if section == "playlist" {
             let library = Sonora::global(cx).library.clone();
@@ -289,6 +295,7 @@ impl DetailView {
                 queued,
                 self.playback.clone(),
             ))
+            .children(self.library_button(cx))
             .children(overflow);
 
         let view = self.me.clone();
@@ -308,17 +315,71 @@ impl DetailView {
             .into_any_element()
     }
 
+    fn library_button(&self, cx: &App) -> Option<Button> {
+        let theme = *cx.theme();
+        let library = Sonora::global(cx).library.clone();
+        let detail = self.detail.read(cx);
+        let id = detail.id()?.to_owned();
+
+        let (target, saved, busy) = match detail.header()?.kind {
+            Collection::Album => (
+                Saveable::Album(detail.album()?.clone()),
+                library.read(cx).saved_album(&id),
+                library.read(cx).pending_album(&id),
+            ),
+            Collection::Playlist => {
+                let known = library.read(cx).playlist(&id).cloned();
+                let playlist = known.clone().or_else(|| detail.playlist().cloned())?;
+                if playlist.owned {
+                    return None;
+                }
+                (Saveable::Playlist(playlist), known.is_some(), false)
+            }
+        };
+
+        Some(
+            Button::new("detail-toggle-library")
+                .outline()
+                .icon(match saved {
+                    true => "icons/heart-filled.svg",
+                    false => "icons/heart.svg",
+                })
+                .tooltip(match saved {
+                    true => "menu-remove-from-library",
+                    false => "menu-add-to-library",
+                })
+                .tint(match saved {
+                    true => theme.primary,
+                    false => theme.muted_foreground,
+                })
+                .disabled(busy)
+                .on_click(move |_, _, cx| {
+                    library.update(cx, |library, cx| match &target {
+                        Saveable::Album(album) => library.toggle_album(album.clone(), cx),
+                        Saveable::Playlist(playlist) if saved => {
+                            library.remove_playlist_from_library(playlist.id.clone(), cx)
+                        }
+                        Saveable::Playlist(playlist) => {
+                            library.add_playlist_to_library(playlist.clone(), cx)
+                        }
+                    });
+                }),
+        )
+    }
+
     fn menu(&self, cx: &App) -> Option<Menu> {
         let detail = self.detail.read(cx);
         let id = detail.id()?.to_owned();
         let header = detail.header()?;
 
         Some(match header.kind {
-            Collection::Album => album_menu(id, self.playback.clone(), true),
+            Collection::Album => {
+                album_menu(detail.album()?.clone(), self.playback.clone(), true, cx)
+            }
             Collection::Playlist => {
                 let saved = Sonora::global(cx).library.read(cx).playlist(&id).cloned();
                 let playlist = saved.or_else(|| detail.playlist().cloned())?;
-                playlist_menu(playlist, self.playback.clone(), true)
+                playlist_menu(playlist, self.playback.clone(), true, cx)
             }
         })
     }

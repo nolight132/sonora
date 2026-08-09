@@ -615,7 +615,7 @@ impl Render for ArtistView {
             .update(cx, |table, _| table.set_viewport(viewport));
 
         let release_menu = self.release_menu.clone().map(|(album, position)| {
-            let menu = album_menu(album.id, self.playback.clone(), false);
+            let menu = album_menu(album, self.playback.clone(), false, cx);
             Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
                 this.release_menu = None;
                 cx.notify();

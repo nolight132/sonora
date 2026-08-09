@@ -713,9 +713,9 @@ impl Render for LibraryView {
 
         let context_menu = self.context_menu.clone().map(|(target, position)| {
             let menu = match target {
-                LibraryMenu::Album(album) => album_menu(album.id, self.playback.clone(), false),
+                LibraryMenu::Album(album) => album_menu(album, self.playback.clone(), false, cx),
                 LibraryMenu::Playlist(playlist) => {
-                    playlist_menu(playlist, self.playback.clone(), false)
+                    playlist_menu(playlist, self.playback.clone(), false, cx)
                 }
                 LibraryMenu::Background => Menu::new("playlist-background-menu").item(
                     MenuItem::new("create-playlist", t!("menu-new-playlist"))
