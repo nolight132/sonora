@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{
-    AnyWindowHandle, App, Context, DragMoveEvent, Empty, EntityId, MouseButton, MouseDownEvent,
-    Pixels, Render, ScrollHandle, Task, Window, div, point, px,
+    AnyWindowHandle, App, Context, DragMoveEvent, Empty, EntityId, ListState, MouseButton,
+    MouseDownEvent, Pixels, Render, ScrollHandle, Task, Window, div, point, px,
 };
 
 use crate::theme::ActiveTheme as _;
@@ -20,6 +20,63 @@ const RESTING: f32 = 0.35;
 const ACTIVE: f32 = 0.55;
 
 type HoverGuard = Rc<dyn Fn(bool, AnyWindowHandle, &mut App)>;
+
+#[derive(Clone)]
+enum Target {
+    Area(ScrollHandle),
+    List(ListState),
+}
+
+impl Target {
+    fn top(&self) -> Pixels {
+        match self {
+            Self::Area(scroll) => scroll.bounds().origin.y,
+            Self::List(scroll) => scroll.viewport_bounds().origin.y,
+        }
+    }
+
+    fn viewport(&self) -> Pixels {
+        match self {
+            Self::Area(scroll) => scroll.bounds().size.height,
+            Self::List(scroll) => scroll.viewport_bounds().size.height,
+        }
+    }
+
+    fn hidden(&self) -> Pixels {
+        match self {
+            Self::Area(scroll) => scroll.max_offset().y,
+            Self::List(scroll) => scroll.max_offset_for_scrollbar().y,
+        }
+    }
+
+    fn offset(&self) -> Pixels {
+        match self {
+            Self::Area(scroll) => scrolled(scroll),
+            Self::List(scroll) => (-scroll.scroll_px_offset_for_scrollbar().y)
+                .clamp(Pixels::ZERO, scroll.max_offset_for_scrollbar().y),
+        }
+    }
+
+    fn set_offset(&self, offset: Pixels) {
+        let point = point(Pixels::ZERO, -offset);
+        match self {
+            Self::Area(scroll) => scroll.set_offset(point),
+            Self::List(scroll) => scroll.set_offset_from_scrollbar(point),
+        }
+    }
+
+    fn drag_started(&self) {
+        if let Self::List(scroll) = self {
+            scroll.scrollbar_drag_started();
+        }
+    }
+
+    fn drag_ended(&self) {
+        if let Self::List(scroll) = self {
+            scroll.scrollbar_drag_ended();
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Grab {
@@ -40,6 +97,7 @@ pub fn scrolled(scroll: &ScrollHandle) -> Pixels {
 
 pub struct Scrollbar {
     scroll: ScrollHandle,
+    list: Option<ListState>,
     seen: Pixels,
     awake: bool,
     hovered: bool,
@@ -53,6 +111,7 @@ impl Scrollbar {
     pub fn new(scroll: ScrollHandle) -> Self {
         Self {
             scroll,
+            list: None,
             seen: Pixels::ZERO,
             awake: false,
             hovered: false,
@@ -61,6 +120,12 @@ impl Scrollbar {
             hover_guard: None,
             linger: None,
         }
+    }
+
+    pub fn list(list: ListState) -> Self {
+        let mut scrollbar = Self::new(ScrollHandle::new());
+        scrollbar.list = Some(list);
+        scrollbar
     }
 
     pub fn always_visible(mut self) -> Self {
@@ -75,6 +140,13 @@ impl Scrollbar {
 
     pub fn scroll(&self) -> &ScrollHandle {
         &self.scroll
+    }
+
+    fn target(&self) -> Target {
+        self.list.as_ref().map_or_else(
+            || Target::Area(self.scroll.clone()),
+            |list| Target::List(list.clone()),
+        )
     }
 
     pub(crate) fn set_hover_guard(
@@ -100,9 +172,10 @@ impl Scrollbar {
 
 impl Render for Scrollbar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let viewport = self.scroll.bounds().size.height;
-        let hidden = self.scroll.max_offset().y;
-        let offset = scrolled(&self.scroll);
+        let target = self.target();
+        let viewport = target.viewport();
+        let hidden = target.hidden();
+        let offset = target.offset();
 
         if offset != self.seen {
             self.seen = offset;
@@ -124,8 +197,10 @@ impl Render for Scrollbar {
             false => IDLE,
         };
 
-        let jump = self.scroll.clone();
-        let drag = self.scroll.clone();
+        let jump = target.clone();
+        let drag = target.clone();
+        let started = target.clone();
+        let released = target;
         let owner = cx.entity_id();
         let hover_guard = self.hover_guard.clone();
 
@@ -147,10 +222,9 @@ impl Render for Scrollbar {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                    let local =
-                        event.position.y - jump.bounds().origin.y - this.track_inset - thumb / 2.;
+                    let local = event.position.y - jump.top() - this.track_inset - thumb / 2.;
                     let fraction = (local / travel).clamp(0., 1.);
-                    jump.set_offset(point(Pixels::ZERO, Pixels::ZERO - hidden * fraction));
+                    jump.set_offset(hidden * fraction);
                     this.wake(cx);
                 }),
             )
@@ -168,10 +242,22 @@ impl Render for Scrollbar {
                     .cursor_pointer()
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                        cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                            started.drag_started();
                             this.wake(cx);
                             cx.stop_propagation();
                         }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener({
+                            let released = released.clone();
+                            move |_, _, _, _| released.drag_ended()
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(move |_, _, _, _| released.drag_ended()),
                     )
                     .on_drag(
                         Grab {
@@ -196,7 +282,7 @@ impl Render for Scrollbar {
                             let moved = event.event.position.y - start;
                             let scrolled = base + moved * (hidden / travel);
                             let clamped = scrolled.clamp(Pixels::ZERO, hidden);
-                            drag.set_offset(point(Pixels::ZERO, Pixels::ZERO - clamped));
+                            drag.set_offset(clamped);
                             this.wake(cx);
                         }),
                     ),
