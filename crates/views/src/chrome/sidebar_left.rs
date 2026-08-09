@@ -21,7 +21,7 @@ const NAV: [(&str, &str, Option<Destination>); 4] = [
     (
         "nav-settings",
         "icons/settings.svg",
-        Some(Destination::Settings(SettingsTab::Appearance)),
+        Some(Destination::Settings(SettingsTab::General)),
     ),
 ];
 
@@ -32,9 +32,9 @@ const LIBRARY_TABS: [(&str, LibraryTab); 3] = [
 ];
 
 const SETTINGS_TABS: [(&str, SettingsTab); 4] = [
+    ("settings-tab-general", SettingsTab::General),
     ("settings-tab-appearance", SettingsTab::Appearance),
     ("settings-tab-playback", SettingsTab::Playback),
-    ("settings-tab-account", SettingsTab::Account),
     ("settings-tab-about", SettingsTab::About),
 ];
 

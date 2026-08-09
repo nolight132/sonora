@@ -258,9 +258,9 @@ month-11 = лист.
 month-12 = груд.
 
 # settings
+settings-tab-general = Загальні
 settings-tab-appearance = Вигляд
 settings-tab-playback = Відтворення
-settings-tab-account = Обліковий запис
 settings-theme = Тема
 settings-theme-detail = Кольорова палітра застосунку
 settings-transparent = Прозорий фон

@@ -258,9 +258,9 @@ month-11 = lis
 month-12 = gru
 
 # settings
+settings-tab-general = Ogólne
 settings-tab-appearance = Wygląd
 settings-tab-playback = Odtwarzanie
-settings-tab-account = Konto
 settings-theme = Motyw
 settings-theme-detail = Paleta kolorów aplikacji
 settings-transparent = Przezroczyste tło

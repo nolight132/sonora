@@ -92,7 +92,7 @@ impl SettingsView {
             session,
             playback,
             settings,
-            tab: SettingsTab::Appearance,
+            tab: SettingsTab::General,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new())),
             transparency: ScrubberState::new("transparency"),
             popovers: Popovers::default(),
@@ -107,6 +107,10 @@ impl SettingsView {
 
     fn panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let rows: Vec<AnyElement> = match self.tab {
+            SettingsTab::General => vec![
+                self.language_row(cx).into_any_element(),
+                self.account_row(cx).into_any_element(),
+            ],
             SettingsTab::Appearance => vec![
                 self.theme_row(cx).into_any_element(),
                 self.transparent_row(cx).into_any_element(),
@@ -121,7 +125,6 @@ impl SettingsView {
             .chain([
                 self.adaptive_row(cx).into_any_element(),
                 self.corners_row(cx).into_any_element(),
-                self.language_row(cx).into_any_element(),
                 self.font_row(cx).into_any_element(),
                 self.auto_hide_row(cx).into_any_element(),
             ])
@@ -132,7 +135,6 @@ impl SettingsView {
                 self.playback_row(cx).into_any_element(),
                 self.gapless_row(cx).into_any_element(),
             ],
-            SettingsTab::Account => vec![self.account_row(cx).into_any_element()],
             SettingsTab::About => vec![
                 self.version_row(cx).into_any_element(),
                 self.license_row(cx).into_any_element(),
@@ -831,8 +833,10 @@ impl Render for SettingsView {
                     .w_full()
                     .max_w(px(640.))
                     .p_6()
-                    .child(self.profile(cx))
-                    .child(Separator::horizontal().w_full())
+                    .when(self.tab == SettingsTab::General, |this| {
+                        this.child(self.profile(cx))
+                            .child(Separator::horizontal().w_full())
+                    })
                     .child(self.panel(cx))
                     .when(self.tab == SettingsTab::About, |this| {
                         this.child(self.team(cx)).child(self.notice(cx))

@@ -17,9 +17,9 @@ pub enum LibraryTab {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsTab {
+    General,
     Appearance,
     Playback,
-    Account,
     About,
 }
 

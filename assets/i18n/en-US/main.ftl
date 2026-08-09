@@ -255,9 +255,9 @@ month-11 = Nov
 month-12 = Dec
 
 # settings
+settings-tab-general = General
 settings-tab-appearance = Appearance
 settings-tab-playback = Playback
-settings-tab-account = Account
 settings-theme = Theme
 settings-theme-detail = Choose the application colour palette
 settings-transparent = Transparent background

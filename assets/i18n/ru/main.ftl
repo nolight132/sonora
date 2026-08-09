@@ -258,9 +258,9 @@ month-11 = ноя.
 month-12 = дек.
 
 # settings
+settings-tab-general = Общие
 settings-tab-appearance = Внешний вид
 settings-tab-playback = Воспроизведение
-settings-tab-account = Аккаунт
 settings-theme = Тема
 settings-theme-detail = Цветовая палитра приложения
 settings-transparent = Прозрачный фон

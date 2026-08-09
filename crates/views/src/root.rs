@@ -228,7 +228,7 @@ impl Root {
     }
 
     fn open_settings(&mut self, cx: &mut Context<Self>) {
-        navigate(Destination::Settings(SettingsTab::Appearance), cx);
+        navigate(Destination::Settings(SettingsTab::General), cx);
         self.pending = Some(Focus::Workspace);
         cx.notify();
     }
