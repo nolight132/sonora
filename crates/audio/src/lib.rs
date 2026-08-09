@@ -19,6 +19,7 @@ const TRACK_PREFIX: &str = "spotify:track:";
 #[derive(Clone, Copy, Debug)]
 pub struct EngineConfig {
     pub normalisation: bool,
+    pub gapless: bool,
     pub position_interval: Duration,
     pub gain: f32,
 }
@@ -49,6 +50,7 @@ pub struct Engine {
     player: Arc<Player>,
     volume: Volume,
     flush: Flush,
+    gapless: bool,
 }
 
 impl Engine {
@@ -59,6 +61,7 @@ impl Engine {
         let player_config = PlayerConfig {
             bitrate: Bitrate::Bitrate320,
             normalisation: config.normalisation,
+            gapless: config.gapless,
             position_update_interval: Some(config.position_interval),
             ..Default::default()
         };
@@ -74,14 +77,17 @@ impl Engine {
             player,
             volume,
             flush,
+            gapless: config.gapless,
         };
         (engine, events)
     }
 
-    pub fn load(&self, track_id: &str) -> Result<()> {
+    pub fn load(&self, track_id: &str, seamless: bool) -> Result<()> {
         let uri = track_uri(track_id)?;
 
-        self.flush.request();
+        if !seamless || !self.gapless {
+            self.flush.request();
+        }
         self.player.load(uri, true, 0);
         Ok(())
     }

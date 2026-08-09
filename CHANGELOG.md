@@ -17,6 +17,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   section, picked from the last track you queued. Those tracks play, reorder and can be removed like
   any other queue entry.
 - Tooltips on icon-only controls across the player, title bar, toolbar and queue.
+- The next track is fetched before the current one ends, so it starts without a gap.
+- Gapless playback, on by default and switchable under Playback settings: an album runs from one
+  track into the next the way it was sequenced, instead of being cut at the track boundary.
 
 ### Changed
 

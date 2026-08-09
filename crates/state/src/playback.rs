@@ -12,6 +12,22 @@ use spotify::{SpotifyApi, Track};
 
 type Fetch = Pin<Box<dyn Future<Output = Result<Vec<Track>>> + Send>>;
 
+#[derive(Clone, Copy, PartialEq)]
+enum Start {
+    Pick,
+    Skip,
+    Segue,
+}
+
+impl Start {
+    fn debounce(self) -> Duration {
+        match self {
+            Self::Skip => SKIP_DEBOUNCE,
+            Self::Pick | Self::Segue => Duration::ZERO,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum QueuePlacement {
     Next,
@@ -24,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use crate::{AppSettings, Io, Note, Session, SessionEvent, Toasts, join};
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
+const PRELOAD_BEFORE_END: Duration = Duration::from_secs(10);
 const SKIP_DEBOUNCE: Duration = Duration::from_millis(250);
 const KEY_COOLDOWN: Duration = Duration::from_secs(6);
 const TAPER_DB: f32 = 50.;
@@ -77,6 +94,7 @@ pub struct Playback {
     settings: Entity<AppSettings>,
     level: f32,
     normalisation: bool,
+    gapless: bool,
     repeat: Repeat,
     radio: bool,
     seeded: Option<String>,
@@ -85,6 +103,7 @@ pub struct Playback {
     fetch: Option<Task<()>>,
     enqueue: Option<Task<()>>,
     suggest: Option<Task<()>>,
+    preloaded: Option<String>,
     blocked_until: Option<Instant>,
 }
 
@@ -112,6 +131,7 @@ impl Playback {
 
         let level = settings.read(cx).volume();
         let normalisation = settings.read(cx).normalisation();
+        let gapless = settings.read(cx).gapless();
         let repeat = settings.read(cx).repeat();
 
         Self {
@@ -125,6 +145,7 @@ impl Playback {
             settings,
             level,
             normalisation,
+            gapless,
             repeat,
             radio: false,
             seeded: None,
@@ -133,15 +154,16 @@ impl Playback {
             fetch: None,
             enqueue: None,
             suggest: None,
+            preloaded: None,
             blocked_until: None,
         }
     }
 
     pub fn play(&mut self, track: &Track, cx: &mut Context<Self>) {
-        self.load_after(track, Duration::ZERO, cx);
+        self.load_after(track, Start::Pick, cx);
     }
 
-    pub fn preload(&self, track: &Track) {
+    pub fn preload(&mut self, track: &Track) {
         let Some(engine) = self.engine.as_ref() else {
             return;
         };
@@ -152,12 +174,17 @@ impl Playback {
         {
             return;
         }
+        if self.preloaded.as_deref() == Some(id) {
+            return;
+        }
+        self.preloaded = Some(id.to_owned());
         if let Err(error) = engine.preload(id) {
+            self.preloaded = None;
             log::warn!("playback: cannot preload {}: {error:#}", track.name);
         }
     }
 
-    fn load_after(&mut self, track: &Track, debounce: Duration, cx: &mut Context<Self>) {
+    fn load_after(&mut self, track: &Track, start: Start, cx: &mut Context<Self>) {
         if self.engine.is_none() {
             return;
         }
@@ -168,16 +195,21 @@ impl Playback {
             return self.failed(format!("{} is not available to stream", track.name), cx);
         }
 
+        let ready = self.preloaded.as_deref() == Some(id.as_str());
         self.track = Some(track.clone());
         self.state = PlaybackState::Loading;
         self.position = Duration::ZERO;
+        self.preloaded = None;
         cx.notify();
 
         let wait = self
             .blocked_until
             .and_then(|until| until.checked_duration_since(Instant::now()))
             .unwrap_or_default()
-            .max(debounce);
+            .max(match ready {
+                true => Duration::ZERO,
+                false => start.debounce(),
+            });
 
         self.load = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(wait).await;
@@ -185,7 +217,7 @@ impl Playback {
                 let Some(engine) = this.engine.as_ref() else {
                     return;
                 };
-                if let Err(error) = engine.load(&id) {
+                if let Err(error) = engine.load(&id, start == Start::Segue) {
                     this.failed(format!("{error:#}"), cx);
                 }
             })
@@ -407,7 +439,30 @@ impl Playback {
 
     pub fn next(&mut self, cx: &mut Context<Self>) {
         self.fetch = None;
-        self.follow_queue(cx);
+        self.follow_queue(Start::Skip, cx);
+    }
+
+    fn preload_next(&mut self, position: Duration, cx: &Context<Self>) {
+        let Some(duration) = self.track.as_ref().map(|track| track.duration) else {
+            return;
+        };
+        if duration.is_zero()
+            || self.state != PlaybackState::Playing
+            || duration.saturating_sub(position) > PRELOAD_BEFORE_END
+        {
+            return;
+        }
+
+        let next = match self.repeat != Repeat::One {
+            true => self.queue.read(cx).upcoming().next().cloned(),
+            false => None,
+        };
+        let Some(next) = next else {
+            self.preloaded = None;
+            return;
+        };
+
+        self.preload(&next);
     }
 
     pub fn radio(&self) -> bool {
@@ -430,7 +485,7 @@ impl Playback {
         else {
             return;
         };
-        self.load_after(&track, SKIP_DEBOUNCE, cx);
+        self.load_after(&track, Start::Pick, cx);
     }
 
     fn forget_similar(&mut self, cx: &mut Context<Self>) {
@@ -506,23 +561,28 @@ impl Playback {
     fn advance(&mut self, ended: Option<Track>, cx: &mut Context<Self>) {
         match self.repeat {
             Repeat::One => match ended {
-                Some(track) => self.load_after(&track, Duration::ZERO, cx),
-                None => self.next(cx),
+                Some(track) => self.load_after(&track, Start::Segue, cx),
+                None => self.segue_queue(cx),
             },
             Repeat::All if !self.queue.read(cx).has_next() => {
                 self.fetch = None;
                 if let Some(track) = self.queue.update(cx, |queue, cx| queue.rewind(cx)) {
-                    self.load_after(&track, SKIP_DEBOUNCE, cx);
+                    self.load_after(&track, Start::Segue, cx);
                 }
             }
             _ if self.radio && !self.queue.read(cx).has_next() => {
                 match ended.or_else(|| self.track.clone()) {
                     Some(seed) => self.extend_radio(&seed, cx),
-                    None => self.next(cx),
+                    None => self.segue_queue(cx),
                 }
             }
-            _ => self.next(cx),
+            _ => self.segue_queue(cx),
         }
+    }
+
+    fn segue_queue(&mut self, cx: &mut Context<Self>) {
+        self.fetch = None;
+        self.follow_queue(Start::Segue, cx);
     }
 
     fn extend_radio(&mut self, seed: &Track, cx: &mut Context<Self>) {
@@ -548,7 +608,7 @@ impl Playback {
                             queue.append(track, cx);
                         }
                     });
-                    this.follow_queue(cx);
+                    this.follow_queue(Start::Segue, cx);
                 }
                 Ok(_) => log::warn!("playback: radio returned no tracks"),
                 Err(error) => log::warn!("playback: cannot extend radio: {error:#}"),
@@ -557,11 +617,11 @@ impl Playback {
         }));
     }
 
-    fn follow_queue(&mut self, cx: &mut Context<Self>) {
+    fn follow_queue(&mut self, start: Start, cx: &mut Context<Self>) {
         let Some(track) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
             return;
         };
-        self.load_after(&track, SKIP_DEBOUNCE, cx);
+        self.load_after(&track, start, cx);
     }
 
     pub fn previous(&mut self, cx: &mut Context<Self>) {
@@ -569,7 +629,7 @@ impl Playback {
         let Some(track) = self.queue.update(cx, |queue, cx| queue.previous(cx)) else {
             return;
         };
-        self.load_after(&track, SKIP_DEBOUNCE, cx);
+        self.load_after(&track, Start::Skip, cx);
     }
 
     pub fn play_past(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -580,7 +640,7 @@ impl Playback {
         else {
             return;
         };
-        self.load_after(&track, SKIP_DEBOUNCE, cx);
+        self.load_after(&track, Start::Pick, cx);
     }
 
     pub fn play_upcoming(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -591,7 +651,7 @@ impl Playback {
         else {
             return;
         };
-        self.load_after(&track, SKIP_DEBOUNCE, cx);
+        self.load_after(&track, Start::Pick, cx);
     }
 
     pub fn resume(&mut self, cx: &mut Context<Self>) {
@@ -690,6 +750,20 @@ impl Playback {
         self.normalisation
     }
 
+    pub fn gapless(&self) -> bool {
+        self.gapless
+    }
+
+    pub fn set_gapless(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.gapless == on {
+            return;
+        }
+        self.gapless = on;
+        self.settings
+            .update(cx, |settings, cx| settings.set_gapless(on, cx));
+        self.restart_engine(cx);
+    }
+
     pub fn set_normalisation(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.normalisation == on {
             return;
@@ -697,7 +771,10 @@ impl Playback {
         self.normalisation = on;
         self.settings
             .update(cx, |settings, cx| settings.set_normalisation(on, cx));
+        self.restart_engine(cx);
+    }
 
+    fn restart_engine(&mut self, cx: &mut Context<Self>) {
         if self.engine.is_some() {
             let session = self.session.read(cx).librespot();
             if let Some(session) = session {
@@ -711,6 +788,7 @@ impl Playback {
     fn start_engine(&mut self, session: librespot_core::Session, cx: &mut Context<Self>) {
         let config = EngineConfig {
             normalisation: self.normalisation,
+            gapless: self.gapless,
             position_interval: POSITION_INTERVAL,
             gain: gain(self.level),
         };
@@ -751,7 +829,10 @@ impl Playback {
                 self.state = PlaybackState::Paused;
                 self.position = position;
             }
-            AudioEvent::Position(position) => self.position = position,
+            AudioEvent::Position(position) => {
+                self.position = position;
+                self.preload_next(position, cx);
+            }
             AudioEvent::Ended => {
                 let ended = self.track.take();
                 self.state = PlaybackState::Idle;
@@ -783,6 +864,7 @@ impl Playback {
         self.enqueue = None;
         self.suggest = None;
         self.seeded = None;
+        self.preloaded = None;
         self.blocked_until = None;
         self.engine = None;
         self.track = None;

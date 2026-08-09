@@ -23,6 +23,7 @@ struct Values {
     version: u32,
     volume: f32,
     normalisation: bool,
+    gapless: bool,
     sidebar_width: f32,
     sidebar_open: bool,
     sidebar_right_width: f32,
@@ -59,6 +60,7 @@ impl Default for Values {
             version: 1,
             volume: DEFAULT_VOLUME,
             normalisation: true,
+            gapless: true,
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             sidebar_open: true,
             sidebar_right_width: DEFAULT_SIDEBAR_RIGHT_WIDTH,
@@ -138,6 +140,10 @@ impl AppSettings {
 
     pub fn normalisation(&self) -> bool {
         self.values.normalisation
+    }
+
+    pub fn gapless(&self) -> bool {
+        self.values.gapless
     }
 
     pub fn sidebar_width(&self) -> f32 {
@@ -239,6 +245,11 @@ impl AppSettings {
 
     pub fn set_normalisation(&mut self, normalisation: bool, cx: &mut Context<Self>) {
         self.values.normalisation = normalisation;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_gapless(&mut self, gapless: bool, cx: &mut Context<Self>) {
+        self.values.gapless = gapless;
         self.schedule_save(cx);
     }
 
