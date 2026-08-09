@@ -13,6 +13,8 @@ use spotify::{SpotifyApi, Track};
 type Fetch = Pin<Box<dyn Future<Output = Result<Vec<Track>>> + Send>>;
 
 use crate::queue::Queue;
+use serde::{Deserialize, Serialize};
+
 use crate::{AppSettings, Io, Session, SessionEvent, join};
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
@@ -41,7 +43,8 @@ pub enum PlaybackEvent {
     EndedPlayback,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Repeat {
     #[default]
     Off,
@@ -98,6 +101,7 @@ impl Playback {
 
         let level = settings.read(cx).volume();
         let normalisation = settings.read(cx).normalisation();
+        let repeat = settings.read(cx).repeat();
 
         Self {
             state: PlaybackState::Idle,
@@ -110,7 +114,7 @@ impl Playback {
             settings,
             level,
             normalisation,
-            repeat: Repeat::Off,
+            repeat,
             radio: false,
             task: None,
             load: None,
@@ -353,6 +357,9 @@ impl Playback {
             Repeat::All => Repeat::One,
             Repeat::One => Repeat::Off,
         };
+        let repeat = self.repeat;
+        self.settings
+            .update(cx, |settings, cx| settings.set_repeat(repeat, cx));
         cx.notify();
     }
 

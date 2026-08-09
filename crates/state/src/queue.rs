@@ -2,8 +2,10 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use gpui::Context;
+use gpui::{Context, Entity};
 use spotify::Track;
+
+use crate::AppSettings;
 
 fn scramble(upcoming: &mut VecDeque<Track>) {
     let mut tracks: Vec<Track> = upcoming.drain(..).collect();
@@ -98,23 +100,21 @@ pub struct Queue {
     source: Vec<Track>,
     shuffle: bool,
     revision: u64,
-}
-
-impl Default for Queue {
-    fn default() -> Self {
-        Self::new()
-    }
+    settings: Entity<AppSettings>,
 }
 
 impl Queue {
-    pub fn new() -> Self {
+    pub fn new(settings: Entity<AppSettings>, cx: &mut Context<Self>) -> Self {
+        let shuffle = settings.read(cx).shuffle();
+
         Self {
             past: Vec::new(),
             current: None,
             upcoming: VecDeque::new(),
             source: Vec::new(),
-            shuffle: false,
+            shuffle,
             revision: 0,
+            settings,
         }
     }
 
@@ -127,6 +127,8 @@ impl Queue {
             return;
         }
         self.shuffle = on;
+        self.settings
+            .update(cx, |settings, cx| settings.set_shuffle(on, cx));
         match on {
             true => scramble(&mut self.upcoming),
             false => restore(&mut self.upcoming, &self.source),
