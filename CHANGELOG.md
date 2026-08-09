@@ -27,6 +27,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Clicking a dropdown trigger below the title bar closes its menu instead of leaving it open.
+- Releases on the artist page answer to a right-click with the album menu.
 - Timestamps an hour or longer carry an hours field instead of overflowing the minutes.
 - Track menus no longer offer a link to the page that is already open.
 - A right-click on a table row no longer also opens the menu behind it.
