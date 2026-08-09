@@ -206,7 +206,10 @@ impl ItemMenu {
                         false => t!("menu-add-to-library"),
                     },
                 )
-                .icon("icons/heart.svg")
+                .icon(match saved {
+                    true => "icons/heart-off.svg",
+                    false => "icons/heart.svg",
+                })
                 .on_click(move |_, _, cx| {
                     library.update(cx, |library, cx| library.toggle(track.clone(), cx));
                 })
@@ -416,7 +419,7 @@ pub(crate) fn playlist_menu(
         false => vec![
             MenuItem::separator("playlist-actions"),
             MenuItem::new("leave-playlist", t!("menu-remove-playlist-from-library"))
-                .icon("icons/heart.svg")
+                .icon("icons/heart-off.svg")
                 .on_click(move |_, _, cx| {
                     let library = Sonora::global(cx).library.clone();
                     library.update(cx, |library, cx| {
