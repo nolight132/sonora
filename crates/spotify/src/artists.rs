@@ -11,7 +11,7 @@ use librespot_protocol::metadata::{Artist as ArtistMessage, Image};
 use protobuf::{EnumOrUnknown, Message as _};
 
 use crate::models::{Album, Artist, Track};
-use crate::{albums, collection, wire};
+use crate::{albums, collection, pathfinder, wire};
 
 const ARTIST_PREFIX: &str = "spotify:artist:";
 const ALBUM_PREFIX: &str = "spotify:album:";
@@ -43,10 +43,21 @@ pub async fn artist(session: &Session, artist_id: &str) -> Result<Artist> {
             false => albums::metadata(session, &release_uris).await,
         }
     };
-    let (mut known_tracks, mut known_albums) = tokio::try_join!(tracks, releases)?;
+    let playcounts = pathfinder::artist(session, artist_id);
+    let (tracks, releases, playcounts) = tokio::join!(tracks, releases, playcounts);
+    let mut known_tracks = tracks?;
+    let mut known_albums = releases?;
+    let playcounts = playcounts.unwrap_or_else(|error| {
+        log::warn!("artists: cannot load play counts: {error:#}");
+        HashMap::new()
+    });
     let top_tracks = track_uris
         .iter()
-        .filter_map(|uri| known_tracks.remove(uri))
+        .filter_map(|uri| {
+            let mut track = known_tracks.remove(uri)?;
+            track.playcount = playcounts.get(uri).copied();
+            Some(track)
+        })
         .collect();
     let releases = release_uris
         .iter()

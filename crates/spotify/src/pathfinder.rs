@@ -8,12 +8,16 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 mod album;
+mod artist;
 mod plays;
 
 pub(crate) use album::album;
+pub(crate) use artist::artist;
 pub(crate) use plays::track;
 
 const ENDPOINT: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
+const APP_PLATFORM: &str = "WebPlayer";
+const APP_VERSION: &str = "896000000";
 
 #[derive(Deserialize)]
 struct Response<T> {
@@ -59,6 +63,8 @@ async fn query<T: DeserializeOwned>(
         .uri(ENDPOINT)
         .header(header::ACCEPT, "application/json")
         .header(header::CONTENT_TYPE, "application/json")
+        .header("app-platform", APP_PLATFORM)
+        .header("spotify-app-version", APP_VERSION)
         .header(
             header::AUTHORIZATION,
             format!("{} {}", token.token_type, token.access_token),
