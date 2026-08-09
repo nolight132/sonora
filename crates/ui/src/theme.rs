@@ -619,6 +619,7 @@ impl Theme {
             let opacity = 1. - look.transparency.clamp(0., MAX_TRANSPARENCY);
             theme.background.a = opacity;
             theme.sidebar.a = opacity;
+            theme.sidebar_accent.a = opacity;
         }
         theme.font_size = base;
         theme.metrics = Metrics::new(base);
