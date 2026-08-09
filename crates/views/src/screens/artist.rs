@@ -13,11 +13,11 @@ use spotify::{ReleaseType, Track};
 use state::{AppSettings, ArtistDetail, Playback, Sonora};
 use ui::ActiveTheme as _;
 use ui::{
-    Button, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Popover, Popovers,
-    Scrollbar, Scroller, Text, grid,
+    Button, Card, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Popover, Popovers,
+    Scrollbar, Scroller, Skeleton, Text, grid,
 };
 
-use crate::shared::album_grid::AlbumGrid;
+use crate::shared::album_grid::{AlbumGrid, CardGrid};
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::menu::artist_menu;
 use crate::shared::page;
@@ -83,6 +83,7 @@ pub(crate) struct ArtistView {
     detail: Entity<ArtistDetail>,
     playback: Entity<Playback>,
     playback_status: PlaybackStatus,
+    artist_id: Option<String>,
     release_filter: ReleaseFilter,
     width: Pixels,
     release_end: Entity<ReleaseEnd>,
@@ -298,13 +299,17 @@ impl ArtistView {
             GridState::new(delegate, cx).follow(scroll)
         });
 
-        cx.observe(&detail, |this, _, cx| {
-            this.release_filter = ReleaseFilter::All;
-            this.release_end.update(cx, |end, cx| end.reset(cx));
-            this.scrollbar.update(cx, |bar, cx| {
-                bar.set_max_offset(None, cx);
-                bar.scroll().set_offset(gpui::Point::default());
-            });
+        cx.observe(&detail, |this, detail, cx| {
+            let artist_id = detail.read(cx).id().map(str::to_owned);
+            if this.artist_id != artist_id {
+                this.artist_id = artist_id;
+                this.release_filter = ReleaseFilter::All;
+                this.release_end.update(cx, |end, cx| end.reset(cx));
+                this.scrollbar.update(cx, |bar, cx| {
+                    bar.set_max_offset(None, cx);
+                    bar.scroll().set_offset(gpui::Point::default());
+                });
+            }
             this.rebuild(cx);
             cx.notify();
         })
@@ -318,6 +323,7 @@ impl ArtistView {
         })
         .detach();
         let current_playback = playback_status(&playback, cx);
+        let artist_id = detail.read(cx).id().map(str::to_owned);
         cx.observe(&playback, |this, playback, cx| {
             let current = playback_status(&playback, cx);
             if this.playback_status == current {
@@ -340,6 +346,7 @@ impl ArtistView {
             detail,
             playback,
             playback_status: current_playback,
+            artist_id,
             release_filter: ReleaseFilter::All,
             width,
             release_end,
@@ -417,35 +424,60 @@ impl ArtistView {
 
     fn releases(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let theme = *cx.theme();
-        let albums = self.detail.read(cx).albums();
-        if albums.is_empty() {
+        let detail = self.detail.read(cx);
+        let loading = detail.is_loading();
+        let albums = detail.albums();
+        if albums.is_empty() && !loading {
             return None;
         }
 
-        let scroll = self.scrollbar.read(cx).scroll().clone();
-        let albums = albums
-            .iter()
-            .filter(|album| self.release_filter.matches(album.release_type))
-            .cloned()
-            .enumerate()
-            .collect::<Vec<_>>();
-        let count = albums.len();
-        let columns = AlbumGrid::columns(self.width);
-        let release_end = self.release_end.clone();
-        let scrollbar = self.scrollbar.clone();
-        let releases = AlbumGrid::new("artist-release", self.width, albums, self.playback.clone())
-            .on_layout(move |bounds, window, cx| {
-                let update = release_end.update(cx, |end, _| {
-                    end.observe(&bounds, scroll.max_offset().y, columns, count)
-                });
-                if update.next {
-                    scrollbar.update(cx, |_, cx| cx.notify());
-                    window.request_animation_frame();
-                }
-                if update.settle && scrollbar.update(cx, |bar, cx| bar.set_max_offset(None, cx)) {
-                    window.request_animation_frame();
-                }
-            });
+        let grid = CardGrid::layout(self.width);
+        let releases = match loading {
+            true => div()
+                .flex()
+                .flex_col()
+                .gap_6()
+                .children((0..2).map(|row| {
+                    CardGrid::new(self.width).children((0..grid.columns).map(move |column| {
+                        let index = row * grid.columns + column;
+                        Card::new(("artist-release-skeleton", index), "")
+                            .tile(grid.card)
+                            .loading()
+                            .into_any_element()
+                    }))
+                }))
+                .into_any_element(),
+            false => {
+                let scroll = self.scrollbar.read(cx).scroll().clone();
+                let albums = albums
+                    .iter()
+                    .filter(|album| self.release_filter.matches(album.release_type))
+                    .cloned()
+                    .enumerate()
+                    .collect::<Vec<_>>();
+                let count = albums.len();
+                let columns = AlbumGrid::columns(self.width);
+                let release_end = self.release_end.clone();
+                let scrollbar = self.scrollbar.clone();
+
+                AlbumGrid::new("artist-release", self.width, albums, self.playback.clone())
+                    .on_layout(move |bounds, window, cx| {
+                        let update = release_end.update(cx, |end, _| {
+                            end.observe(&bounds, scroll.max_offset().y, columns, count)
+                        });
+                        if update.next {
+                            scrollbar.update(cx, |_, cx| cx.notify());
+                            window.request_animation_frame();
+                        }
+                        if update.settle
+                            && scrollbar.update(cx, |bar, cx| bar.set_max_offset(None, cx))
+                        {
+                            window.request_animation_frame();
+                        }
+                    })
+                    .into_any_element()
+            }
+        };
 
         Some(
             div()
@@ -501,6 +533,38 @@ impl ArtistView {
                 .child(self.release_end.clone())
                 .into_any_element(),
         )
+    }
+
+    fn tracks_loading(&self, cx: &Context<Self>) -> AnyElement {
+        let theme = *cx.theme();
+        let line = || Skeleton::new().w_full().h(theme.metrics.pad);
+
+        div()
+            .w_full()
+            .rounded(theme.radius)
+            .border_1()
+            .border_color(theme.border)
+            .overflow_hidden()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .h(theme.metrics.header)
+                    .px(theme.metrics.pad)
+                    .bg(theme.table_head)
+                    .child(line()),
+            )
+            .children((0..5).map(|_| {
+                div()
+                    .flex()
+                    .items_center()
+                    .h(theme.metrics.row)
+                    .px(theme.metrics.pad)
+                    .border_t_1()
+                    .border_color(theme.table_row_border)
+                    .child(line())
+            }))
+            .into_any_element()
     }
 
     fn failure(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -577,12 +641,14 @@ impl Render for ArtistView {
                             .child(t!("artist-popular")),
                     ),
             )
-            .child(
-                grid(&self.table)
+            .child(match self.detail.read(cx).is_loading() {
+                true => self.tracks_loading(cx),
+                false => grid(&self.table)
                     .rounded(theme.radius)
                     .border_1()
-                    .border_color(theme.border),
-            )
+                    .border_color(theme.border)
+                    .into_any_element(),
+            })
             .children(self.releases(cx))
     }
 }
