@@ -190,7 +190,7 @@ impl GridSource for AlbumSource {
         self.library.read(cx).is_loading()
     }
 
-    fn context_menu(&self, row: usize, cx: &App) -> Option<Menu> {
+    fn context_menu(&self, row: usize, _visible: &[AlbumField], cx: &App) -> Option<Menu> {
         Some(album_menu(
             self.at(row, cx)?.id,
             self.playback.clone(),

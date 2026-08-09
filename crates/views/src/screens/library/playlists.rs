@@ -143,7 +143,7 @@ impl GridSource for PlaylistSource {
         self.library.read(cx).is_loading()
     }
 
-    fn context_menu(&self, row: usize, cx: &App) -> Option<Menu> {
+    fn context_menu(&self, row: usize, _visible: &[PlaylistField], cx: &App) -> Option<Menu> {
         Some(playlist_menu(
             self.at(row, cx)?,
             self.playback.clone(),

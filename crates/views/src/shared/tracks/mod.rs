@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 use ui::ActiveTheme as _;
 
-use crate::shared::menu::ItemMenu;
+use crate::shared::menu::{ItemMenu, TrackColumns};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, Hsla, InteractiveElement as _, IntoElement as _, SharedString,
@@ -342,15 +342,21 @@ impl GridSource for TrackSource {
         }
     }
 
-    fn context_menu(&self, row: usize, cx: &App) -> Option<Menu> {
+    fn context_menu(&self, row: usize, visible: &[TrackField], cx: &App) -> Option<Menu> {
         let track = self.provider.tracks(cx).get(row)?;
+        let columns = TrackColumns {
+            album: visible.contains(&TrackField::Album),
+            artists: visible.contains(&TrackField::Artists),
+        };
         Some(match (&self.album, &self.playlist) {
             (Some(detail), _) => {
                 let id = detail.read(cx).id()?;
-                self.menu.for_album_track(track, id, cx)
+                self.menu.for_album_track(track, id, columns, cx)
             }
-            (_, Some(detail)) => self.menu.for_playlist_track(track, detail.clone(), cx),
-            (None, None) => self.menu.for_track(track, cx),
+            (_, Some(detail)) => self
+                .menu
+                .for_playlist_track(track, detail.clone(), columns, cx),
+            (None, None) => self.menu.for_table_track(track, columns, cx),
         })
     }
 
