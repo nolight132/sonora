@@ -587,7 +587,12 @@ impl SettingsView {
                         })),
                 ),
             )
-            .child(t!("settings-transparency-value", percent = percent));
+            .child(
+                div()
+                    .w(theme.metrics.control)
+                    .text_right()
+                    .child(t!("settings-transparency-value", percent = percent)),
+            );
 
         self.row(
             t!("settings-transparency"),
