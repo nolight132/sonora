@@ -49,6 +49,7 @@ impl Render for ToastStack {
                 };
 
                 Toast::new(("toast", id), message)
+                    .when_some(toast.name.clone(), Toast::strong)
                     .when(toast.note == Note::Failed, Toast::failed)
                     .on_dismiss(move |_, _, cx| {
                         toasts.update(cx, |this, cx| this.dismiss(id, cx));
