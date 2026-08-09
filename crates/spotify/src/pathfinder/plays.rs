@@ -6,8 +6,6 @@ use serde::Deserialize;
 
 use super::query;
 
-const HASH: &str = "612585ae06ba435ad26369870deaae23b5c8800a256cd8a57e08eddc25a37294";
-
 #[derive(Deserialize)]
 struct Data {
     #[serde(rename = "trackUnion")]
@@ -21,7 +19,7 @@ struct Track {
 
 pub(crate) async fn track(session: &Session, track_id: &str) -> Result<Option<u64>> {
     let variables = serde_json::json!({ "uri": format!("spotify:track:{track_id}") });
-    let data = query::<Data>(session, "getTrack", HASH, variables).await?;
+    let data = query::<Data>(session, "getTrack", variables).await?;
     playcount(data)
 }
 

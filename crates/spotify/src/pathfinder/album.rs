@@ -9,7 +9,6 @@ use serde::Deserialize;
 use super::query;
 use crate::models::{Album, AlbumDetail, ArtistRef, ReleaseType, Track};
 
-const HASH: &str = "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10";
 const PAGE_LIMIT: usize = 50;
 const ALBUM_PREFIX: &str = "spotify:album:";
 const ARTIST_PREFIX: &str = "spotify:artist:";
@@ -157,7 +156,7 @@ pub(crate) async fn album(session: &Session, album_id: &str) -> Result<AlbumDeta
             "offset": offset,
             "limit": PAGE_LIMIT,
         });
-        let data = query::<Data>(session, "getAlbum", HASH, variables).await?;
+        let data = query::<Data>(session, "getAlbum", variables).await?;
         let page = page(data)?;
         album.get_or_insert(page.album);
         tracks.extend(page.tracks);
