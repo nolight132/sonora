@@ -174,10 +174,6 @@ impl AppSettings {
         &self.values.language
     }
 
-    pub fn auto_hide_sidebar(&self) -> bool {
-        self.values.appearance.auto_hide_sidebar
-    }
-
     pub fn theme(&self) -> &str {
         &self.values.appearance.theme
     }

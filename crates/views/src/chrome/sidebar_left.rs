@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use ui::{ActiveTheme as _, Button, MIN_CONTENT, Panel, SNUG, Shield, Side, Tabs};
+use ui::{ActiveTheme as _, Button, Panel, SNUG, Shield, Side, Tabs};
 
 use gpui::prelude::*;
 use gpui::{
@@ -119,15 +119,8 @@ impl SidebarLeft {
         cx.notify();
     }
 
-    fn keep(&self, cx: &Context<Self>) -> Pixels {
-        match self.settings.read(cx).auto_hide_sidebar() {
-            true => SNUG,
-            false => MIN_CONTENT,
-        }
-    }
-
     fn ceiling(&self, window: &Window, cx: &Context<Self>) -> Pixels {
-        let reserved = self.keep(cx) + super::Chrome::sidebar_right(cx);
+        let reserved = SNUG + super::Chrome::sidebar_right(cx);
         super::cap(MIN_WIDTH, MAX_WIDTH, reserved, window)
     }
 
@@ -139,10 +132,9 @@ impl SidebarLeft {
             self.persist(cx);
         }
 
-        let auto_hide = self.settings.read(cx).auto_hide_sidebar();
         let taken = self.width + super::Chrome::sidebar_right(cx);
         let space_left = window.viewport_size().width - taken;
-        let cramped = auto_hide && space_left < self.keep(cx);
+        let cramped = space_left < SNUG;
         if cramped != self.cramped {
             self.cramped = cramped;
             self.forced = None;

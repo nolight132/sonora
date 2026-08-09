@@ -113,14 +113,13 @@ impl SettingsView {
             ],
             SettingsTab::Appearance => vec![
                 self.theme_row(cx).into_any_element(),
-                self.opacity_row(cx).into_any_element(),
+                self.font_row(cx).into_any_element(),
             ]
             .into_iter()
             .chain([
                 self.adaptive_row(cx).into_any_element(),
                 self.corners_row(cx).into_any_element(),
-                self.font_row(cx).into_any_element(),
-                self.auto_hide_row(cx).into_any_element(),
+                self.opacity_row(cx).into_any_element(),
             ])
             .chain(decorated().then(|| self.decorations_row(cx).into_any_element()))
             .chain(decorated().then(|| self.side_row(cx).into_any_element()))
@@ -337,26 +336,6 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_controls_on_left(!left, cx));
-                }))
-                .into_any_element(),
-        )
-    }
-
-    fn auto_hide_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.theme();
-        let muted = theme.muted_foreground;
-        let small = theme.text(Text::Small);
-        let on = self.settings.read(cx).auto_hide_sidebar();
-
-        self.row(
-            t!("settings-auto-hide"),
-            t!("settings-auto-hide-detail"),
-            muted,
-            small,
-            Switch::new("auto-hide-sidebar", on)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_auto_hide_sidebar(!on, cx));
                 }))
                 .into_any_element(),
         )
