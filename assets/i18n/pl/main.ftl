@@ -263,8 +263,8 @@ settings-source-detail = Kod źródłowy odpowiadający temu wydaniu
 settings-source-view = Otwórz repozytorium
 settings-team = Zespół
 settings-team-github = GitHub
+settings-role-lead-maintainer = Główny opiekun
 settings-role-maintainer = Opiekun
-settings-role-developer = Programista
 settings-role-contributor = Współtwórca
 settings-notice = Copyright © 2026 nolight132. Sonora jest dostarczana bez żadnej gwarancji. To wolne oprogramowanie, które możesz rozpowszechniać na warunkach GNU General Public License w wersji 3 lub nowszej. Sonora jest nieoficjalnym klientem i nie jest powiązana ze Spotify AB.
 

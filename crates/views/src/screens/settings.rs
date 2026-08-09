@@ -33,16 +33,16 @@ struct Member {
 
 #[derive(Clone, Copy)]
 enum Role {
+    LeadMaintainer,
     Maintainer,
-    Developer,
     Contributor,
 }
 
 impl Role {
     fn label(self) -> SharedString {
         match self {
+            Self::LeadMaintainer => t!("settings-role-lead-maintainer"),
             Self::Maintainer => t!("settings-role-maintainer"),
-            Self::Developer => t!("settings-role-developer"),
             Self::Contributor => t!("settings-role-contributor"),
         }
     }
@@ -60,9 +60,9 @@ macro_rules! member {
 }
 
 const MEMBERS: [Member; 5] = [
-    member!("nolight132", Role::Maintainer),
-    member!("zxsleebu", Role::Developer),
-    member!("fx-got", Role::Developer),
+    member!("nolight132", Role::LeadMaintainer),
+    member!("zxsleebu", Role::Maintainer),
+    member!("fx-got", Role::Maintainer),
     member!("Makakashan", Role::Contributor),
     member!("imizgun", Role::Contributor),
 ];
@@ -658,45 +658,50 @@ impl SettingsView {
     fn team(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
 
-        InfoCard::new(t!("settings-team")).child(div().flex().flex_col().gap_3().children(
-            MEMBERS.into_iter().enumerate().map(|(index, member)| {
-                div()
-                    .id(("team-member", index))
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .px(theme.metrics.pad)
-                    .py(theme.metrics.pad / 2.)
-                    .rounded(theme.radius)
-                    .cursor_pointer()
-                    .hover(|style| style.bg(theme.secondary_hover))
-                    .on_click(move |_, _, cx| cx.open_url(member.profile))
-                    .child(Avatar::new(Some(member.avatar)).size(theme.metrics.thumb))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .gap_0p5()
-                            .child(div().font_weight(FontWeight::MEDIUM).child(member.login))
-                            .child(
-                                div()
-                                    .text_size(theme.text(Text::Small))
-                                    .text_color(theme.muted_foreground)
-                                    .child(t!("settings-team-github")),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_size(theme.text(Text::Small))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.muted_foreground)
-                            .child(member.role.label()),
-                    )
-            }),
-        ))
+        InfoCard::new(t!("settings-team")).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .pb(theme.metrics.pad)
+                .children(MEMBERS.into_iter().enumerate().map(|(index, member)| {
+                    div()
+                        .id(("team-member", index))
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .px(theme.metrics.pad)
+                        .py(theme.metrics.pad / 2.)
+                        .rounded(theme.radius)
+                        .cursor_pointer()
+                        .hover(|style| style.bg(theme.secondary_hover))
+                        .on_click(move |_, _, cx| cx.open_url(member.profile))
+                        .child(Avatar::new(Some(member.avatar)).size(theme.metrics.thumb))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .gap_0p5()
+                                .child(div().font_weight(FontWeight::MEDIUM).child(member.login))
+                                .child(
+                                    div()
+                                        .text_size(theme.text(Text::Small))
+                                        .text_color(theme.muted_foreground)
+                                        .child(t!("settings-team-github")),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(theme.text(Text::Small))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(theme.muted_foreground)
+                                .child(member.role.label()),
+                        )
+                })),
+        )
     }
 
     fn row(

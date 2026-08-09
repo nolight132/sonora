@@ -263,8 +263,8 @@ settings-source-detail = Початковий код, що відповідає 
 settings-source-view = Відкрити репозиторій
 settings-team = Команда
 settings-team-github = GitHub
+settings-role-lead-maintainer = Провідний супровідник
 settings-role-maintainer = Супровідник
-settings-role-developer = Розробник
 settings-role-contributor = Учасник
 settings-notice = Copyright © 2026 nolight132. Sonora постачається без жодних гарантій. Це вільне програмне забезпечення, і ви можете поширювати його на умовах GNU General Public License версії 3 або новішої. Sonora — неофіційний клієнт і не пов'язаний зі Spotify AB.
 
