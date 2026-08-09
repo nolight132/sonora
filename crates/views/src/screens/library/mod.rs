@@ -385,9 +385,9 @@ impl LibraryView {
     }
 
     fn liked_header(&self, cx: &Context<Self>) -> AnyElement {
-        let queued = self.liked(cx);
-        let duration: std::time::Duration = queued.iter().map(|track| track.duration).sum();
-        let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = queued.len()));
+        let liked = self.liked(cx);
+        let duration: std::time::Duration = liked.iter().map(|track| track.duration).sum();
+        let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = liked.len()));
         if !duration.is_zero() {
             strip = strip.text(clock(duration));
         }
@@ -400,7 +400,7 @@ impl LibraryView {
             .actions(HeroPlayButton::new(
                 "play-liked-songs",
                 t!("library-play-liked-songs"),
-                queued,
+                tracks::ordered(&self.tracks, cx),
                 self.playback.clone(),
             ))
             .into_any_element()

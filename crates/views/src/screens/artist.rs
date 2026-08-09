@@ -21,7 +21,9 @@ use crate::shared::album_grid::{AlbumGrid, CardGrid};
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::menu::{album_menu, artist_menu};
 use crate::shared::page;
-use crate::shared::tracks::{PlaybackStatus, TrackField, TrackSource, Tracks, playback_status};
+use crate::shared::tracks::{
+    self, PlaybackStatus, TrackField, TrackSource, Tracks, playback_status,
+};
 
 const SECTION: &str = "artist";
 const END_WIDTH: Pixels = px(72.);
@@ -408,7 +410,7 @@ impl ArtistView {
             .child(HeroPlayButton::new(
                 "play-artist",
                 t!("artist-play"),
-                self.detail.read(cx).tracks().to_vec(),
+                tracks::ordered(&self.table, cx),
                 self.playback.clone(),
             ))
             .children(overflow);
