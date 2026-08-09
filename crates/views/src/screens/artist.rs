@@ -350,9 +350,7 @@ fn release_near(
         return index < initial;
     };
     let viewport = scroll.bounds();
-    let offset = scroll.offset().y;
-    bounds.bottom() + offset >= viewport.top() - overdraw
-        && bounds.top() + offset <= viewport.bottom() + overdraw
+    bounds.bottom() >= viewport.top() - overdraw && bounds.top() <= viewport.bottom() + overdraw
 }
 
 impl Render for ArtistView {
