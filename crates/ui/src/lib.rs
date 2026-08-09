@@ -52,7 +52,7 @@ pub use input::{
 pub use label::{eyebrow, heading, upper};
 pub use layout::{ALWAYS, MIN_CONTENT, ROOMY, Room, SNUG, VAST, WIDE};
 pub use menu::{Menu, MenuItem, SubmenuState};
-pub use metrics::{Metrics, Rounding, Text, snapped};
+pub use metrics::{LEADING, Metrics, Rounding, Text, snapped};
 pub use palette::tint;
 pub use panel::{Panel, Side};
 pub use popover::{Popover, Popovers};

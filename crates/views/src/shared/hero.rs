@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::rc::Rc;
+
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ElementId, Entity, FontWeight, MouseDownEvent, SharedString, Window, div,
+    AnyElement, App, Div, ElementId, Entity, FontWeight, MouseButton, MouseDownEvent, SharedString,
+    Window, div, relative,
 };
 use i18n::t;
 use spotify::Track;
 use state::{Playback, PlaybackState};
-use ui::{ActiveTheme as _, Button, Card, Text};
+use ui::{ActiveTheme as _, Artwork, Button, ExplicitBadge, LEADING, Text, upper};
 
 pub(crate) fn release_date_label(value: &str) -> SharedString {
     let parts: Vec<_> = value.split('-').collect();
@@ -238,29 +241,81 @@ impl RenderOnce for PageHero {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = *cx.theme();
 
-        Card::new(self.id, self.title)
-            .art(theme.metrics.cover)
-            .art_radius(theme.radius * 1.5)
-            .match_art_height()
-            .cover(self.cover)
-            .when_some(self.fallback, Card::fallback)
-            .when(self.accent, Card::accent)
-            .size(Text::Display)
-            .weight(FontWeight::BOLD)
-            .explicit_gap(theme.metrics.pad * 1.5)
-            .flat()
+        let art = theme.metrics.cover;
+        let grip = self.grip.map(Rc::from);
+        let held = grip.clone();
+
+        div()
+            .id(self.id)
+            .flex()
             .flex_none()
             .items_end()
             .gap_5()
-            .px_0()
             .pb_6()
-            .when_some(self.eyebrow, Card::eyebrow)
-            .when_some(self.meta, Card::bare_meta)
-            .when_some(self.actions, Card::footer)
-            .when_some(self.grip, |card, grip| {
-                card.grip(move |event, window, cx| grip(event, window, cx))
-            })
-            .when(self.circle, Card::circle)
-            .when(self.explicit, Card::explicit)
+            .child(
+                div()
+                    .flex_none()
+                    .when_some(held, |this, grip: Rc<Grip>| {
+                        this.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                            grip(event, window, cx)
+                        })
+                    })
+                    .child(
+                        Artwork::new(self.cover)
+                            .size(art)
+                            .corner_radius(theme.radius * 1.5)
+                            .when(self.circle, Artwork::circle)
+                            .when_some(self.fallback, Artwork::fallback)
+                            .when(self.accent, Artwork::accent),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .h(art)
+                    .justify_end()
+                    .gap_2()
+                    .line_height(relative(LEADING))
+                    .children(self.eyebrow.map(|eyebrow| eyebrow_label(eyebrow, cx)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .min_w_0()
+                            .text_size(theme.text(Text::Display))
+                            .font_weight(FontWeight::BOLD)
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .when_some(grip, |this, grip: Rc<Grip>| {
+                                        this.on_mouse_down(
+                                            MouseButton::Right,
+                                            move |event, window, cx| grip(event, window, cx),
+                                        )
+                                    })
+                                    .child(self.title),
+                            )
+                            .when(self.explicit, |this| {
+                                this.child(div().flex_none().child(ExplicitBadge::new()))
+                            }),
+                    )
+                    .children(self.meta)
+                    .children(self.actions.map(|actions| div().pt_1().child(actions))),
+            )
     }
+}
+
+fn eyebrow_label(label: SharedString, cx: &App) -> Div {
+    let theme = cx.theme();
+
+    div()
+        .text_size(theme.text(Text::Small))
+        .text_color(theme.muted_foreground)
+        .font_weight(FontWeight::SEMIBOLD)
+        .child(upper(label))
 }

@@ -5,14 +5,14 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla, Interactivity, MouseButton,
-    MouseDownEvent, Pixels, SharedString, Stateful, StyleRefinement, Window, div, px,
+    MouseDownEvent, Pixels, SharedString, Stateful, StyleRefinement, Window, div, px, relative,
 };
 
 use crate::ExplicitBadge;
 use crate::artwork::{Artwork, Avatar};
 use crate::button::Button;
 use crate::label::upper;
-use crate::metrics::{Text, snapped};
+use crate::metrics::{LEADING, Text, snapped};
 use crate::skeleton::Skeleton;
 use crate::theme::ActiveTheme as _;
 
@@ -22,6 +22,7 @@ const BAR_META: (Pixels, Pixels) = (px(90.), px(9.));
 const PLAY_RATIO: f32 = 0.34;
 const PLAY_MIN: Pixels = px(28.);
 const PLAY_INSET: Pixels = px(8.);
+const TIGHT: Pixels = px(2.);
 
 pub const CARD_GROUP: &str = "card";
 
@@ -36,7 +37,6 @@ pub struct Card {
     size: Option<Text>,
     weight: Option<FontWeight>,
     meta: Option<AnyElement>,
-    footer: Option<AnyElement>,
     bare: bool,
     trailing: Option<AnyElement>,
     cover: Option<String>,
@@ -44,12 +44,9 @@ pub struct Card {
     accent: bool,
     art: Option<Pixels>,
     art_radius: Option<Pixels>,
-    match_art_height: bool,
     circle: bool,
     tint: Option<Hsla>,
-    spacing: Option<Pixels>,
     explicit: bool,
-    explicit_gap: Option<Pixels>,
     fill: bool,
     hovered: Option<StyleRefinement>,
     press: Option<Press>,
@@ -72,7 +69,6 @@ impl Card {
             size: None,
             weight: None,
             meta: None,
-            footer: None,
             bare: false,
             trailing: None,
             cover: None,
@@ -80,12 +76,9 @@ impl Card {
             accent: false,
             art: None,
             art_radius: None,
-            match_art_height: false,
             circle: false,
             tint: None,
-            spacing: None,
             explicit: false,
-            explicit_gap: None,
             fill: true,
             hovered: None,
             press: None,
@@ -157,11 +150,6 @@ impl Card {
         self
     }
 
-    pub fn match_art_height(mut self) -> Self {
-        self.match_art_height = true;
-        self
-    }
-
     pub fn circle(mut self) -> Self {
         self.circle = true;
         self
@@ -182,11 +170,6 @@ impl Card {
         self
     }
 
-    pub fn spacing(mut self, spacing: Pixels) -> Self {
-        self.spacing = Some(spacing);
-        self
-    }
-
     pub fn tint(mut self, tint: Hsla) -> Self {
         self.tint = Some(tint);
         self
@@ -203,18 +186,8 @@ impl Card {
         self
     }
 
-    pub fn footer(mut self, footer: impl IntoElement) -> Self {
-        self.footer = Some(footer.into_any_element());
-        self
-    }
-
     pub fn explicit(mut self) -> Self {
         self.explicit = true;
-        self
-    }
-
-    pub fn explicit_gap(mut self, gap: Pixels) -> Self {
-        self.explicit_gap = Some(gap);
         self
     }
 
@@ -268,7 +241,6 @@ impl RenderOnce for Card {
             size,
             weight,
             meta,
-            footer,
             bare,
             trailing,
             cover,
@@ -276,12 +248,9 @@ impl RenderOnce for Card {
             accent,
             art,
             art_radius,
-            match_art_height,
             circle,
             tint,
-            spacing,
             explicit,
-            explicit_gap,
             fill,
             hovered,
             press,
@@ -385,10 +354,9 @@ impl RenderOnce for Card {
                     .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .when(match_art_height, |this| this.h(art).justify_between())
+                    .line_height(relative(LEADING))
                     .when(listed && !has_trailing, |this| this.min_w(TITLE))
                     .when(tile.is_some(), |this| this.w_full().flex_none().gap_1())
-                    .when_some(spacing, |this, spacing| this.gap(spacing))
                     .when_else(
                         loading,
                         |this| {
@@ -407,48 +375,58 @@ impl RenderOnce for Card {
                             .child(
                                 div()
                                     .flex()
-                                    .items_center()
-                                    .gap(explicit_gap.unwrap_or(px(6.)))
+                                    .flex_col()
                                     .min_w_0()
-                                    .text_color(tint.unwrap_or(theme.foreground))
-                                    .when_some(size, |this, size| this.text_size(theme.text(size)))
+                                    .gap(TIGHT)
                                     .child(
                                         div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(3.))
                                             .min_w_0()
-                                            .truncate()
-                                            .when_some(grip, |this, grip| {
-                                                this.on_mouse_down(
-                                                    MouseButton::Right,
-                                                    move |event, window, cx| {
-                                                        grip(event, window, cx)
-                                                    },
+                                            .text_color(tint.unwrap_or(theme.foreground))
+                                            .when_some(size, |this, size| {
+                                                this.text_size(theme.text(size))
+                                            })
+                                            .child(
+                                                div()
+                                                    .min_w_0()
+                                                    .truncate()
+                                                    .when_some(grip, |this, grip| {
+                                                        this.on_mouse_down(
+                                                            MouseButton::Right,
+                                                            move |event, window, cx| {
+                                                                grip(event, window, cx)
+                                                            },
+                                                        )
+                                                    })
+                                                    .when_some(weight, |this, weight| {
+                                                        this.font_weight(weight)
+                                                    })
+                                                    .when(underline, |this| {
+                                                        this.group_hover(CARD_GROUP, |style| {
+                                                            style.underline()
+                                                        })
+                                                    })
+                                                    .child(title),
+                                            )
+                                            .when(explicit, |this| {
+                                                this.child(
+                                                    div().flex_none().child(ExplicitBadge::new()),
                                                 )
-                                            })
-                                            .when_some(weight, |this, weight| {
-                                                this.font_weight(weight)
-                                            })
-                                            .when(underline, |this| {
-                                                this.group_hover(CARD_GROUP, |style| {
-                                                    style.underline()
-                                                })
-                                            })
-                                            .child(title),
+                                            }),
                                     )
-                                    .when(explicit, |this| {
-                                        this.child(div().flex_none().child(ExplicitBadge::new()))
-                                    }),
+                                    .children(meta.map(|meta| {
+                                        match bare {
+                                            true => div().child(meta),
+                                            false => div()
+                                                .truncate()
+                                                .text_size(theme.text(Text::Small))
+                                                .text_color(theme.muted_foreground)
+                                                .child(meta),
+                                        }
+                                    })),
                             )
-                            .children(meta.map(|meta| {
-                                match bare {
-                                    true => div().child(meta),
-                                    false => div()
-                                        .truncate()
-                                        .text_size(theme.text(Text::Small))
-                                        .text_color(theme.muted_foreground)
-                                        .child(meta),
-                                }
-                            }))
-                            .children(footer.map(|footer| div().pt_1().child(footer)))
                         },
                     ),
             )
