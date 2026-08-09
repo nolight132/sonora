@@ -12,8 +12,9 @@ use crate::shared::playlist_editor::{Edit, PlaylistEditor};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, ListAlignment, ListState, MouseButton, Pixels,
-    Point, Render, ScrollHandle, SharedString, WeakEntity, Window, div, list, px,
+    AnyElement, App, Context, Entity, FontWeight, ListAlignment, ListOffset, ListState,
+    MouseButton, Pixels, Point, Render, ScrollHandle, SharedString, WeakEntity, Window, div, list,
+    px,
 };
 use i18n::t;
 use router::{Destination, LibraryTab, navigate};
@@ -74,6 +75,12 @@ enum LibraryMenu {
 enum DeckRow {
     Heading(usize),
     Cards(Vec<(usize, usize)>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeckKey {
+    Heading(usize),
+    Card(usize),
 }
 
 impl Section {
@@ -254,7 +261,7 @@ impl LibraryView {
             toolbar
         });
 
-        let card_list = ListState::new(0, ListAlignment::Top, CARD_MAX * 2.);
+        let card_list = ListState::new(0, ListAlignment::Top, CARD_MAX * 2.).measure_all();
         let card_scrollbar = cx.new(|_| Scrollbar::list(card_list.clone()));
 
         Self {
@@ -456,23 +463,42 @@ impl LibraryView {
         let columns = layout.columns;
         let card = layout.card;
 
+        let top = self.card_list.logical_scroll_top();
+        let anchor = (self.card_columns != 0 && self.card_columns != columns && !self.cards_dirty)
+            .then(|| deck_key(&self.card_rows, top.item_ix))
+            .flatten()
+            .map(|key| (key, top.offset_in_item));
+
         if self.card_columns != columns {
             self.card_columns = columns;
             self.cards_dirty = true;
         }
+        let mut rebuilt = false;
         if self.cards_dirty {
             let rows = match self.section {
                 Section::Tracks => deck(&self.tracks, columns, cx),
                 Section::Albums => deck(&self.albums, columns, cx),
                 Section::Playlists => deck(&self.playlists, columns, cx),
             };
+            let restored = anchor.and_then(|(key, offset_in_item)| {
+                deck_row(&rows, key).map(|item_ix| ListOffset {
+                    item_ix,
+                    offset_in_item,
+                })
+            });
             self.card_list.reset(rows.len());
+            if let Some(offset) = restored {
+                self.card_list.scroll_to(offset);
+            }
             self.card_rows = rows.into();
             self.cards_dirty = false;
+            rebuilt = true;
         }
         if (self.card_width - card).abs() >= px(0.5) {
             self.card_width = card;
-            self.card_list.remeasure();
+            if !rebuilt {
+                self.card_list.remeasure();
+            }
         }
 
         let rows = self.card_rows.clone();
@@ -1009,6 +1035,57 @@ fn deck<S: GridSource>(state: &Entity<GridState<S>>, columns: usize, cx: &App) -
     rows
 }
 
+fn deck_key(rows: &[DeckRow], item_ix: usize) -> Option<DeckKey> {
+    match rows.get(item_ix)? {
+        DeckRow::Heading(display) => Some(DeckKey::Heading(*display)),
+        DeckRow::Cards(cards) => cards.first().map(|(display, _)| DeckKey::Card(*display)),
+    }
+}
+
+fn deck_row(rows: &[DeckRow], key: DeckKey) -> Option<usize> {
+    rows.iter().position(|row| match (row, key) {
+        (DeckRow::Heading(display), DeckKey::Heading(anchor)) => *display == anchor,
+        (DeckRow::Cards(cards), DeckKey::Card(anchor)) => {
+            cards.iter().any(|(display, _)| *display == anchor)
+        }
+        _ => false,
+    })
+}
+
 fn head(label: SharedString, cx: &App) -> AnyElement {
     heading(label, cx).w_full().pt_2().into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn card_anchor_follows_a_repacked_row() {
+        let before = vec![
+            DeckRow::Cards(vec![(0, 10), (1, 11)]),
+            DeckRow::Cards(vec![(2, 12), (3, 13)]),
+        ];
+        let after = vec![
+            DeckRow::Cards(vec![(0, 10)]),
+            DeckRow::Cards(vec![(1, 11)]),
+            DeckRow::Cards(vec![(2, 12)]),
+            DeckRow::Cards(vec![(3, 13)]),
+        ];
+
+        let anchor = deck_key(&before, 1).unwrap();
+
+        assert_eq!(anchor, DeckKey::Card(2));
+        assert_eq!(deck_row(&after, anchor), Some(2));
+    }
+
+    #[test]
+    fn heading_anchor_survives_a_repack() {
+        let rows = vec![DeckRow::Heading(0), DeckRow::Cards(vec![(0, 10), (1, 11)])];
+
+        let anchor = deck_key(&rows, 0).unwrap();
+
+        assert_eq!(anchor, DeckKey::Heading(0));
+        assert_eq!(deck_row(&rows, anchor), Some(0));
+    }
 }
