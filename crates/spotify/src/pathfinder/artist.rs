@@ -10,6 +10,12 @@ use super::query;
 
 const HASH: &str = "ae0e2958a4ab645b35ca19ac04d0495ae12d9c5d7b7286217674801a9aab281a";
 
+#[derive(Default)]
+pub(crate) struct Overview {
+    pub(crate) playcounts: HashMap<String, u64>,
+    pub(crate) monthly_listeners: Option<u64>,
+}
+
 #[derive(Deserialize)]
 struct Data {
     #[serde(rename = "artistUnion")]
@@ -19,6 +25,7 @@ struct Data {
 #[derive(Deserialize)]
 struct Artist {
     discography: Option<Discography>,
+    stats: Option<Stats>,
 }
 
 #[derive(Deserialize)]
@@ -44,10 +51,16 @@ struct Track {
     playcount: Option<String>,
 }
 
-pub(crate) async fn artist(session: &Session, artist_id: &str) -> Result<HashMap<String, u64>> {
+#[derive(Deserialize)]
+struct Stats {
+    #[serde(rename = "monthlyListeners")]
+    monthly_listeners: Option<u64>,
+}
+
+pub(crate) async fn artist(session: &Session, artist_id: &str) -> Result<Overview> {
     let variables = variables(artist_id);
     let data = query::<Data>(session, "queryArtistOverview", HASH, variables).await?;
-    Ok(playcounts(data))
+    Ok(overview(data))
 }
 
 fn variables(artist_id: &str) -> serde_json::Value {
@@ -58,9 +71,12 @@ fn variables(artist_id: &str) -> serde_json::Value {
     })
 }
 
-fn playcounts(data: Data) -> HashMap<String, u64> {
-    data.artist
-        .and_then(|artist| artist.discography)
+fn overview(data: Data) -> Overview {
+    let Some(artist) = data.artist else {
+        return Overview::default();
+    };
+    let playcounts = artist
+        .discography
         .and_then(|discography| discography.top_tracks)
         .into_iter()
         .flat_map(|tracks| tracks.items)
@@ -68,7 +84,11 @@ fn playcounts(data: Data) -> HashMap<String, u64> {
             let count = item.track.playcount?.parse().ok()?;
             Some((item.track.uri, count))
         })
-        .collect()
+        .collect();
+    Overview {
+        playcounts,
+        monthly_listeners: artist.stats.and_then(|stats| stats.monthly_listeners),
+    }
 }
 
 #[cfg(test)]
@@ -76,15 +96,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decodes_playcounts() {
+    fn decodes_overview() {
         let data: Data = serde_json::from_slice(
-            br#"{"artistUnion":{"discography":{"topTracks":{"items":[{"track":{"uri":"spotify:track:abc","playcount":"57545277"}},{"track":{"uri":"spotify:track:def","playcount":null}}]}}}}"#,
+            br#"{"artistUnion":{"discography":{"topTracks":{"items":[{"track":{"uri":"spotify:track:abc","playcount":"57545277"}},{"track":{"uri":"spotify:track:def","playcount":null}}]}},"stats":{"monthlyListeners":1900430}}}"#,
         )
         .unwrap();
-        let counts = playcounts(data);
+        let overview = overview(data);
 
-        assert_eq!(counts.get("spotify:track:abc"), Some(&57_545_277));
-        assert!(!counts.contains_key("spotify:track:def"));
+        assert_eq!(overview.monthly_listeners, Some(1_900_430));
+        assert_eq!(
+            overview.playcounts.get("spotify:track:abc"),
+            Some(&57_545_277)
+        );
+        assert!(!overview.playcounts.contains_key("spotify:track:def"));
     }
 
     #[test]

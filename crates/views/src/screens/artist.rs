@@ -7,6 +7,7 @@ use gpui::{
 };
 
 use crate::chrome::Chrome;
+use crate::shared::cells;
 use i18n::t;
 use spotify::{ReleaseType, Track};
 use state::{AppSettings, ArtistDetail, Playback, Sonora};
@@ -16,7 +17,7 @@ use ui::{
     Scrollbar, Scroller, Text, grid,
 };
 
-use crate::shared::hero::{HeroPlayButton, PageHero};
+use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::menu::artist_menu;
 use crate::shared::page;
 use crate::shared::release_card::ReleaseCard;
@@ -192,6 +193,12 @@ impl ArtistView {
         let title = artist
             .map(|artist| SharedString::from(artist.name.clone()))
             .unwrap_or_default();
+        let listeners = artist
+            .and_then(|artist| artist.monthly_listeners)
+            .map(|count| {
+                let value = cells::count(count);
+                t!("artist-monthly-listeners", count = count, value = &value)
+            });
         let overflow = self.detail.read(cx).id().map(|id| {
             Popover::new("artist-overflow", self.popovers.clone())
                 .commands()
@@ -221,6 +228,9 @@ impl ArtistView {
         PageHero::new("artist-hero", title)
             .cover(artist.and_then(|artist| artist.cover_large.clone()))
             .eyebrow(t!("artist-eyebrow"))
+            .when_some(listeners, |hero, listeners| {
+                hero.meta(HeroMetaStrip::new().text(listeners))
+            })
             .actions(actions)
             .circle()
             .into_any_element()

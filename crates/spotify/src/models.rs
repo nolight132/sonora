@@ -111,6 +111,7 @@ pub struct Artist {
     pub name: String,
     pub cover_large: Option<String>,
     pub biography: Option<String>,
+    pub monthly_listeners: Option<u64>,
     pub top_tracks: Vec<Track>,
     pub albums: Vec<Album>,
 }

@@ -43,19 +43,19 @@ pub async fn artist(session: &Session, artist_id: &str) -> Result<Artist> {
             false => albums::metadata(session, &release_uris).await,
         }
     };
-    let playcounts = pathfinder::artist(session, artist_id);
-    let (tracks, releases, playcounts) = tokio::join!(tracks, releases, playcounts);
+    let overview = pathfinder::artist(session, artist_id);
+    let (tracks, releases, overview) = tokio::join!(tracks, releases, overview);
     let mut known_tracks = tracks?;
     let mut known_albums = releases?;
-    let playcounts = playcounts.unwrap_or_else(|error| {
-        log::warn!("artists: cannot load play counts: {error:#}");
-        HashMap::new()
+    let overview = overview.unwrap_or_else(|error| {
+        log::warn!("artists: cannot load overview: {error:#}");
+        pathfinder::Overview::default()
     });
     let top_tracks = track_uris
         .iter()
         .filter_map(|uri| {
             let mut track = known_tracks.remove(uri)?;
-            track.playcount = playcounts.get(uri).copied();
+            track.playcount = overview.playcounts.get(uri).copied();
             Some(track)
         })
         .collect();
@@ -64,7 +64,12 @@ pub async fn artist(session: &Session, artist_id: &str) -> Result<Artist> {
         .filter_map(|uri| known_albums.remove(uri))
         .collect();
 
-    Ok(artist_from(&message, top_tracks, releases))
+    Ok(artist_from(
+        &message,
+        top_tracks,
+        releases,
+        overview.monthly_listeners,
+    ))
 }
 
 pub async fn images(session: &Session, ids: &[String]) -> Result<HashMap<String, String>> {
@@ -114,7 +119,12 @@ pub async fn images(session: &Session, ids: &[String]) -> Result<HashMap<String,
     Ok(found)
 }
 
-fn artist_from(artist: &ArtistMessage, top_tracks: Vec<Track>, albums: Vec<Album>) -> Artist {
+fn artist_from(
+    artist: &ArtistMessage,
+    top_tracks: Vec<Track>,
+    albums: Vec<Album>,
+    monthly_listeners: Option<u64>,
+) -> Artist {
     let portraits = portraits(artist);
 
     Artist {
@@ -132,6 +142,7 @@ fn artist_from(artist: &ArtistMessage, top_tracks: Vec<Track>, albums: Vec<Album
                 .map(plain_text)
                 .filter(|text| !text.is_empty())
         }),
+        monthly_listeners,
         top_tracks,
         albums,
     }

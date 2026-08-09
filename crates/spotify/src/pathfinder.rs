@@ -12,7 +12,7 @@ mod artist;
 mod plays;
 
 pub(crate) use album::album;
-pub(crate) use artist::artist;
+pub(crate) use artist::{Overview, artist};
 pub(crate) use plays::track;
 
 const ENDPOINT: &str = "https://api-partner.spotify.com/pathfinder/v2/query";

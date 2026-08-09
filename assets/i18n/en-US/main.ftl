@@ -120,6 +120,10 @@ play-loading = Loading…
 
 # artist page
 artist-eyebrow = Artist
+artist-monthly-listeners = { $count ->
+    [one] { $value } monthly listener
+   *[other] { $value } monthly listeners
+}
 artist-play = Play now
 artist-popular = Popular
 artist-releases = Releases

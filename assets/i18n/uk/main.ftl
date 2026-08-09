@@ -120,6 +120,11 @@ play-loading = Завантаження…
 
 # artist page
 artist-eyebrow = Виконавець
+artist-monthly-listeners = { $count ->
+    [one] { $value } слухач на місяць
+    [few] { $value } слухачі на місяць
+   *[other] { $value } слухачів на місяць
+}
 artist-play = Слухати
 artist-popular = Популярне
 artist-releases = Релізи
