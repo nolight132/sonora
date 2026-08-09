@@ -656,6 +656,8 @@ impl SettingsView {
     }
 
     fn team(&self, cx: &Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+
         InfoCard::new(t!("settings-team")).flex_none().child(
             div()
                 .flex()
