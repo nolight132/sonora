@@ -4,8 +4,7 @@ use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{
-    App, ClickEvent, Entity, FontWeight, MouseButton, MouseDownEvent, Pixels, SharedString, Window,
-    div,
+    App, ClickEvent, Entity, MouseButton, MouseDownEvent, Pixels, SharedString, Window, div,
 };
 use i18n::t;
 use spotify::Track;
@@ -230,7 +229,6 @@ fn pick(
         SharedString::from(track.name.clone()),
     )
     .cover(track.cover.clone())
-    .weight(FontWeight::SEMIBOLD)
     .underline()
     .tint(tint)
     .when(track.explicit, |card| card.explicit())

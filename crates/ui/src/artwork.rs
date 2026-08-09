@@ -142,6 +142,7 @@ pub struct Artwork {
     circle: bool,
     radius: Option<Pixels>,
     fallback: SharedString,
+    accent: bool,
     interactivity: Interactivity,
 }
 
@@ -154,6 +155,7 @@ impl Artwork {
             circle: false,
             radius: None,
             fallback: FALLBACK_ICON.into(),
+            accent: false,
             interactivity: Interactivity::new(),
         }
     }
@@ -175,6 +177,11 @@ impl Artwork {
 
     pub fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
         self.fallback = icon.into();
+        self
+    }
+
+    pub fn accent(mut self) -> Self {
+        self.accent = true;
         self
     }
 }
@@ -199,9 +206,15 @@ impl RenderOnce for Artwork {
             circle,
             radius,
             fallback,
+            accent,
             interactivity,
         } = self;
-        let muted = cx.theme().muted_foreground;
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let glyph = match accent {
+            true => theme.tint.unwrap_or(theme.primary),
+            false => muted.opacity(0.5),
+        };
         let rounded = match (circle, radius) {
             (true, _) => size / 2.,
             (false, Some(radius)) => radius,
@@ -209,7 +222,7 @@ impl RenderOnce for Artwork {
         };
         let placeholder = {
             let fallback = fallback.clone();
-            move || blank(size, rounded, muted, fallback.clone()).into_any_element()
+            move || blank(size, rounded, muted, glyph, fallback.clone()).into_any_element()
         };
 
         match url {
@@ -232,9 +245,8 @@ impl RenderOnce for Artwork {
                 )
                 .into_any_element()
             }
-            None => {
-                refined(blank(size, rounded, muted, fallback), interactivity).into_any_element()
-            }
+            None => refined(blank(size, rounded, muted, glyph, fallback), interactivity)
+                .into_any_element(),
         }
     }
 }
@@ -247,7 +259,7 @@ fn refined<T: Styled + InteractiveElement>(mut element: T, mut caller: Interacti
     element
 }
 
-fn blank(size: Pixels, rounded: Pixels, muted: Hsla, fallback: SharedString) -> Div {
+fn blank(size: Pixels, rounded: Pixels, muted: Hsla, glyph: Hsla, fallback: SharedString) -> Div {
     div()
         .size(size)
         .rounded(rounded)
@@ -255,10 +267,5 @@ fn blank(size: Pixels, rounded: Pixels, muted: Hsla, fallback: SharedString) -> 
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            svg()
-                .path(fallback)
-                .size(size * 0.46)
-                .text_color(muted.opacity(0.5)),
-        )
+        .child(svg().path(fallback).size(size * 0.46).text_color(glyph))
 }

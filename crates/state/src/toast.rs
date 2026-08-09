@@ -17,6 +17,7 @@ pub struct Toast {
     pub id: usize,
     pub note: Note,
     pub key: SharedString,
+    pub name: Option<SharedString>,
 }
 
 pub struct Toasts {
@@ -42,7 +43,18 @@ impl Toasts {
 
     pub fn show(note: Note, key: impl Into<SharedString>, cx: &mut App) {
         let toasts = Self::entity(cx);
-        toasts.update(cx, |this, cx| this.push(note, key.into(), cx));
+        toasts.update(cx, |this, cx| this.push(note, key.into(), None, cx));
+    }
+
+    pub fn about(
+        note: Note,
+        key: impl Into<SharedString>,
+        name: impl Into<SharedString>,
+        cx: &mut App,
+    ) {
+        let toasts = Self::entity(cx);
+        let name = Some(name.into());
+        toasts.update(cx, |this, cx| this.push(note, key.into(), name, cx));
     }
 
     pub fn shown(&self) -> &[Toast] {
@@ -54,10 +66,21 @@ impl Toasts {
         cx.notify();
     }
 
-    fn push(&mut self, note: Note, key: SharedString, cx: &mut Context<Self>) {
+    fn push(
+        &mut self,
+        note: Note,
+        key: SharedString,
+        name: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
         let id = self.next;
         self.next += 1;
-        self.shown.push(Toast { id, note, key });
+        self.shown.push(Toast {
+            id,
+            note,
+            key,
+            name,
+        });
         cx.notify();
 
         cx.spawn(async move |this, cx| {

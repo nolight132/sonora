@@ -159,6 +159,7 @@ pub(crate) struct PageHero {
     title: SharedString,
     cover: Option<String>,
     fallback: Option<SharedString>,
+    accent: bool,
     eyebrow: Option<SharedString>,
     meta: Option<AnyElement>,
     actions: Option<AnyElement>,
@@ -174,6 +175,7 @@ impl PageHero {
             title: title.into(),
             cover: None,
             fallback: None,
+            accent: false,
             eyebrow: None,
             meta: None,
             actions: None,
@@ -198,6 +200,11 @@ impl PageHero {
 
     pub(crate) fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
         self.fallback = Some(icon.into());
+        self
+    }
+
+    pub(crate) fn accent(mut self) -> Self {
+        self.accent = true;
         self
     }
 
@@ -237,6 +244,7 @@ impl RenderOnce for PageHero {
             .match_art_height()
             .cover(self.cover)
             .when_some(self.fallback, Card::fallback)
+            .when(self.accent, Card::accent)
             .size(Text::Display)
             .weight(FontWeight::BOLD)
             .explicit_gap(theme.metrics.pad * 1.5)

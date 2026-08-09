@@ -39,7 +39,17 @@ impl Render for ToastStack {
                 let id = toast.id;
                 let toasts = self.toasts.clone();
 
-                Toast::new(("toast", id), i18n::lookup(&toast.key, None))
+                let message = match &toast.name {
+                    None => i18n::lookup(&toast.key, None),
+                    Some(name) => {
+                        let mut args = i18n::FluentArgs::new();
+                        args.set("name", i18n::Value::value(name.as_ref()));
+                        i18n::lookup(&toast.key, Some(&args))
+                    }
+                };
+
+                Toast::new(("toast", id), message)
+                    .when_some(toast.name.clone(), Toast::strong)
                     .when(toast.note == Note::Failed, Toast::failed)
                     .on_dismiss(move |_, _, cx| {
                         toasts.update(cx, |this, cx| this.dismiss(id, cx));

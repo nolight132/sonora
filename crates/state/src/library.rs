@@ -174,6 +174,7 @@ impl Library {
         self.mutate_playlist(
             "create playlist",
             "toast-playlist-created",
+            None,
             move |client| async move {
                 let id = client.create_playlist(&name).await?;
                 if let Some(track) = track {
@@ -191,6 +192,7 @@ impl Library {
         self.mutate_playlist(
             "rename playlist",
             "toast-playlist-renamed",
+            None,
             move |client| async move { client.rename_playlist(&id, &name).await },
             move |this, _, cx| {
                 let (id, name) = renamed;
@@ -205,6 +207,7 @@ impl Library {
         self.mutate_playlist(
             "change playlist visibility",
             "toast-playlist-visibility",
+            None,
             move |client| async move { client.set_playlist_public(&id, public).await },
             move |this, _, cx| {
                 this.amend_playlist(&changed, |playlist| playlist.public = public, cx);
@@ -220,9 +223,13 @@ impl Library {
         cx: &mut Context<Self>,
     ) {
         let added = playlist_id.clone();
+        let name = self
+            .playlist(&playlist_id)
+            .map(|playlist| playlist.name.clone());
         self.mutate_playlist(
             "add track to playlist",
             "toast-track-added",
+            name,
             move |client| async move { client.add_track_to_playlist(&playlist_id, &track_id).await },
             move |this, _, cx| {
                 this.amend_playlist(&added, |playlist| playlist.track_count += 1, cx);
@@ -236,6 +243,7 @@ impl Library {
         self.mutate_playlist(
             "delete playlist",
             "toast-playlist-deleted",
+            None,
             move |client| async move { client.delete_playlist(&id).await },
             move |this, _, cx| this.forget_playlist(&deleted, cx),
             cx,
@@ -247,6 +255,7 @@ impl Library {
         self.mutate_playlist(
             "remove playlist from library",
             "toast-playlist-removed",
+            None,
             move |client| async move { client.remove_playlist_from_library(&id).await },
             move |this, _, cx| this.forget_playlist(&removed, cx),
             cx,
@@ -271,6 +280,7 @@ impl Library {
         &mut self,
         action: &'static str,
         done: &'static str,
+        name: Option<String>,
         mutation: F,
         apply: A,
         cx: &mut Context<Self>,
@@ -298,7 +308,10 @@ impl Library {
                 match result {
                     Ok(outcome) => {
                         apply(this, outcome, cx);
-                        Toasts::show(Note::Done, done, cx);
+                        match name {
+                            Some(name) => Toasts::about(Note::Done, done, name, cx),
+                            None => Toasts::show(Note::Done, done, cx),
+                        }
                     }
                     Err(error) => {
                         log::warn!("library: cannot {action}: {error:#}");

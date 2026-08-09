@@ -408,6 +408,7 @@ impl LibraryView {
 
         PageHero::new("liked-songs-hero", t!("library-liked-songs"))
             .fallback("icons/heart-filled.svg")
+            .accent()
             .eyebrow(t!("detail-playlist"))
             .meta(strip)
             .actions(HeroPlayButton::new(
@@ -529,6 +530,7 @@ impl LibraryView {
                             };
 
                             div()
+                                .px(inset)
                                 .when(separated, |this| this.pb_6())
                                 .children(label.map(|label| head(label, cx)))
                                 .into_any_element()
@@ -543,6 +545,7 @@ impl LibraryView {
                             div()
                                 .flex()
                                 .gap_x(gap)
+                                .px(inset)
                                 .when(separated, |this| this.pb_6())
                                 .children(cards)
                                 .into_any_element()
@@ -550,7 +553,7 @@ impl LibraryView {
                     }
                 })
                 .size_full()
-                .p(inset),
+                .py(inset),
             )
             .child(self.card_scrollbar.clone())
             .into_any_element()
