@@ -13,7 +13,7 @@ use gpui::{
 
 const TRACK: f32 = 0.5;
 const THUMB: f32 = 1.5;
-const HIT: f32 = 2.;
+const HIT: f32 = 3.;
 const BUBBLE: f32 = 7.;
 
 fn track(pad: Pixels) -> Pixels {
@@ -51,12 +51,8 @@ impl ScrubberState {
     }
 
     pub fn hovered(&self, position: Point<Pixels>, pad: Pixels) -> Option<f32> {
-        let bounds = self.bounds.get();
-        let reach = Bounds {
-            origin: gpui::point(bounds.origin.x, bounds.origin.y - hit(pad) / 2.),
-            size: gpui::size(bounds.size.width, bounds.size.height + hit(pad)),
-        };
-        reach
+        self.bounds
+            .get()
             .contains(&position)
             .then(|| self.fraction_at(position.x, pad))
     }
@@ -209,10 +205,16 @@ impl RenderOnce for Scrubber {
 
         div()
             .id(gpui::ElementId::Name(id.clone()))
+            .relative()
             .flex()
             .items_center()
             .w_full()
             .h(reach)
+            .child(
+                canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
             .when(enabled, |this| {
                 this.cursor_pointer()
                     .on_mouse_down(MouseButton::Left, down)
@@ -285,12 +287,7 @@ impl RenderOnce for Scrubber {
                                         .child(text),
                                 ),
                         )
-                    })
-                    .child(
-                        canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
-                            .absolute()
-                            .size_full(),
-                    ),
+                    }),
             )
     }
 }
@@ -299,7 +296,7 @@ impl RenderOnce for Scrubber {
 mod tests {
     use gpui::{Bounds, point, px, size};
 
-    use super::{ScrubberState, thumb};
+    use super::{ScrubberState, hit, thumb, track};
 
     const PAD: gpui::Pixels = px(8.);
     const ORIGIN: f32 = 20.;
@@ -309,7 +306,7 @@ mod tests {
         let state = ScrubberState::new("test");
         state.bounds.set(Bounds {
             origin: point(px(ORIGIN), px(0.)),
-            size: size(px(WIDTH), px(4.)),
+            size: size(px(WIDTH), hit(PAD)),
         });
         state
     }
@@ -343,5 +340,18 @@ mod tests {
         let state = ScrubberState::new("test");
 
         assert_eq!(state.fraction_at(px(50.), PAD), 0.);
+    }
+
+    #[test]
+    fn the_bubble_shows_exactly_where_the_grab_lands() {
+        let state = measured();
+        let reach = hit(PAD);
+        let x = px(ORIGIN + WIDTH / 2.);
+
+        assert!(reach > track(PAD) * 4.);
+        assert!(state.hovered(point(x, px(0.)), PAD).is_some());
+        assert!(state.hovered(point(x, reach - px(1.)), PAD).is_some());
+        assert!(state.hovered(point(x, px(-1.)), PAD).is_none());
+        assert!(state.hovered(point(x, reach), PAD).is_none());
     }
 }

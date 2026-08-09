@@ -264,12 +264,11 @@ impl RenderOnce for Card {
         } = self;
 
         let theme = *cx.theme();
+        let inset = theme.metrics.pad;
         let height = snapped(theme.metrics.list_row, window);
         let listed = art.is_none() && tile.is_none();
         let has_trailing = trailing.is_some();
-        let art = art
-            .or(tile)
-            .unwrap_or(theme.metrics.list_row - theme.metrics.pad * 2.);
+        let art = art.or(tile).unwrap_or(snapped(height - inset * 2., window));
         let hovered = match (hovered, fill) {
             (Some(style), _) => Some(style),
             (None, true) => Some(StyleRefinement::default().bg(theme.table_hover)),
@@ -333,10 +332,10 @@ impl RenderOnce for Card {
             .when_else(
                 tile.is_some(),
                 |this| this.flex_col().gap_2().w(art),
-                |this| this.items_center().gap_3().px_2(),
+                |this| this.items_center().gap_3().px(inset),
             )
             .rounded(theme.radius)
-            .when(listed, |this| this.flex_none().h(height))
+            .when(listed, |this| this.flex_none().h(height).py(inset))
             .when_some(hovered, |this, style| this.hover(move |_| style))
             .when_some(press, |this, press| {
                 this.cursor_pointer()

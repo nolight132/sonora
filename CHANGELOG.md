@@ -12,6 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Copy link actions for tracks, albums, playlists and artists.
 - Monthly listeners on the artist page, and play counts beside an artist's popular tracks.
 - Toasts confirming queue and playlist additions.
+- The volume can be set by scrolling the mouse wheel over the volume control.
 - Turning on radio appends what it will play to the queue and lists it under a Similar tracks
   section, picked from the last track you queued. Those tracks play, reorder and can be removed like
   any other queue entry.
@@ -19,6 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The seek and volume sliders have a taller grab area, so they are easier to hit without looking
+  any thicker.
 - Library cards are virtualized, artist release artwork loads only once it is scrolled to, and the
   artwork image cache is bounded, so large libraries stay responsive.
 - Headings, quick pick titles and queue track names are lighter and no longer bold.
@@ -29,6 +32,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Clicking a dropdown trigger below the title bar closes its menu instead of leaving it open.
 - Releases on the artist page answer to a right-click with the album menu.
+- The percentage and timecode bubbles no longer appear below a slider, where a click would not land.
+- Rows in quick picks, the queue and search results are inset by the same amount on all four sides,
+  instead of drifting a pixel between the top and the bottom.
 - Timestamps an hour or longer carry an hours field instead of overflowing the minutes.
 - Track menus no longer offer a link to the page that is already open.
 - A right-click on a table row no longer also opens the menu behind it.
