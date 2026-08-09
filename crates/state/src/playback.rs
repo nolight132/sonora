@@ -144,7 +144,7 @@ impl Playback {
         self.load_after(track, Duration::ZERO, cx);
     }
 
-    pub fn preload(&self, track: &Track) {
+    pub fn preload(&mut self, track: &Track) {
         let Some(engine) = self.engine.as_ref() else {
             return;
         };
@@ -155,7 +155,12 @@ impl Playback {
         {
             return;
         }
+        if self.preloaded.as_deref() == Some(id) {
+            return;
+        }
+        self.preloaded = Some(id.to_owned());
         if let Err(error) = engine.preload(id) {
+            self.preloaded = None;
             log::warn!("playback: cannot preload {}: {error:#}", track.name);
         }
     }
@@ -171,6 +176,7 @@ impl Playback {
             return self.failed(format!("{} is not available to stream", track.name), cx);
         }
 
+        let ready = self.preloaded.as_deref() == Some(id.as_str());
         self.track = Some(track.clone());
         self.state = PlaybackState::Loading;
         self.position = Duration::ZERO;
@@ -181,7 +187,10 @@ impl Playback {
             .blocked_until
             .and_then(|until| until.checked_duration_since(Instant::now()))
             .unwrap_or_default()
-            .max(debounce);
+            .max(match ready {
+                true => Duration::ZERO,
+                false => debounce,
+            });
 
         self.load = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(wait).await;
@@ -433,15 +442,8 @@ impl Playback {
             self.preloaded = None;
             return;
         };
-        let Some(id) = next.id.clone().filter(|_| next.playable) else {
-            return;
-        };
-        if self.preloaded.as_deref() == Some(id.as_str()) {
-            return;
-        }
 
         self.preload(&next);
-        self.preloaded = Some(id);
     }
 
     pub fn radio(&self) -> bool {

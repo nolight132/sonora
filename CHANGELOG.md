@@ -17,6 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   section, picked from the last track you queued. Those tracks play, reorder and can be removed like
   any other queue entry.
 - Tooltips on icon-only controls across the player, title bar, toolbar and queue.
+- The next track is fetched before the current one ends, so it starts without a gap.
 
 ### Changed
 
