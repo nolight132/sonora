@@ -163,6 +163,7 @@ pub struct Theme {
     pub radius: Pixels,
     pub font_size: Pixels,
     pub metrics: Metrics,
+    pub transparent: bool,
     pub tint: Option<Hsla>,
 }
 
@@ -209,6 +210,7 @@ impl Theme {
             radius: px(6.),
             font_size: px(14.),
             metrics: Metrics::default(),
+            transparent: false,
             tint: None,
         }
     }
@@ -246,6 +248,7 @@ impl Theme {
             radius: px(6.),
             font_size: px(14.),
             metrics: Metrics::default(),
+            transparent: false,
             tint: None,
         }
     }
@@ -283,6 +286,7 @@ impl Theme {
             radius: px(6.),
             font_size: px(14.),
             metrics: Metrics::default(),
+            transparent: false,
             tint: None,
         }
     }
@@ -320,6 +324,7 @@ impl Theme {
             radius: px(6.),
             font_size: px(14.),
             metrics: Metrics::default(),
+            transparent: false,
             tint: None,
         }
     }
@@ -617,6 +622,7 @@ impl Theme {
         }
         theme.font_size = base;
         theme.metrics = Metrics::new(base);
+        theme.transparent = look.transparent;
         theme.tint = look.tint;
         theme
     }

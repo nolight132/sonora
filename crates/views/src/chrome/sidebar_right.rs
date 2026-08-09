@@ -610,7 +610,7 @@ impl Render for SidebarRight {
                     cx.notify();
                 }
             }))
-            .bg(theme.background)
+            .when(!theme.transparent, |this| this.bg(theme.background))
             .border_color(theme.border)
             .child(self.header(sections, cx))
             .child(

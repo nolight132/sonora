@@ -161,7 +161,7 @@ impl Render for TitleBar {
             .w_full()
             .h(height)
             .flex_none()
-            .bg(theme.background)
+            .when(!theme.transparent, |this| this.bg(theme.background))
             .border_b_1()
             .border_color(theme.title_bar_border)
             .window_control_area(gpui::WindowControlArea::Drag)
