@@ -153,7 +153,9 @@ impl SearchView {
                     .trailing(
                         div()
                             .flex_none()
+                            .w(cells::TRAILING)
                             .whitespace_nowrap()
+                            .text_right()
                             .text_size(theme.text(Text::Small))
                             .text_color(theme.muted_foreground)
                             .child(clock(track.duration)),
