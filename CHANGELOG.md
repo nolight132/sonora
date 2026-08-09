@@ -7,8 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-09
+
 ### Added
 
+- Albums and playlists can be added to and removed from the library, from their context menu and
+  from a heart button beside Play on their page.
+- A transparent window background, with an opacity slider under Appearance settings.
+- Settings are split into General, Appearance, Playback and About tabs, reachable from the sidebar.
 - Copy link actions for tracks, albums, playlists and artists.
 - Monthly listeners on the artist page, and play counts beside an artist's popular tracks.
 - Toasts confirming queue and playlist additions.
@@ -23,6 +29,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Settings that are on or off are switches instead of text buttons.
+- Context menu entries are grouped into sections separated by a rule.
+- The sidebar always collapses when the window gets narrow; the setting that governed it is gone.
+- Skipping quickly through several tracks only loads the one you stop on.
 - The seek and volume sliders have a taller grab area, so they are easier to hit without looking
   any thicker.
 - Library cards are virtualized, artist release artwork loads only once it is scrolled to, and the
@@ -33,6 +43,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Radio builds its set of similar tracks once, instead of replacing it on every track it plays.
+- Durations in search results stay on one line.
+- Library cards keep their scroll position when you come back to them.
+- The settings menu in the sidebar folds away when you navigate off settings.
 - The Play button on a page plays the list as it is shown, so filtering or sorting no longer starts
   a track that is not in view.
 - An empty library section says so instead of showing a bare table, and a filter that matches
@@ -172,7 +186,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/nolight132/sonora/compare/v0.4.1...HEAD
+[unreleased]: https://github.com/nolight132/sonora/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/nolight132/sonora/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/nolight132/sonora/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/nolight132/sonora/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nolight132/sonora/compare/v0.2.0...v0.3.0
