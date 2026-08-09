@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use ui::{ActiveTheme as _, Button, Panel, Room, Shield, Side};
+use ui::{ActiveTheme as _, Button, MIN_CONTENT, Panel, SNUG, Shield, Side};
 
 use gpui::prelude::*;
 use gpui::{
@@ -31,7 +31,7 @@ const TABS: [(&str, LibraryTab); 3] = [
     ("nav-playlists", LibraryTab::Playlists),
 ];
 
-const MIN_WIDTH: Pixels = px(130.);
+const MIN_WIDTH: Pixels = px(160.);
 const MAX_WIDTH: Pixels = px(400.);
 
 pub(crate) struct SidebarLeft {
@@ -39,6 +39,7 @@ pub(crate) struct SidebarLeft {
     trail: Entity<Navigation>,
     width: Pixels,
     open: bool,
+    fit: bool,
     cramped: bool,
     forced: Option<bool>,
     library_open: bool,
@@ -60,6 +61,7 @@ impl SidebarLeft {
             trail,
             width,
             open,
+            fit: open,
             forced: None,
             cramped: false,
             library_open: true,
@@ -97,15 +99,34 @@ impl SidebarLeft {
                 self.persist(cx);
             }
         }
+        self.fit = self.is_open();
         cx.notify();
+    }
+
+    fn keep(&self, cx: &Context<Self>) -> Pixels {
+        match self.settings.read(cx).auto_hide_sidebar() {
+            true => SNUG,
+            false => MIN_CONTENT,
+        }
+    }
+
+    fn ceiling(&self, window: &Window, cx: &Context<Self>) -> Pixels {
+        let reserved = self.keep(cx) + super::Chrome::sidebar_right(cx);
+        super::cap(MIN_WIDTH, MAX_WIDTH, reserved, window)
     }
 
     pub fn adapt(&mut self, window: &Window, cx: &mut Context<Self>) {
         self.width = ui::snapped(self.width, window);
 
+        if std::mem::take(&mut self.fit) {
+            self.width = self.width.min(self.ceiling(window, cx));
+            self.persist(cx);
+        }
+
         let auto_hide = self.settings.read(cx).auto_hide_sidebar();
-        let space_left = window.viewport_size().width - self.width;
-        let cramped = auto_hide && !Room::of(space_left).fits(Room::Wide);
+        let taken = self.width + super::Chrome::sidebar_right(cx);
+        let space_left = window.viewport_size().width - taken;
+        let cramped = auto_hide && space_left < self.keep(cx);
         if cramped != self.cramped {
             self.cramped = cramped;
             self.forced = None;
@@ -225,6 +246,7 @@ impl Render for SidebarLeft {
         let overlaid = self.overlays();
         let panel = Panel::new("sidebar-left", Side::Left, self.width)
             .limits(MIN_WIDTH, MAX_WIDTH)
+            .reach(self.ceiling(window, cx))
             .on_resize(cx.listener(|this, width: &Pixels, _, cx| {
                 this.width = *width;
                 this.persist(cx);

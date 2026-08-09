@@ -302,7 +302,7 @@ Two modules own the measurement:
 use crate::chrome::Chrome;
 Chrome::content(window, cx)   // viewport width − both sidebars, floored at ui::MIN_CONTENT
 Chrome::room(window, cx)      // the same, classified into a Room
-Chrome::sidebar_left(cx) / Chrome::sidebar_right(cx)   // one panel's cut, for the other panel
+chrome::cap(min, max, window) // a panel's ceiling: never eat ui::MIN_CONTENT
 ```
 
 `Chrome::room` is how a view classifies its width: never rebuild `Room::of(…)` from a width you
@@ -314,16 +314,23 @@ Rules:
   ignores both side panels, so tables overflow under the right sidebar and grids pick a column count
   that does not fit. Raw viewport width is legitimate in exactly two places: chrome that spans the
   whole window (`PlayerBar`, `TitleBar`, and `Menu`'s submenu flip), and a side panel deciding *its
-  own* size — `SidebarLeft` measures the room left over once its own width is taken, `SidebarRight`
-  subtracts `Chrome::sidebar_left`. `Chrome::content` would be circular for either, because each is
-  a term in it; reading the *other* panel's cut is not.
+  own* size. `Chrome::content` would be circular for a panel, because the panel is a term in it.
+- **One panel never sets another's width.** Each clamps itself against the viewport through
+  `chrome::cap`, so neither can squeeze content below `ui::MIN_CONTENT` on its own, and neither
+  panel's size is ever a function of the other's.
+- **Hiding is a different question from sizing, and it does look at both panels.** `SidebarLeft`
+  auto-hides once the room left for content — viewport minus its own width *and*
+  `Chrome::sidebar_right` — drops below `Room::Wide`, so opening the queue pushes it out of the way
+  without resizing it. It reads last frame's publish, which cannot loop: the decision changes
+  visibility, never width. `SidebarRight` decides its own takeover from the viewport alone.
+- **A panel's width changes only when the user drags it.** `chrome::cap` feeds `Panel::reach`, which
+  bounds the *drag*, not the render — narrowing the window must never silently shrink a panel the
+  user sized. `Panel::limits` stays the static floor and ceiling.
 - `Workspace::render` publishes the widths every frame via `Chrome::publish`; it notifies only when
   a width actually changed, so it cannot loop.
 - **`Chrome` is only current after that publish.** `Workspace` renders *before* it and owns both
   panels, so it reads them directly; everything it renders into — content views and both panels —
-  sees this frame's values. `SidebarRight` is the one exception: it reads `Chrome::sidebar_left`
-  while `Workspace` is still assembling this frame's publish, so a left-panel change reaches it one
-  frame late, and its `Chrome` observation repaints it on the next.
+  sees this frame's values.
 - **A view whose layout depends on width must observe the chrome**, or it will not repaint when a
   panel is resized or toggled:
   ```rust
