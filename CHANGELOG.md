@@ -35,6 +35,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The Play button on a page plays the list as it is shown, so filtering or sorting no longer starts
   a track that is not in view.
+- An empty library section says so instead of showing a bare table, and a filter that matches
+  nothing says that too.
+- Quick picks asks you to like a few songs once the library has loaded, instead of pulsing
+  placeholders forever.
+- The no-matches note in search lines up with the results above it.
 - Clicking a dropdown trigger below the title bar closes its menu instead of leaving it open.
 - Releases on the artist page answer to a right-click with the album menu.
 - The percentage and timecode bubbles no longer appear below a slider, where a click would not land.

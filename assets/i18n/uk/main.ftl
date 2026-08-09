@@ -30,6 +30,10 @@ nav-forward = Вперед
 nav-sidebar = Показати або сховати бічну панель
 library-liked-songs = Вподобані пісні
 library-play-liked-songs = Слухати
+library-no-songs = Поки немає вподобаних треків
+library-no-albums = Поки немає збережених альбомів
+library-no-playlists = Поки немає плейлистів
+library-no-matches = Нічого не знайдено
 
 # app menu
 app-refresh-library = Оновити медіатеку
@@ -170,6 +174,7 @@ release-meta = { $year } • { $kind }
 # home page
 home-quick-picks = Швидкий вибір
 home-quick-picks-eyebrow = Почніть із треку
+home-quick-picks-empty = Додайте кілька треків, і вони з'являться тут
 
 # search page
 search-placeholder = Що хочете послухати?

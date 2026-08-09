@@ -23,7 +23,7 @@ use state::{AppSettings, Library, LibraryState, Origin, Playback, PlaybackState,
 use ui::{
     ActiveTheme as _, Button, Card, FlagAxis, GridDelegate, GridEvent, GridSource, GridState, Menu,
     MenuItem, Mode, Popovers, Popup, RangeAxis, Scrollbar, Scroller, Sort, SortAxis, Text, Toggle,
-    Unit, Viewport, clock, grid, heading, scrolled,
+    Unit, Viewport, clock, grid, heading, scrolled, vacant,
 };
 
 use crate::shared::album_grid::{AlbumGrid, CARD_MAX, CardGrid};
@@ -99,6 +99,14 @@ impl Section {
             Section::Tracks => 0,
             Section::Albums => 1,
             Section::Playlists => 2,
+        }
+    }
+
+    fn vacancy(self) -> &'static str {
+        match self {
+            Section::Tracks => "library-no-songs",
+            Section::Albums => "library-no-albums",
+            Section::Playlists => "library-no-playlists",
         }
     }
 }
@@ -344,6 +352,22 @@ impl LibraryView {
 
     pub fn is_loading(&self, cx: &App) -> bool {
         self.library.read(cx).is_loading()
+    }
+
+    fn note(&self, cx: &App) -> Option<SharedString> {
+        let settled = !matches!(
+            self.library.read(cx).state(),
+            LibraryState::Loading | LibraryState::Failed(_)
+        );
+        let table = self.table(self.section);
+        if !settled || table.row_count(cx) > 0 {
+            return None;
+        }
+
+        Some(match table.filtering(cx) {
+            true => t!("library-no-matches"),
+            false => i18n::lookup(self.section.vacancy(), None),
+        })
     }
 
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -732,17 +756,23 @@ impl Render for LibraryView {
         });
         let view = cx.entity().downgrade();
         let section = self.section;
+        let note = self.note(cx);
         let content = match (self.section, mode) {
             (Section::Tracks, Mode::List) => Scroller::new("library-page", &self.scrollbar)
                 .pt(inset)
                 .pb(inset)
                 .child(div().px(inset).child(self.liked_header(cx)))
                 .child(grid(&self.tracks))
+                .when_some(note, |this, note| this.child(vacant(note, cx)))
                 .into_any_element(),
             (_, Mode::List) => Scroller::new("library-page", &self.scrollbar)
                 .child(self.table(self.section).element())
+                .when_some(note, |this, note| this.child(vacant(note, cx)))
                 .into_any_element(),
-            (_, Mode::Cards) => self.cards(window, cx),
+            (_, Mode::Cards) => match note {
+                Some(note) => vacant(note, cx).size_full().into_any_element(),
+                None => self.cards(window, cx),
+            },
         };
 
         div()

@@ -14,7 +14,9 @@ use crate::chrome::Chrome;
 use crate::shared::menu::ItemMenu;
 use state::{Hit, Kind, Playback, Search};
 use ui::ActiveTheme as _;
-use ui::{Card, Popup, Room, Scrollbar, Scroller, Separator, Text, Theme, VAST, clock, eyebrow};
+use ui::{
+    Card, Popup, Room, Scrollbar, Scroller, Separator, Text, Theme, VAST, clock, eyebrow, vacant,
+};
 
 use crate::shared::cells;
 use crate::shared::tracks::{PlaybackStatus, playback_status};
@@ -293,10 +295,8 @@ impl SearchView {
         cx: &Context<Self>,
     ) -> AnyElement {
         if rows.is_empty() {
-            return div()
+            return vacant(t!("search-no-matches"), cx)
                 .flex_none()
-                .text_color(cx.theme().muted_foreground)
-                .child(t!("search-no-matches"))
                 .into_any_element();
         }
 

@@ -12,6 +12,7 @@ const GROUP_SIZE: usize = 12;
 const LIMIT: usize = GROUP_SIZE * 3;
 
 pub struct Home {
+    library: Entity<Library>,
     quick_picks: Rc<Vec<Track>>,
     quick_picks_seed: u64,
 }
@@ -36,6 +37,7 @@ impl Home {
         .detach();
 
         Self {
+            library,
             quick_picks,
             quick_picks_seed,
         }
@@ -43,6 +45,10 @@ impl Home {
 
     pub fn quick_picks(&self) -> Rc<Vec<Track>> {
         self.quick_picks.clone()
+    }
+
+    pub fn is_loading(&self, cx: &App) -> bool {
+        self.library.read(cx).is_loading()
     }
 }
 
