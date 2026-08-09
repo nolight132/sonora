@@ -25,6 +25,6 @@ pub fn heading(label: impl Into<SharedString>, cx: &App) -> Div {
     div()
         .flex_none()
         .text_size(cx.theme().text(Text::Title))
-        .font_weight(FontWeight::BOLD)
+        .font_weight(FontWeight::SEMIBOLD)
         .child(label.into())
 }
