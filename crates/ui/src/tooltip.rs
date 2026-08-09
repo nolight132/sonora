@@ -50,7 +50,7 @@ impl Render for Tooltip {
         let (position, anchor) = match self.perch {
             Perch::Pointer => (at + point(-OFFSET, OFFSET), Anchor::TopRight),
             Perch::Above => (
-                point(at.x, at.y - theme.metrics.control_small),
+                point(at.x, at.y - theme.metrics.control_small / 2.),
                 Anchor::BottomCenter,
             ),
         };
