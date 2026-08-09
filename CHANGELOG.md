@@ -30,6 +30,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Clicking a dropdown trigger below the title bar closes its menu instead of leaving it open.
+- Releases on the artist page answer to a right-click with the album menu.
 - The percentage and timecode bubbles no longer appear below a slider, where a click would not land.
 - Rows in quick picks, the queue and search results are inset by the same amount on all four sides,
   instead of drifting a pixel between the top and the bottom.

@@ -575,6 +575,8 @@ impl RenderOnce for Menu {
                 .into_any_element(),
             None => content,
         };
+        let shielded = should_defer && !nested;
+        let chrome = snapped(theme.metrics.title_bar, window);
         let mut menu = base
             .absolute()
             .flex()
@@ -589,11 +591,13 @@ impl RenderOnce for Menu {
             .occlude()
             .when_some(dismiss, |this, dismiss| {
                 let blocked = move |position: Point<Pixels>| {
+                    let reachable = !shielded || position.y < chrome;
                     panel.contains(position, PANEL_SLACK)
                         || dismiss_guards.iter().any(|guard| guard.contains(position))
-                        || trigger
-                            .as_ref()
-                            .is_some_and(|trigger| trigger.contains(position, Pixels::ZERO))
+                        || reachable
+                            && trigger
+                                .as_ref()
+                                .is_some_and(|trigger| trigger.contains(position, Pixels::ZERO))
                 };
                 this.on_mouse_down_out(move |event, window, cx| {
                     if !blocked(event.position) {
@@ -601,9 +605,8 @@ impl RenderOnce for Menu {
                     }
                 })
             })
-            .when(should_defer && !nested, |this| {
+            .when(shielded, |this| {
                 let viewport = window.viewport_size();
-                let chrome = snapped(theme.metrics.title_bar, window);
                 this.child(
                     anchored().position(point(Pixels::ZERO, chrome)).child(
                         Shield::new("menu-shield")

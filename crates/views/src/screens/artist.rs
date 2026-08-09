@@ -2,24 +2,24 @@
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, ScrollHandle,
+    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Point, Render, ScrollHandle,
     SharedString, Window, div, px,
 };
 
 use crate::chrome::Chrome;
 use crate::shared::cells;
 use i18n::t;
-use spotify::{ReleaseType, Track};
+use spotify::{Album, ReleaseType, Track};
 use state::{AppSettings, ArtistDetail, Playback, Sonora};
 use ui::ActiveTheme as _;
 use ui::{
     Button, Card, ColumnSpec, GridDelegate, GridEvent, GridState, MIN_CONTENT, Popover, Popovers,
-    Scrollbar, Scroller, Skeleton, Text, grid,
+    Popup, Scrollbar, Scroller, Skeleton, Text, grid,
 };
 
 use crate::shared::album_grid::{AlbumGrid, CardGrid};
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
-use crate::shared::menu::artist_menu;
+use crate::shared::menu::{album_menu, artist_menu};
 use crate::shared::page;
 use crate::shared::tracks::{PlaybackStatus, TrackField, TrackSource, Tracks, playback_status};
 
@@ -91,6 +91,7 @@ pub(crate) struct ArtistView {
     table: Entity<GridState<TrackSource>>,
     settings: Entity<AppSettings>,
     popovers: Popovers,
+    release_menu: Option<(Album, Point<Pixels>)>,
 }
 
 #[derive(Clone, Copy)]
@@ -354,6 +355,7 @@ impl ArtistView {
             table,
             settings,
             popovers: Popovers::default(),
+            release_menu: None,
         }
     }
 
@@ -459,8 +461,18 @@ impl ArtistView {
                 let columns = AlbumGrid::columns(self.width);
                 let release_end = self.release_end.clone();
                 let scrollbar = self.scrollbar.clone();
+                let opened = cx.entity().downgrade();
 
                 AlbumGrid::new("artist-release", self.width, albums, self.playback.clone())
+                    .on_context(move |album, position, cx| {
+                        let Some(view) = opened.upgrade() else {
+                            return;
+                        };
+                        view.update(cx, |this, cx| {
+                            this.release_menu = Some((album.clone(), position));
+                            cx.notify();
+                        });
+                    })
                     .on_layout(move |bounds, window, cx| {
                         let update = release_end.update(cx, |end, _| {
                             end.observe(&bounds, scroll.max_offset().y, columns, count)
@@ -602,10 +614,18 @@ impl Render for ArtistView {
         self.table
             .update(cx, |table, _| table.set_viewport(viewport));
 
+        let release_menu = self.release_menu.clone().map(|(album, position)| {
+            let menu = album_menu(album.id, self.playback.clone(), false);
+            Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
+                this.release_menu = None;
+                cx.notify();
+            }))
+        });
+
         let release_end = self.release_end.clone();
         let scrollbar = self.scrollbar.clone();
         let wheel = scroll.clone();
-        Scroller::new("artist-page", &self.scrollbar)
+        let page = Scroller::new("artist-page", &self.scrollbar)
             .px(inset)
             .pt(inset)
             .pb(inset)
@@ -649,7 +669,13 @@ impl Render for ArtistView {
                     .border_color(theme.border)
                     .into_any_element(),
             })
-            .children(self.releases(cx))
+            .children(self.releases(cx));
+
+        div()
+            .relative()
+            .size_full()
+            .child(page)
+            .when_some(release_menu, |this, menu| this.child(menu))
     }
 }
 
