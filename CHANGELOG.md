@@ -27,6 +27,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - The percentage and timecode bubbles no longer appear below a slider, where a click would not land.
+- Rows in quick picks, the queue and search results are inset by the same amount on all four sides,
+  instead of drifting a pixel between the top and the bottom.
 - Timestamps an hour or longer carry an hours field instead of overflowing the minutes.
 - Track menus no longer offer a link to the page that is already open.
 - A right-click on a table row no longer also opens the menu behind it.
