@@ -16,15 +16,20 @@ type Fetch = Pin<Box<dyn Future<Output = Result<Vec<Track>>> + Send>>;
 enum Start {
     Pick,
     Skip,
+    Burst,
     Segue,
 }
 
 impl Start {
     fn debounce(self) -> Duration {
         match self {
-            Self::Skip => SKIP_DEBOUNCE,
+            Self::Skip | Self::Burst => SKIP_DEBOUNCE,
             Self::Pick | Self::Segue => Duration::ZERO,
         }
+    }
+
+    fn immediate(self) -> bool {
+        self != Self::Burst
     }
 }
 
@@ -104,6 +109,7 @@ pub struct Playback {
     enqueue: Option<Task<()>>,
     suggest: Option<Task<()>>,
     preloaded: Option<String>,
+    skipped: Option<Instant>,
     blocked_until: Option<Instant>,
 }
 
@@ -155,6 +161,7 @@ impl Playback {
             enqueue: None,
             suggest: None,
             preloaded: None,
+            skipped: None,
             blocked_until: None,
         }
     }
@@ -195,7 +202,7 @@ impl Playback {
             return self.failed(format!("{} is not available to stream", track.name), cx);
         }
 
-        let ready = self.preloaded.as_deref() == Some(id.as_str());
+        let ready = start.immediate() && self.preloaded.as_deref() == Some(id.as_str());
         self.track = Some(track.clone());
         self.state = PlaybackState::Loading;
         self.position = Duration::ZERO;
@@ -439,7 +446,20 @@ impl Playback {
 
     pub fn next(&mut self, cx: &mut Context<Self>) {
         self.fetch = None;
-        self.follow_queue(Start::Skip, cx);
+        let start = self.burst();
+        self.follow_queue(start, cx);
+    }
+
+    fn burst(&mut self) -> Start {
+        let now = Instant::now();
+        let rapid = self
+            .skipped
+            .replace(now)
+            .is_some_and(|last| now.duration_since(last) < SKIP_DEBOUNCE);
+        match rapid {
+            true => Start::Burst,
+            false => Start::Skip,
+        }
     }
 
     fn preload_next(&mut self, position: Duration, cx: &Context<Self>) {
@@ -626,10 +646,11 @@ impl Playback {
 
     pub fn previous(&mut self, cx: &mut Context<Self>) {
         self.fetch = None;
+        let start = self.burst();
         let Some(track) = self.queue.update(cx, |queue, cx| queue.previous(cx)) else {
             return;
         };
-        self.load_after(&track, Start::Skip, cx);
+        self.load_after(&track, start, cx);
     }
 
     pub fn play_past(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -865,6 +886,7 @@ impl Playback {
         self.suggest = None;
         self.seeded = None;
         self.preloaded = None;
+        self.skipped = None;
         self.blocked_until = None;
         self.engine = None;
         self.track = None;
