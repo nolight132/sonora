@@ -7,6 +7,69 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Copy link actions for tracks, albums, playlists and artists.
+- Monthly listeners on the artist page, and play counts beside an artist's popular tracks.
+- Toasts confirming queue and playlist additions.
+
+### Changed
+
+- Library cards are virtualized, artist release artwork loads only once it is scrolled to, and the
+  artwork image cache is bounded, so large libraries stay responsive.
+- Headings, quick pick titles and queue track names are lighter and no longer bold.
+- Releases ship static Inter faces instead of the variable font.
+- Song, artist and album pages load their details in fewer requests.
+
+### Fixed
+
+- Timestamps an hour or longer carry an hours field instead of overflowing the minutes.
+- Track menus no longer offer a link to the page that is already open.
+- A right-click on a table row no longer also opens the menu behind it.
+- Artist release artwork no longer disappears while the page scrolls.
+- The library card grid is padded on both sides.
+- Play counts of zero are treated as unknown rather than shown as zero.
+
+## [0.4.1] - 2026-08-09
+
+### Added
+
+- An About page crediting the team.
+
+### Changed
+
+- Shuffle, repeat and whether the queue panel is open are remembered between sessions.
+
+### Fixed
+
+- Play next inserts after the current track instead of appending to the queue.
+- Resizing one side panel no longer resizes the other.
+- A panel responds only to its own drag grip.
+- A button label truncates instead of overflowing its button.
+- Long song metadata is contained rather than spilling out of its row.
+
+## [0.4.0] - 2026-08-09
+
+### Added
+
+- Playlist management: create, rename, delete, change visibility, and add or remove tracks.
+- Albums and playlists can be queued as a whole from their menus.
+- Library cards are laid out on a grid that adapts its column count to the space available.
+- Toasts above the player report playlist changes.
+
+### Changed
+
+- Item menus are built from one shared definition rather than per-screen copies.
+- Track columns are composed from one shared set across every table.
+- Playlist edits update the library in place instead of reloading it.
+- The library Songs tab stays in list mode, where a card grid adds nothing.
+- The text input moved into the design system, and side panels are built on one panel primitive.
+
+### Fixed
+
+- Radio started from a search result is seeded with the track that was picked.
+- A newly created playlist is named on creation instead of appearing untitled.
+
 ## [0.3.0] - 2026-08-08
 
 ### Added
@@ -82,7 +145,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Capped the volume taper at unity gain; the top of the slider no longer clips.
 - Aligned the scrubber thumb with the pointer across the whole track.
 
-[unreleased]: https://github.com/nolight132/sonora/compare/v0.3.0...HEAD
+## [0.1.0] - 2026-08-07
+
+Initial release: a native Spotify client with playback, an interactive queue, the saved library,
+search, album, playlist, artist and song pages, context menus and adaptive theming.
+
+[unreleased]: https://github.com/nolight132/sonora/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/nolight132/sonora/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/nolight132/sonora/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/nolight132/sonora/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/nolight132/sonora/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/nolight132/sonora/compare/v0.1.0...v0.1.1

@@ -543,3 +543,22 @@ One heading, one list. Nothing else:
 Bullets are lowercase, imperative, one line each, and describe behaviour rather than files. No
 Why/User impact/Validation sections, no checklists, no screenshot boilerplate, no test plan. This
 overrides any wider PR template. Never sign off or attribute the assistant.
+
+## Releases
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and **must be
+edited in the same commit that cuts a release** — a release that ships without its changelog entry
+is incomplete. Cutting a release therefore takes three steps:
+
+1. `chore: release <version>` — `version` in the root `Cargo.toml`, then `Cargo.lock`
+   (`cargo check --workspace` rewrites it), and `CHANGELOG.md`: rename `## [Unreleased]` to
+   `## [<version>] - <YYYY-MM-DD>`, open a fresh empty `## [Unreleased]` above it, and fix the link
+   refs at the bottom — point `[unreleased]` at `compare/v<version>...HEAD` and add a `[<version>]`
+   line comparing against the previous tag.
+2. The tag `v<version>`, which is what `.github/workflows/release.yml` triggers on.
+3. `chore(nix): point the flake at <version>` — once the tag has built, the `release.version` and
+   per-target `hash` values in `flake.nix`, plus `cargoHash` if `Cargo.lock` moved.
+
+Entries are user-facing sentences under `Added` / `Changed` / `Fixed`, not commit subjects: say what
+someone using Sonora can now do, and leave out work no user can observe. Add to `## [Unreleased]` as
+features land so cutting a release is only a rename.
