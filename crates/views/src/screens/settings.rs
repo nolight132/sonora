@@ -165,7 +165,10 @@ impl SettingsView {
             .chain(decorated().then(|| self.decorations_row(cx).into_any_element()))
             .chain(decorated().then(|| self.side_row(cx).into_any_element()))
             .collect(),
-            Tab::Playback => vec![self.playback_row(cx).into_any_element()],
+            Tab::Playback => vec![
+                self.playback_row(cx).into_any_element(),
+                self.gapless_row(cx).into_any_element(),
+            ],
             Tab::Account => vec![self.account_row(cx).into_any_element()],
             Tab::About => vec![
                 self.version_row(cx).into_any_element(),
@@ -666,6 +669,32 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_normalisation(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn gapless_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.playback.read(cx).gapless();
+
+        self.row(
+            t!("settings-gapless"),
+            t!("settings-gapless-detail"),
+            muted,
+            small,
+            Button::new("gapless")
+                .label(match on {
+                    true => t!("common-on"),
+                    false => t!("common-off"),
+                })
+                .small()
+                .outline()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.playback
+                        .update(cx, |playback, cx| playback.set_gapless(!on, cx));
                 }))
                 .into_any_element(),
         )
