@@ -68,6 +68,13 @@ tokio = { version = "1.53", features = [
 [profile.dev]
 split-debuginfo = "unpacked"
 
+[profile.dev.package.ui]
+debug = false
+opt-level = 2
+
+[profile.dev.package.views]
+debug = false
+opt-level = 2
 
 [profile.dev.package."*"]
 debug = false
