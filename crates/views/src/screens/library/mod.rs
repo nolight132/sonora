@@ -25,6 +25,7 @@ use ui::{
     Unit, Viewport, clock, grid, heading, scrolled,
 };
 
+use crate::shared::card_grid::{CARD_MAX, CardGrid};
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::release_card::ReleaseCard;
 use crate::shared::tracks::{
@@ -63,27 +64,6 @@ pub enum Section {
 }
 
 const PINNED: [&str; 3] = ["cover", "title", "name"];
-const CARD_MIN: Pixels = px(130.);
-const CARD_MAX: Pixels = px(190.);
-const CARD_GAP: Pixels = px(32.);
-
-fn tiling(available: Pixels) -> (Pixels, Pixels) {
-    let columns = card_columns(available) as f32;
-    let spread = available - CARD_GAP * (columns - 1.);
-    let card = (spread / columns).min(CARD_MAX).floor();
-    let gap = match columns > 1. {
-        true => ((available - card * columns) / (columns - 1.)).floor(),
-        false => Pixels::ZERO,
-    };
-    (card, gap)
-}
-
-fn card_columns(available: Pixels) -> usize {
-    (((available + CARD_GAP) / (CARD_MIN + CARD_GAP))
-        .floor()
-        .max(1.)) as usize
-}
-
 #[derive(Clone)]
 enum LibraryMenu {
     Background,
@@ -473,9 +453,9 @@ impl LibraryView {
         let theme = *cx.theme();
         let inset = theme.metrics.inset;
         let room = cells::content_width(window, page::reserved(inset), cx);
-        let room = room.max(CARD_MIN);
-        let columns = card_columns(room);
-        let (card, gap) = tiling(room);
+        let layout = CardGrid::layout(room);
+        let columns = layout.columns;
+        let card = layout.card;
 
         if self.card_columns != columns {
             self.card_columns = columns;
@@ -543,11 +523,9 @@ impl LibraryView {
                             });
 
                             div()
-                                .flex()
-                                .gap_x(gap)
                                 .px(inset)
                                 .when(separated, |this| this.pb_6())
-                                .children(cards)
+                                .child(CardGrid::new(room).children(cards))
                                 .into_any_element()
                         }
                     }
@@ -1024,60 +1002,4 @@ fn deck<S: GridSource>(state: &Entity<GridState<S>>, columns: usize, cx: &App) -
 
 fn head(label: SharedString, cx: &App) -> AnyElement {
     heading(label, cx).w_full().pt_2().into_any_element()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_card_stays_within_its_bounds() {
-        for width in (160..2400).step_by(3) {
-            let (card, _) = tiling(px(width as f32));
-            assert!(card <= CARD_MAX, "{width} yielded {card:?}");
-            assert!(card >= CARD_MIN, "{width} yielded {card:?}");
-        }
-    }
-
-    #[test]
-    fn a_row_never_outgrows_the_space_it_was_given() {
-        for width in (160..2400).step_by(3) {
-            let available = px(width as f32);
-            let (card, gap) = tiling(available);
-            let columns = ((available + CARD_GAP) / (CARD_MIN + CARD_GAP))
-                .floor()
-                .max(1.);
-            let used = card * columns + gap * (columns - 1.);
-            assert!(used <= available, "{width} packed {used:?}");
-        }
-    }
-
-    #[test]
-    fn cards_never_touch() {
-        for width in (160..2400).step_by(3) {
-            let available = px(width as f32);
-            let (_, gap) = tiling(available);
-            let columns = ((available + CARD_GAP) / (CARD_MIN + CARD_GAP))
-                .floor()
-                .max(1.);
-            if columns > 1. {
-                assert!(gap >= CARD_GAP, "{width} yielded {gap:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn slack_goes_to_the_gaps_once_the_cards_are_capped() {
-        let capped = CARD_MAX * 2. + CARD_GAP * 2.;
-        let (card, gap) = tiling(capped);
-
-        assert_eq!(card, CARD_MAX);
-        assert!(gap > CARD_GAP);
-    }
-
-    #[test]
-    fn a_single_column_has_no_gap() {
-        let (_, gap) = tiling(CARD_MIN);
-        assert_eq!(gap, Pixels::ZERO);
-    }
 }

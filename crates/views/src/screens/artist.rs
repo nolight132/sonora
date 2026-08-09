@@ -20,6 +20,7 @@ use ui::{
     Scrollbar, Scroller, Text, grid,
 };
 
+use crate::shared::card_grid::CardGrid;
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::menu::artist_menu;
 use crate::shared::page;
@@ -257,18 +258,27 @@ impl ArtistView {
 
         let scroll = self.scrollbar.read(cx).scroll().clone();
         let layout = self.release_layout.borrow();
-        let gap = theme.font_size * 2.;
-        let columns = (((self.width + gap) / (theme.metrics.cover + gap)).floor() as usize).max(1);
-        let initial = columns * 2;
-        let overdraw = theme.metrics.cover * 2.;
-        let cards = albums
+        let grid = CardGrid::layout(self.width);
+        let initial = 2;
+        let overdraw = grid.card * 2.;
+        let albums = albums
             .iter()
             .filter(|album| self.release_filter.matches(album.release_type))
             .cloned()
             .enumerate()
-            .map(|(index, album)| {
-                let load_art = release_near(&layout.bounds, index, &scroll, overdraw, initial);
-                ReleaseCard::new(index, album, self.playback.clone()).load_art(load_art)
+            .collect::<Vec<_>>();
+        let rows = albums
+            .chunks(grid.columns)
+            .enumerate()
+            .map(|(row, albums)| {
+                let load_art = release_near(&layout.bounds, row, &scroll, overdraw, initial);
+                let cards = albums.iter().cloned().map(|(index, album)| {
+                    ReleaseCard::new(index, album, self.playback.clone())
+                        .load_art(load_art)
+                        .width(grid.card)
+                        .into_any_element()
+                });
+                CardGrid::new(self.width).children(cards)
             })
             .collect::<Vec<_>>();
         drop(layout);
@@ -308,9 +318,9 @@ impl ArtistView {
                 .child(
                     div()
                         .flex()
-                        .flex_wrap()
-                        .gap_8()
-                        .children(cards)
+                        .flex_col()
+                        .gap_6()
+                        .children(rows)
                         .on_children_prepainted(move |bounds, _, cx| {
                             let offset = observed_scroll.offset().y;
                             let changed = {
