@@ -12,6 +12,12 @@ use spotify::{SpotifyApi, Track};
 
 type Fetch = Pin<Box<dyn Future<Output = Result<Vec<Track>>> + Send>>;
 
+#[derive(Clone, Copy)]
+enum QueuePlacement {
+    Next,
+    End,
+}
+
 use crate::queue::Queue;
 use crate::{AppSettings, Io, Session, SessionEvent, join};
 
@@ -207,10 +213,30 @@ impl Playback {
             self.begin(vec![track], 0, None, cx);
             return;
         }
+        self.queue.update(cx, |queue, cx| queue.append(track, cx));
+    }
+
+    pub fn play_next(&mut self, track: Track, cx: &mut Context<Self>) {
+        if self.queue.read(cx).current().is_none() {
+            self.begin(vec![track], 0, None, cx);
+            return;
+        }
         self.queue.update(cx, |queue, cx| queue.prepend(track, cx));
     }
 
     pub fn enqueue_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+        if tracks.is_empty() {
+            return;
+        }
+        if self.queue.read(cx).current().is_none() {
+            self.begin(tracks, 0, None, cx);
+            return;
+        }
+        self.queue
+            .update(cx, |queue, cx| queue.append_all(tracks, cx));
+    }
+
+    pub fn play_next_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
         if tracks.is_empty() {
             return;
         }
@@ -224,7 +250,14 @@ impl Playback {
 
     pub fn enqueue_album(&mut self, album: &str, cx: &mut Context<Self>) {
         let album = album.to_owned();
-        self.enqueue_from("album", cx, move |client| {
+        self.enqueue_from("album", QueuePlacement::End, cx, move |client| {
+            Box::pin(async move { client.album_tracks(&album).await })
+        });
+    }
+
+    pub fn play_album_next(&mut self, album: &str, cx: &mut Context<Self>) {
+        let album = album.to_owned();
+        self.enqueue_from("album", QueuePlacement::Next, cx, move |client| {
             Box::pin(async move { client.album_tracks(&album).await })
         });
     }
@@ -239,7 +272,14 @@ impl Playback {
 
     pub fn enqueue_playlist(&mut self, playlist: &str, cx: &mut Context<Self>) {
         let playlist = playlist.to_owned();
-        self.enqueue_from("playlist", cx, move |client| {
+        self.enqueue_from("playlist", QueuePlacement::End, cx, move |client| {
+            Box::pin(async move { client.playlist_tracks(&playlist).await })
+        });
+    }
+
+    pub fn play_playlist_next(&mut self, playlist: &str, cx: &mut Context<Self>) {
+        let playlist = playlist.to_owned();
+        self.enqueue_from("playlist", QueuePlacement::Next, cx, move |client| {
             Box::pin(async move { client.playlist_tracks(&playlist).await })
         });
     }
@@ -252,8 +292,13 @@ impl Playback {
         });
     }
 
-    fn enqueue_from<F>(&mut self, source: &'static str, cx: &mut Context<Self>, tracks: F)
-    where
+    fn enqueue_from<F>(
+        &mut self,
+        source: &'static str,
+        placement: QueuePlacement,
+        cx: &mut Context<Self>,
+        tracks: F,
+    ) where
         F: FnOnce(Arc<dyn SpotifyApi>) -> Fetch + Send + 'static,
     {
         if self.enqueue.is_some() {
@@ -268,7 +313,10 @@ impl Playback {
             this.update(cx, |this, cx| {
                 this.enqueue = None;
                 match loaded {
-                    Ok(tracks) => this.enqueue_all(tracks, cx),
+                    Ok(tracks) => match placement {
+                        QueuePlacement::Next => this.play_next_all(tracks, cx),
+                        QueuePlacement::End => this.enqueue_all(tracks, cx),
+                    },
                     Err(error) => log::error!("playback: cannot enqueue {source}: {error:#}"),
                 }
             })
