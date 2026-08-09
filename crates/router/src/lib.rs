@@ -15,6 +15,14 @@ pub enum LibraryTab {
     Playlists,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsTab {
+    Appearance,
+    Playback,
+    Account,
+    About,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Destination {
     Home,
@@ -24,13 +32,14 @@ pub enum Destination {
     Playlist(SharedString),
     Artist(SharedString),
     Search,
-    Settings,
+    Settings(SettingsTab),
 }
 
 impl Destination {
     pub fn same_section(&self, other: &Destination) -> bool {
         match (self, other) {
-            (Destination::Library(_), Destination::Library(_)) => true,
+            (Destination::Library(_), Destination::Library(_))
+            | (Destination::Settings(_), Destination::Settings(_)) => true,
             _ => self == other,
         }
     }
