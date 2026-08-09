@@ -21,7 +21,7 @@ enum QueuePlacement {
 use crate::queue::Queue;
 use serde::{Deserialize, Serialize};
 
-use crate::{AppSettings, Io, Session, SessionEvent, join};
+use crate::{AppSettings, Io, Note, Session, SessionEvent, Toasts, join};
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
 const SKIP_DEBOUNCE: Duration = Duration::from_millis(250);
@@ -217,7 +217,9 @@ impl Playback {
             self.begin(vec![track], 0, None, cx);
             return;
         }
+        let name = track.name.clone();
         self.queue.update(cx, |queue, cx| queue.append(track, cx));
+        Toasts::about(Note::Done, "toast-queued-track", name, cx);
     }
 
     pub fn play_next(&mut self, track: Track, cx: &mut Context<Self>) {
@@ -225,7 +227,9 @@ impl Playback {
             self.begin(vec![track], 0, None, cx);
             return;
         }
+        let name = track.name.clone();
         self.queue.update(cx, |queue, cx| queue.prepend(track, cx));
+        Toasts::about(Note::Done, "toast-next-track", name, cx);
     }
 
     pub fn enqueue_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
@@ -317,11 +321,24 @@ impl Playback {
             this.update(cx, |this, cx| {
                 this.enqueue = None;
                 match loaded {
-                    Ok(tracks) => match placement {
-                        QueuePlacement::Next => this.play_next_all(tracks, cx),
-                        QueuePlacement::End => this.enqueue_all(tracks, cx),
-                    },
-                    Err(error) => log::error!("playback: cannot enqueue {source}: {error:#}"),
+                    Ok(tracks) => {
+                        let queued = this.queue.read(cx).current().is_some();
+                        match placement {
+                            QueuePlacement::Next => this.play_next_all(tracks, cx),
+                            QueuePlacement::End => this.enqueue_all(tracks, cx),
+                        }
+                        if queued {
+                            let key = match placement {
+                                QueuePlacement::Next => format!("toast-next-{source}"),
+                                QueuePlacement::End => format!("toast-queued-{source}"),
+                            };
+                            Toasts::show(Note::Done, key, cx);
+                        }
+                    }
+                    Err(error) => {
+                        log::error!("playback: cannot enqueue {source}: {error:#}");
+                        Toasts::show(Note::Failed, "toast-queue-failed", cx);
+                    }
                 }
             })
             .ok();
