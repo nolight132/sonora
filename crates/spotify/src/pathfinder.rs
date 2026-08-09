@@ -45,7 +45,7 @@ async fn query<T: DeserializeOwned>(
     if hash.tried {
         return Err(rejected);
     }
-    let Some(latest) = hashes::refresh(session, operation).await else {
+    let Some(latest) = hashes::refetch(session, operation).await else {
         return Err(rejected);
     };
     if latest == hash.value {

@@ -13,7 +13,7 @@ use http::{Method, Request, header};
 use librespot_core::Session;
 use serde::{Deserialize, Serialize};
 
-const WORKER: &str = "https://billowing-resonance-da83.johnwatson.workers.dev/hash";
+const WORKER: &str = "https://billowing-resonance-da83.johnwatson.workers.dev/hashes";
 const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const FILE: &str = "pathfinder.json";
 
@@ -23,73 +23,105 @@ pub(super) struct Hash {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-struct Entry {
-    hash: String,
+struct Registry {
     fetched: u64,
+    operations: HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
 struct Answer {
-    hash: String,
+    operations: HashMap<String, String>,
 }
 
 pub(super) async fn resolve(session: &Session, operation: &str) -> Result<Hash> {
-    let Some(entry) = cached(operation) else {
+    let cached = registry();
+    if let Some(value) = cached
+        .as_ref()
+        .filter(|registry| aged(registry) < MAX_AGE)
+        .and_then(|registry| registry.operations.get(operation).cloned())
+    {
         return Ok(Hash {
-            value: fetch(session, operation)
-                .await
-                .inspect(|hash| store(operation, hash))?,
-            tried: true,
-        });
-    };
-    match aged(&entry) < MAX_AGE {
-        true => Ok(Hash {
-            value: entry.hash,
+            value,
             tried: false,
-        }),
-        false => Ok(Hash {
-            value: refresh(session, operation).await.unwrap_or(entry.hash),
-            tried: true,
-        }),
+        });
     }
+    let latest = match fetched(session).await {
+        Ok(operations) => operations,
+        Err(error) => {
+            return cached
+                .and_then(|mut registry| registry.operations.remove(operation))
+                .map(|value| Hash { value, tried: true })
+                .ok_or(error);
+        }
+    };
+    latest
+        .get(operation)
+        .cloned()
+        .map(|value| Hash { value, tried: true })
+        .with_context(|| format!("the hash registry has no {operation} query"))
 }
 
-pub(super) async fn refresh(session: &Session, operation: &str) -> Option<String> {
-    fetch(session, operation)
+pub(super) async fn refetch(session: &Session, operation: &str) -> Option<String> {
+    fetched(session)
         .await
-        .inspect(|hash| store(operation, hash))
-        .inspect_err(|error| {
-            log::warn!("pathfinder: cannot refresh the {operation} hash: {error:#}")
+        .ok()?
+        .get(operation)
+        .cloned()
+        .or_else(|| {
+            log::warn!("pathfinder: the hash registry has no {operation} query");
+            None
         })
-        .ok()
 }
 
-async fn fetch(session: &Session, operation: &str) -> Result<String> {
+async fn fetched(session: &Session) -> Result<HashMap<String, String>> {
+    let operations = match download(session).await {
+        Ok(operations) => operations,
+        Err(error) => {
+            log::warn!("pathfinder: cannot refresh the query hashes: {error:#}");
+            return Err(error);
+        }
+    };
+    store(&operations);
+    Ok(operations)
+}
+
+async fn download(session: &Session) -> Result<HashMap<String, String>> {
     let request = Request::builder()
         .method(Method::GET)
-        .uri(format!("{WORKER}/{operation}"))
+        .uri(WORKER)
         .header(header::ACCEPT, "application/json")
         .body(Bytes::new())
-        .with_context(|| format!("cannot build the {operation} hash request"))?;
+        .context("cannot build the query hash request")?;
     let body = session
         .http_client()
         .request_body(request)
         .await
-        .with_context(|| format!("cannot request the {operation} hash"))?;
-    let answer: Answer = serde_json::from_slice(&body)
-        .with_context(|| format!("cannot decode the {operation} hash response"))?;
-    if !sane(&answer.hash) {
-        bail!("received a malformed {operation} hash");
+        .context("cannot request the query hashes")?;
+    parsed(&body)
+}
+
+fn parsed(body: &[u8]) -> Result<HashMap<String, String>> {
+    let answer: Answer =
+        serde_json::from_slice(body).context("cannot decode the query hash registry")?;
+    if answer.operations.is_empty() {
+        bail!("the query hash registry is empty");
     }
-    Ok(answer.hash)
+    if let Some((operation, _)) = answer
+        .operations
+        .iter()
+        .find(|(_, hash)| !sane(hash.as_str()))
+    {
+        bail!("the {operation} query hash is malformed");
+    }
+    Ok(answer.operations)
 }
 
 fn sane(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn aged(entry: &Entry) -> Duration {
-    Duration::from_secs(now().saturating_sub(entry.fetched))
+fn aged(registry: &Registry) -> Duration {
+    Duration::from_secs(now().saturating_sub(registry.fetched))
 }
 
 fn now() -> u64 {
@@ -99,42 +131,37 @@ fn now() -> u64 {
         .as_secs()
 }
 
-fn cached(operation: &str) -> Option<Entry> {
-    entries().lock().ok()?.get(operation).cloned()
+fn registry() -> Option<Registry> {
+    cache().lock().ok()?.clone()
 }
 
-fn store(operation: &str, hash: &str) {
-    let Ok(mut entries) = entries().lock() else {
-        return;
+fn store(operations: &HashMap<String, String>) {
+    let registry = Registry {
+        fetched: now(),
+        operations: operations.clone(),
     };
-    entries.insert(
-        operation.to_owned(),
-        Entry {
-            hash: hash.to_owned(),
-            fetched: now(),
-        },
-    );
-    write(&entries);
+    write(&registry);
+    if let Ok(mut cache) = cache().lock() {
+        *cache = Some(registry);
+    }
 }
 
-fn entries() -> &'static Mutex<HashMap<String, Entry>> {
-    static ENTRIES: OnceLock<Mutex<HashMap<String, Entry>>> = OnceLock::new();
-    ENTRIES.get_or_init(|| Mutex::new(read()))
+fn cache() -> &'static Mutex<Option<Registry>> {
+    static CACHE: OnceLock<Mutex<Option<Registry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(read()))
 }
 
-fn read() -> HashMap<String, Entry> {
-    let Ok(body) = std::fs::read(path()) else {
-        return HashMap::new();
-    };
-    serde_json::from_slice(&body).unwrap_or_default()
+fn read() -> Option<Registry> {
+    let body = std::fs::read(path()).ok()?;
+    serde_json::from_slice(&body).ok()
 }
 
-fn write(entries: &HashMap<String, Entry>) {
+fn write(registry: &Registry) {
     let path = path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let written = serde_json::to_vec_pretty(entries)
+    let written = serde_json::to_vec_pretty(registry)
         .context("cannot encode")
         .and_then(|body| std::fs::write(&path, body).context("cannot save"));
     if let Err(error) = written {
@@ -150,25 +177,39 @@ fn path() -> PathBuf {
 mod tests {
     use super::*;
 
+    fn payload(hash: &str) -> Vec<u8> {
+        format!(
+            r#"{{"version":1,"updated_at":"2026-08-09T00:00:00.000Z",
+               "bundle":"web-player.abc.js","operations":{{"getAlbum":"{hash}"}}}}"#
+        )
+        .into_bytes()
+    }
+
     #[test]
-    fn accepts_a_persisted_query_hash() {
-        assert!(sane(&"0123456789abcdef".repeat(4)));
+    fn keeps_the_operations_of_a_registry() {
+        let hash = "0123456789abcdef".repeat(4);
+        let operations = parsed(&payload(&hash)).unwrap();
+        assert_eq!(operations["getAlbum"], hash);
     }
 
     #[test]
     fn rejects_a_malformed_hash() {
-        assert!(!sane(""));
-        assert!(!sane("0123456789abcdef"));
-        assert!(!sane(&"z".repeat(64)));
+        assert!(parsed(&payload("")).is_err());
+        assert!(parsed(&payload(&"z".repeat(64))).is_err());
+    }
+
+    #[test]
+    fn rejects_an_empty_registry() {
+        assert!(parsed(br#"{"version":1,"operations":{}}"#).is_err());
     }
 
     #[test]
     fn ages_from_the_fetch_time() {
-        let entry = Entry {
-            hash: String::new(),
+        let registry = Registry {
             fetched: now() - 60,
+            operations: HashMap::new(),
         };
-        assert!(aged(&entry) >= Duration::from_secs(60));
-        assert!(aged(&entry) < MAX_AGE);
+        assert!(aged(&registry) >= Duration::from_secs(60));
+        assert!(aged(&registry) < MAX_AGE);
     }
 }
