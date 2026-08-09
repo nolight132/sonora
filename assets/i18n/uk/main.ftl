@@ -46,6 +46,7 @@ menu-no-playlists = Немає плейлистів
 menu-add-to-library = Додати до медіатеки
 menu-remove-from-library = Вилучити з медіатеки
 menu-remove-from-playlist = Вилучити з плейлиста
+menu-play-next = Відтворити наступним
 menu-add-to-queue = Додати до черги
 menu-song-radio = Радіо за треком
 menu-go-to-album = Перейти до альбому
