@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, ScrollHandle,
@@ -25,6 +22,10 @@ use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::menu::artist_menu;
 use crate::shared::page;
 use crate::shared::tracks::{PlaybackStatus, TrackField, TrackSource, Tracks, playback_status};
+
+const SECTION: &str = "artist";
+const END_WIDTH: Pixels = px(72.);
+const END_HEIGHT: Pixels = px(1.);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ReleaseFilter {
@@ -84,20 +85,149 @@ pub(crate) struct ArtistView {
     playback_status: PlaybackStatus,
     release_filter: ReleaseFilter,
     width: Pixels,
-    release_layout: Rc<RefCell<ReleaseLayout>>,
+    release_end: Entity<ReleaseEnd>,
     scrollbar: Entity<Scrollbar>,
     table: Entity<GridState<TrackSource>>,
     settings: Entity<AppSettings>,
     popovers: Popovers,
 }
 
-#[derive(Default)]
-struct ReleaseLayout {
-    bounds: Vec<Bounds<Pixels>>,
-    offset: Pixels,
+#[derive(Clone, Copy)]
+struct ReleaseMetrics {
+    columns: usize,
+    card: Pixels,
+    gap: Pixels,
 }
 
-const SECTION: &str = "artist";
+impl ReleaseMetrics {
+    fn height(self, count: usize) -> Pixels {
+        if count == 0 {
+            return Pixels::ZERO;
+        }
+        let rows = count.div_ceil(self.columns) as f32;
+        self.card * rows + self.gap * (rows - 1.)
+    }
+}
+
+struct ReleaseEnd {
+    hold: Pixels,
+    natural: Pixels,
+    count: usize,
+    metrics: Option<ReleaseMetrics>,
+    frame: Option<ReleaseFrame>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct ReleaseFrame {
+    count: usize,
+    columns: usize,
+    height: Pixels,
+    hold: Pixels,
+}
+
+struct ReleaseUpdate {
+    end: bool,
+    bar: bool,
+}
+
+impl ReleaseEnd {
+    fn new() -> Self {
+        Self {
+            hold: Pixels::ZERO,
+            natural: Pixels::ZERO,
+            count: 0,
+            metrics: None,
+            frame: None,
+        }
+    }
+
+    fn reset(&mut self, cx: &mut Context<Self>) {
+        *self = Self::new();
+        cx.notify();
+    }
+
+    fn select(&mut self, count: usize, depth: Pixels, viewport: Pixels) -> bool {
+        let hold = match self.metrics {
+            Some(metrics) => {
+                self.natural += metrics.height(count) - metrics.height(self.count);
+                (depth - self.natural).max(Pixels::ZERO)
+            }
+            None if depth > Pixels::ZERO => depth + viewport,
+            None => Pixels::ZERO,
+        };
+        self.count = count;
+        let changed = self.hold != hold;
+        self.hold = hold;
+        changed
+    }
+
+    fn resize(&mut self, depth: Pixels, viewport: Pixels) -> bool {
+        self.metrics = None;
+        self.frame = None;
+        let hold = match depth > Pixels::ZERO {
+            true => depth + viewport,
+            false => Pixels::ZERO,
+        };
+        let changed = self.hold != hold;
+        self.hold = hold;
+        changed
+    }
+
+    fn observe(
+        &mut self,
+        bounds: &[Bounds<Pixels>],
+        maximum: Pixels,
+        depth: Pixels,
+        columns: usize,
+        count: usize,
+    ) -> ReleaseUpdate {
+        let metrics = release_metrics(bounds, columns, self.metrics);
+        let frame = ReleaseFrame {
+            count,
+            columns,
+            height: metrics.map_or(Pixels::ZERO, |metrics| metrics.height(count)),
+            hold: self.hold,
+        };
+        let stable = self.frame == Some(frame);
+        let changed = self.frame != Some(frame);
+        self.frame = Some(frame);
+        self.count = count;
+        self.metrics = metrics;
+        if !stable {
+            return ReleaseUpdate {
+                end: false,
+                bar: changed,
+            };
+        }
+
+        self.natural = maximum - self.hold;
+        let hold = match depth > Pixels::ZERO {
+            true => (depth - self.natural).max(Pixels::ZERO).min(self.hold),
+            false => Pixels::ZERO,
+        };
+        let end = self.hold != hold;
+        self.hold = hold;
+        ReleaseUpdate { end, bar: end }
+    }
+}
+
+impl Render for ReleaseEnd {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+
+        div()
+            .flex()
+            .flex_col()
+            .child(div().flex_none().h(self.hold))
+            .child(
+                div()
+                    .flex()
+                    .justify_center()
+                    .py_6()
+                    .child(div().w(END_WIDTH).h(END_HEIGHT).bg(theme.border)),
+            )
+    }
+}
 
 impl ArtistView {
     pub(crate) fn new(
@@ -110,6 +240,7 @@ impl ArtistView {
         let settings = Sonora::global(cx).settings.clone();
         let saved = settings.read(cx).table(SECTION);
         let sorting = settings.read(cx).sorting(SECTION);
+        let release_end = cx.new(|_| ReleaseEnd::new());
         let scrollbar = cx.new(|_| Scrollbar::new(ScrollHandle::new()));
         let scroll = scrollbar.read(cx).scroll().clone();
         let table = cx.new(|cx| {
@@ -134,7 +265,7 @@ impl ArtistView {
 
         cx.observe(&detail, |this, _, cx| {
             this.release_filter = ReleaseFilter::All;
-            this.release_layout.borrow_mut().bounds.clear();
+            this.release_end.update(cx, |end, cx| end.reset(cx));
             this.scrollbar
                 .read(cx)
                 .scroll()
@@ -176,7 +307,7 @@ impl ArtistView {
             playback_status: current_playback,
             release_filter: ReleaseFilter::All,
             width,
-            release_layout: Rc::new(RefCell::new(ReleaseLayout::default())),
+            release_end,
             scrollbar,
             table,
             settings,
@@ -256,40 +387,36 @@ impl ArtistView {
         }
 
         let scroll = self.scrollbar.read(cx).scroll().clone();
-        let grid = AlbumGrid::layout(self.width);
-        let initial = grid.columns * 2;
-        let overdraw = grid.card * 2.;
         let albums = albums
             .iter()
             .filter(|album| self.release_filter.matches(album.release_type))
             .cloned()
             .enumerate()
             .collect::<Vec<_>>();
-        let load_layout = self.release_layout.clone();
-        let load_scroll = scroll.clone();
-        let release_layout = self.release_layout.clone();
-        let view = cx.entity().downgrade();
+        let count = albums.len();
+        let columns = AlbumGrid::columns(self.width);
+        let release_end = self.release_end.clone();
+        let scrollbar = self.scrollbar.clone();
         let releases = AlbumGrid::new("artist-release", self.width, albums, self.playback.clone())
-            .load_art_when(move |index| {
-                release_near(
-                    &load_layout.borrow().bounds,
-                    index,
-                    &load_scroll,
-                    overdraw,
-                    initial,
-                )
-            })
-            .on_layout(move |bounds, cx| {
-                let offset = scroll.offset().y;
-                let changed = {
-                    let mut layout = release_layout.borrow_mut();
-                    let changed = layout.bounds != bounds || layout.offset != offset;
-                    layout.bounds = bounds;
-                    layout.offset = offset;
-                    changed
-                };
-                if changed {
-                    view.update(cx, |_, cx| cx.notify()).ok();
+            .on_layout(move |bounds, window, cx| {
+                let update = release_end.update(cx, |end, cx| {
+                    let update = end.observe(
+                        &bounds,
+                        scroll.max_offset().y,
+                        (-scroll.offset().y).max(Pixels::ZERO),
+                        columns,
+                        count,
+                    );
+                    if update.end {
+                        cx.notify();
+                    }
+                    update
+                });
+                if update.bar {
+                    scrollbar.update(cx, |_, cx| cx.notify());
+                }
+                if update.end || update.bar {
+                    window.request_animation_frame();
                 }
             });
 
@@ -316,13 +443,31 @@ impl ArtistView {
                                 .outline()
                                 .selected(self.release_filter == filter)
                                 .on_click(cx.listener(move |this, _, _, cx| {
+                                    if this.release_filter == filter {
+                                        return;
+                                    }
+                                    let count = this
+                                        .detail
+                                        .read(cx)
+                                        .albums()
+                                        .iter()
+                                        .filter(|album| filter.matches(album.release_type))
+                                        .count();
+                                    let scroll = this.scrollbar.read(cx).scroll().clone();
+                                    let depth = (-scroll.offset().y).max(Pixels::ZERO);
+                                    let viewport = scroll.bounds().size.height;
+                                    this.release_end.update(cx, |end, cx| {
+                                        if end.select(count, depth, viewport) {
+                                            cx.notify();
+                                        }
+                                    });
                                     this.release_filter = filter;
-                                    this.release_layout.borrow_mut().bounds.clear();
                                     cx.notify();
                                 }))
                         })),
                 )
                 .child(releases)
+                .child(self.release_end.clone())
                 .into_any_element(),
         )
     }
@@ -339,27 +484,23 @@ impl ArtistView {
     }
 }
 
-fn release_near(
-    bounds: &[Bounds<Pixels>],
-    index: usize,
-    scroll: &ScrollHandle,
-    overdraw: Pixels,
-    initial: usize,
-) -> bool {
-    let Some(bounds) = bounds.get(index) else {
-        return index < initial;
-    };
-    let viewport = scroll.bounds();
-    bounds.bottom() >= viewport.top() - overdraw && bounds.top() <= viewport.bottom() + overdraw
-}
-
 impl Render for ArtistView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let inset = theme.metrics.inset;
+        let previous = self.width;
         page::resize(&self.table, &mut self.width, inset, window, cx);
 
         let scroll = self.scrollbar.read(cx).scroll().clone();
+        if self.width != previous {
+            let depth = (-scroll.offset().y).max(Pixels::ZERO);
+            let viewport = scroll.bounds().size.height;
+            self.release_end.update(cx, |end, cx| {
+                if end.resize(depth, viewport) {
+                    cx.notify();
+                }
+            });
+        }
         let viewport = page::viewport(&scroll, inset, window);
         self.table
             .update(cx, |table, _| table.set_viewport(viewport));
@@ -387,5 +528,106 @@ impl Render for ArtistView {
                     .border_color(theme.border),
             )
             .children(self.releases(cx))
+    }
+}
+
+fn release_metrics(
+    bounds: &[Bounds<Pixels>],
+    columns: usize,
+    previous: Option<ReleaseMetrics>,
+) -> Option<ReleaseMetrics> {
+    let first = bounds.first()?;
+    let card = first.size.height;
+    let gap = bounds
+        .get(columns)
+        .map(|next| (next.top() - first.top() - card).max(Pixels::ZERO))
+        .or_else(|| previous.map(|metrics| metrics.gap))
+        .unwrap_or(Pixels::ZERO);
+    Some(ReleaseMetrics { columns, card, gap })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_filter_is_sized_before_rendering() {
+        let metrics = ReleaseMetrics {
+            columns: 5,
+            card: px(170.),
+            gap: px(24.),
+        };
+        let mut end = ReleaseEnd {
+            hold: Pixels::ZERO,
+            natural: px(1800.),
+            count: 50,
+            metrics: Some(metrics),
+            frame: None,
+        };
+
+        assert!(end.select(5, px(1500.), px(800.)));
+        let natural = px(1800.) + metrics.height(5) - metrics.height(50);
+        assert_eq!(end.natural, natural);
+        assert_eq!(end.natural + end.hold, px(1500.));
+    }
+
+    #[test]
+    fn scrolling_up_retires_the_empty_space() {
+        let metrics = ReleaseMetrics {
+            columns: 5,
+            card: px(170.),
+            gap: px(24.),
+        };
+        let frame = ReleaseFrame {
+            count: 5,
+            columns: 5,
+            height: metrics.height(5),
+            hold: px(600.),
+        };
+        let mut end = ReleaseEnd {
+            hold: px(600.),
+            natural: px(300.),
+            count: 5,
+            metrics: Some(metrics),
+            frame: Some(frame),
+        };
+
+        let bounds = [Bounds::new(
+            gpui::point(Pixels::ZERO, Pixels::ZERO),
+            gpui::size(px(170.), px(170.)),
+        )];
+        let update = end.observe(&bounds, px(900.), px(700.), 5, 5);
+        assert!(update.end);
+        assert_eq!(end.hold, px(400.));
+    }
+
+    #[test]
+    fn reaching_the_top_removes_the_empty_space() {
+        let metrics = ReleaseMetrics {
+            columns: 5,
+            card: px(170.),
+            gap: px(24.),
+        };
+        let frame = ReleaseFrame {
+            count: 5,
+            columns: 5,
+            height: metrics.height(5),
+            hold: px(1200.),
+        };
+        let mut end = ReleaseEnd {
+            hold: px(1200.),
+            natural: px(-300.),
+            count: 5,
+            metrics: Some(metrics),
+            frame: Some(frame),
+        };
+        let bounds = [Bounds::new(
+            gpui::point(Pixels::ZERO, Pixels::ZERO),
+            gpui::size(px(170.), px(170.)),
+        )];
+
+        let update = end.observe(&bounds, px(900.), Pixels::ZERO, 5, 5);
+        assert!(update.end);
+        assert_eq!(end.hold, Pixels::ZERO);
     }
 }

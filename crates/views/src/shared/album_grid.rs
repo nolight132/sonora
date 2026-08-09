@@ -17,8 +17,7 @@ pub(crate) const CARD_MAX: Pixels = px(190.);
 const CARD_GAP: Pixels = px(32.);
 
 type ContextMenu = Rc<dyn Fn(Album, Point<Pixels>, &mut App)>;
-type LoadArt = Rc<dyn Fn(usize) -> bool>;
-type LayoutListener = Rc<dyn Fn(Vec<Bounds<Pixels>>, &mut App)>;
+type LayoutListener = Rc<dyn Fn(Vec<Bounds<Pixels>>, &mut Window, &mut App)>;
 
 #[derive(Clone, Copy)]
 pub(crate) struct CardLayout {
@@ -85,7 +84,6 @@ pub(crate) struct AlbumGrid {
     layout: CardLayout,
     albums: Vec<(usize, Album)>,
     playback: Entity<Playback>,
-    load_art: LoadArt,
     on_context: Option<ContextMenu>,
     on_layout: Option<LayoutListener>,
 }
@@ -102,19 +100,13 @@ impl AlbumGrid {
             layout: CardLayout::new(available),
             albums: albums.into_iter().collect(),
             playback,
-            load_art: Rc::new(|_| true),
             on_context: None,
             on_layout: None,
         }
     }
 
-    pub(crate) fn layout(available: Pixels) -> CardLayout {
-        CardLayout::new(available)
-    }
-
-    pub(crate) fn load_art_when(mut self, load: impl Fn(usize) -> bool + 'static) -> Self {
-        self.load_art = Rc::new(load);
-        self
+    pub(crate) fn columns(available: Pixels) -> usize {
+        CardLayout::new(available).columns
     }
 
     pub(crate) fn on_context(
@@ -127,7 +119,7 @@ impl AlbumGrid {
 
     pub(crate) fn on_layout(
         mut self,
-        listener: impl Fn(Vec<Bounds<Pixels>>, &mut App) + 'static,
+        listener: impl Fn(Vec<Bounds<Pixels>>, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_layout = Some(Rc::new(listener));
         self
@@ -141,21 +133,12 @@ impl RenderOnce for AlbumGrid {
             layout,
             albums,
             playback,
-            load_art,
             on_context,
             on_layout,
         } = self;
         let cards = albums.into_iter().map(|(index, album)| {
             let context = album.clone();
-            let card = album_card(
-                id,
-                index,
-                album,
-                playback.clone(),
-                layout.card,
-                load_art(index),
-                cx,
-            );
+            let card = album_card(id, index, album, playback.clone(), layout.card, cx);
             let Some(listener) = on_context.clone() else {
                 return card;
             };
@@ -179,7 +162,7 @@ impl RenderOnce for AlbumGrid {
             .gap_y_6()
             .children(cards)
             .when_some(on_layout, |grid, listener| {
-                grid.on_children_prepainted(move |bounds, _, cx| listener(bounds, cx))
+                grid.on_children_prepainted(move |bounds, window, cx| listener(bounds, window, cx))
             })
     }
 }
@@ -190,14 +173,10 @@ fn album_card(
     album: Album,
     playback: Entity<Playback>,
     width: Pixels,
-    load_art: bool,
     cx: &App,
 ) -> AnyElement {
     let theme = *cx.theme();
-    let cover = match load_art {
-        true => album.cover_large.clone().or_else(|| album.cover.clone()),
-        false => None,
-    };
+    let cover = album.cover_large.clone().or_else(|| album.cover.clone());
     let artists = crate::shared::cells::artist_links(
         SharedString::from(format!("{id}-artist-{index}")),
         album.artist_refs.clone(),
