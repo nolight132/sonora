@@ -30,6 +30,7 @@ pub struct Header {
 pub struct Detail {
     id: Option<String>,
     header: Option<Header>,
+    album: Option<Album>,
     playlist: Option<Playlist>,
     tracks: Vec<Track>,
     loading: bool,
@@ -75,6 +76,7 @@ impl Detail {
         Self {
             id: None,
             header: None,
+            album: None,
             playlist: None,
             tracks: Vec::new(),
             loading: false,
@@ -93,6 +95,10 @@ impl Detail {
 
     pub fn header(&self) -> Option<&Header> {
         self.header.as_ref()
+    }
+
+    pub fn album(&self) -> Option<&Album> {
+        self.album.as_ref()
     }
 
     pub fn playlist(&self) -> Option<&Playlist> {
@@ -151,20 +157,30 @@ impl Detail {
     }
 
     pub fn open_album(&mut self, id: &str, cx: &mut Context<Self>) {
-        let known = self.library.read(cx).album(id).map(album_header);
-        self.open(Collection::Album, id, known, cx);
+        let known = self.library.read(cx).album(id).cloned();
+        let header = known.as_ref().map(album_header);
+        if self.open(Collection::Album, id, header, cx) {
+            self.album = known;
+        }
     }
 
     pub fn open_playlist(&mut self, id: &str, cx: &mut Context<Self>) {
         let known = self.library.read(cx).playlist(id).cloned();
         let header = known.as_ref().map(playlist_header);
-        self.open(Collection::Playlist, id, header, cx);
-        self.playlist = known;
+        if self.open(Collection::Playlist, id, header, cx) {
+            self.playlist = known;
+        }
     }
 
-    fn open(&mut self, kind: Collection, id: &str, known: Option<Header>, cx: &mut Context<Self>) {
+    fn open(
+        &mut self,
+        kind: Collection,
+        id: &str,
+        known: Option<Header>,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if self.shows(id) {
-            return;
+            return false;
         }
 
         self.clear();
@@ -173,7 +189,7 @@ impl Detail {
 
         let Some(client) = self.session.read(cx).client() else {
             cx.notify();
-            return;
+            return true;
         };
 
         self.loading = true;
@@ -195,6 +211,7 @@ impl Detail {
                 match loaded {
                     Ok(Loaded::Album(detail)) => {
                         this.header = Some(album_header(&detail.album));
+                        this.album = Some(detail.album);
                         this.tracks = detail.tracks;
                     }
                     Ok(Loaded::Playlist(detail)) => {
@@ -208,6 +225,7 @@ impl Detail {
             })
             .ok();
         }));
+        true
     }
 
     fn shows(&self, id: &str) -> bool {
@@ -220,6 +238,7 @@ impl Detail {
         self.mutation = None;
         self.id = None;
         self.header = None;
+        self.album = None;
         self.playlist = None;
         self.tracks.clear();
         self.loading = false;
