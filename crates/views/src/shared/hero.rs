@@ -5,12 +5,12 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Div, ElementId, Entity, FontWeight, MouseButton, MouseDownEvent, SharedString,
-    Window, div,
+    Window, div, relative,
 };
 use i18n::t;
 use spotify::Track;
 use state::{Playback, PlaybackState};
-use ui::{ActiveTheme as _, Artwork, Button, ExplicitBadge, Text, upper};
+use ui::{ActiveTheme as _, Artwork, Button, ExplicitBadge, LEADING, Text, upper};
 
 pub(crate) fn release_date_label(value: &str) -> SharedString {
     let parts: Vec<_> = value.split('-').collect();
@@ -278,6 +278,7 @@ impl RenderOnce for PageHero {
                     .h(art)
                     .justify_end()
                     .gap_2()
+                    .line_height(relative(LEADING))
                     .children(self.eyebrow.map(|eyebrow| eyebrow_label(eyebrow, cx)))
                     .child(
                         div()

@@ -5,14 +5,14 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, Div, ElementId, FontWeight, Hsla, Interactivity, MouseButton,
-    MouseDownEvent, Pixels, SharedString, Stateful, StyleRefinement, Window, div, px,
+    MouseDownEvent, Pixels, SharedString, Stateful, StyleRefinement, Window, div, px, relative,
 };
 
 use crate::ExplicitBadge;
 use crate::artwork::{Artwork, Avatar};
 use crate::button::Button;
 use crate::label::upper;
-use crate::metrics::{Text, snapped};
+use crate::metrics::{LEADING, Text, snapped};
 use crate::skeleton::Skeleton;
 use crate::theme::ActiveTheme as _;
 
@@ -354,6 +354,7 @@ impl RenderOnce for Card {
                     .flex_col()
                     .flex_1()
                     .min_w_0()
+                    .line_height(relative(LEADING))
                     .when(listed && !has_trailing, |this| this.min_w(TITLE))
                     .when(tile.is_some(), |this| this.w_full().flex_none().gap_1())
                     .when_else(

@@ -5,6 +5,8 @@ use i18n::t;
 
 const HEADER: f32 = 0.75;
 
+pub const LEADING: f32 = 1.25;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rounding {
     Square,
