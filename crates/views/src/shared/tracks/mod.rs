@@ -238,6 +238,10 @@ impl TrackSource {
                     true => "icons/heart-filled.svg",
                     false => "icons/heart.svg",
                 })
+                .tooltip(match saved {
+                    true => "menu-remove-from-library",
+                    false => "menu-add-to-library",
+                })
                 .tint(match saved {
                     true => theme.primary,
                     false => theme.muted_foreground,

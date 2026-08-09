@@ -10,6 +10,11 @@ common-not-available = Not available
 common-cancel = Cancel
 common-save = Save
 common-delete = Delete
+common-play = Play
+common-more = More
+common-previous = Previous
+common-next = Next
+common-dismiss = Dismiss
 number-group = { "," }
 
 # navigation
@@ -20,6 +25,9 @@ nav-settings = Settings
 nav-songs = Songs
 nav-albums = Albums
 nav-playlists = Playlists
+nav-back = Back
+nav-forward = Forward
+nav-sidebar = Toggle sidebar
 library-liked-songs = Liked Songs
 library-play-liked-songs = Play
 
@@ -82,10 +90,21 @@ queue-up-next = Up next
 queue-reset = Reset
 queue-clear = Clear
 queue-empty = Your queue is empty
+queue-similar = Similar tracks
+queue-radio = Autoplay similar tracks
 
 # player bar
 player-nothing-playing = Nothing playing
 player-percent = { $value }%
+player-shuffle = Shuffle
+player-repeat = Repeat
+player-repeat-all = Repeat all
+player-repeat-one = Repeat one
+player-mute = Mute
+player-unmute = Unmute
+player-previous = Previous track
+player-next = Next track
+player-fullscreen = Fullscreen
 
 # filters
 filter-library = Filter your library
@@ -99,6 +118,11 @@ filter-playable = Playable only
 # view
 view-list = List
 view-cards = Cards
+
+# toolbar
+tool-columns = Columns
+tool-sort = Sort
+tool-filters = Filters
 
 # login
 login-signed-out = Sign in to load your Spotify library

@@ -8,6 +8,7 @@ use gpui::{
 
 use crate::metrics::Text;
 use crate::theme::ActiveTheme as _;
+use crate::tooltip::{Perch, Tooltip};
 
 enum Variant {
     Secondary,
@@ -31,6 +32,7 @@ pub struct Button {
     hovered: Option<StyleRefinement>,
     pressed: Option<StyleRefinement>,
     tint: Option<Hsla>,
+    tooltip: Option<(SharedString, Perch)>,
     on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
 }
 
@@ -50,6 +52,7 @@ impl Button {
             hovered: None,
             pressed: None,
             tint: None,
+            tooltip: None,
             on_click: None,
         }
     }
@@ -114,6 +117,16 @@ impl Button {
         self
     }
 
+    pub fn tooltip(mut self, key: impl Into<SharedString>) -> Self {
+        self.tooltip = Some((key.into(), Perch::Pointer));
+        self
+    }
+
+    pub fn tooltip_above(mut self, key: impl Into<SharedString>) -> Self {
+        self.tooltip = Some((key.into(), Perch::Above));
+        self
+    }
+
     pub fn on_click(
         mut self,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -170,6 +183,7 @@ impl RenderOnce for Button {
             hovered,
             pressed,
             tint,
+            tooltip,
             on_click,
         } = self;
 
@@ -245,6 +259,9 @@ impl RenderOnce for Button {
                 this.border_1().border_color(border)
             })
             .when(interactive, |this| this.cursor_pointer())
+            .when_some(tooltip, |this, (key, perch)| {
+                this.tooltip(Tooltip::build(key, perch))
+            })
             .when_some(hovered, |this, style| this.hover(move |_| style))
             .when_some(pressed, |this, style| this.active(move |_| style))
             .when_some(icon, |this, path| {

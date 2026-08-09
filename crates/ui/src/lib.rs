@@ -27,6 +27,7 @@ mod skeleton;
 mod theme;
 mod time;
 mod toast;
+mod tooltip;
 mod view;
 
 pub use artwork::{Artwork, Avatar};
@@ -67,4 +68,5 @@ pub use theme::{
 };
 pub use time::clock;
 pub use toast::Toast;
+pub use tooltip::{Perch, Tooltip};
 pub use view::Mode;
