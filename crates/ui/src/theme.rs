@@ -10,6 +10,7 @@ use crate::metrics::{Metrics, Rounding, Text};
 
 pub const MIN_FONT: f32 = 10.;
 pub const MAX_FONT: f32 = 24.;
+pub const MAX_TRANSPARENCY: f32 = 0.9;
 
 const FADE: Duration = Duration::from_millis(320);
 const FRAME: Duration = Duration::from_millis(8);
@@ -26,6 +27,8 @@ pub struct Look {
     pub kind: ThemeKind,
     pub rounding: Rounding,
     pub font: f32,
+    pub transparent: bool,
+    pub transparency: f32,
     pub tint: Option<Hsla>,
 }
 
@@ -607,6 +610,11 @@ impl Theme {
         }
         theme.radius = look.rounding.radius();
         theme = theme.with_overrides(overrides);
+        if look.transparent {
+            let opacity = 1. - look.transparency.clamp(0., MAX_TRANSPARENCY);
+            theme.background.a = opacity;
+            theme.sidebar.a = opacity;
+        }
         theme.font_size = base;
         theme.metrics = Metrics::new(base);
         theme.tint = look.tint;
@@ -770,6 +778,8 @@ mod tests {
             kind: ThemeKind::Dark,
             rounding: Rounding::Subtle,
             font: 14.,
+            transparent: false,
+            transparency: 0.,
             tint: Some(TINT),
         };
         let overrides = ThemeOverrides {

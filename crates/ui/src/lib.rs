@@ -62,7 +62,9 @@ pub use scroller::Scroller;
 pub use scrubber::{Scrubber, ScrubberState};
 pub use shield::Shield;
 pub use skeleton::{Initials, Skeleton};
-pub use theme::{ActiveTheme, Look, MAX_FONT, MIN_FONT, Theme, ThemeKind, ThemeOverrides};
+pub use theme::{
+    ActiveTheme, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Theme, ThemeKind, ThemeOverrides,
+};
 pub use time::clock;
 pub use toast::Toast;
 pub use view::Mode;
