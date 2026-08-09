@@ -92,9 +92,9 @@ impl Render for Workspace {
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.adapt(window, cx));
         let left = self.sidebar.read(cx).occupied_width();
-        let right = self.sidebar_right.read(cx).occupied_width(window, cx);
+        let right = self.sidebar_right.read(cx).occupied_width(window);
         Chrome::publish(left, right, cx);
-        let covered = self.sidebar_right.read(cx).covers_content(window, cx);
+        let covered = self.sidebar_right.read(cx).covers_content(window);
         let overlay = self.sidebar.read(cx).overlays();
 
         div()

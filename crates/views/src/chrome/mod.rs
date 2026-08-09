@@ -18,6 +18,11 @@ pub(crate) use toolbar::{Searchable, Toolbar, Tooled};
 use gpui::{App, AppContext as _, Entity, Global, Pixels, Window};
 use ui::{MIN_CONTENT, Room};
 
+pub(crate) fn cap(min: Pixels, max: Pixels, keep: Pixels, window: &Window) -> Pixels {
+    let room = window.viewport_size().width - keep;
+    max.min(room.max(min))
+}
+
 #[derive(Clone, Copy, Default, PartialEq)]
 pub(crate) struct Chrome {
     sidebar_left: Pixels,
@@ -57,11 +62,6 @@ impl Chrome {
             .unwrap_or_default()
     }
 
-    pub fn sidebar_left(cx: &App) -> Pixels {
-        Self::get(cx).sidebar_left
-    }
-
-    #[allow(dead_code)]
     pub fn sidebar_right(cx: &App) -> Pixels {
         Self::get(cx).sidebar_right
     }
