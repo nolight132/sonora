@@ -61,8 +61,15 @@ impl SidebarLeft {
         let trail = router::trail(cx);
 
         cx.observe(&trail, |_, _, cx| cx.notify()).detach();
-        cx.subscribe(&trail, |this, _, _: &NavigationEvent, cx| this.dismiss(cx))
-            .detach();
+        cx.subscribe(&trail, |this, _, event, cx| {
+            let NavigationEvent::Moved(destination) = event;
+            if !matches!(destination, Destination::Settings(_)) {
+                this.settings_open = false;
+            }
+            this.dismiss(cx);
+            cx.notify();
+        })
+        .detach();
 
         Self {
             settings,
