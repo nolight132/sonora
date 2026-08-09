@@ -22,6 +22,7 @@ mod popup;
 mod scrollbar;
 mod scroller;
 mod scrubber;
+mod separator;
 mod shield;
 mod skeleton;
 mod theme;
@@ -61,6 +62,7 @@ pub use popup::Popup;
 pub use scrollbar::{Scrollbar, scrolled};
 pub use scroller::Scroller;
 pub use scrubber::{Scrubber, ScrubberState};
+pub use separator::Separator;
 pub use shield::Shield;
 pub use skeleton::{Initials, Skeleton};
 pub use theme::{
