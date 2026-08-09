@@ -86,7 +86,7 @@ pub fn init(cx: &mut App, io: Io) {
     let settings = cx.new(|_| AppSettings::load());
     let session = cx.new(|_| Session::new(AuthConfig::from_env(), io.clone()));
     let library = cx.new(|cx| Library::new(session.clone(), io, cx));
-    let queue = cx.new(|_| Queue::new());
+    let queue = cx.new(|cx| Queue::new(settings.clone(), cx));
     let playback = cx.new(|cx| Playback::new(session.clone(), queue.clone(), settings.clone(), cx));
 
     cx.set_global(Sonora {
