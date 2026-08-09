@@ -501,7 +501,7 @@ impl Playback {
     }
 
     fn suggest_similar(&mut self, cx: &mut Context<Self>) {
-        if !self.radio {
+        if !self.radio || self.queue.read(cx).similar().len() > 0 {
             return;
         }
         let Some(id) = self.seed(cx).and_then(|seed| seed.id) else {
