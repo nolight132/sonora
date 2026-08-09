@@ -12,7 +12,7 @@ use state::{AppSettings, Playback, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller};
 use ui::{
     Avatar, Button, InfoCard, Initials, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Menu, MenuItem,
-    Popover, Popovers, Rounding, Scrubber, ScrubberState, Skeleton, Text, Theme, ThemeKind,
+    Popover, Popovers, Rounding, Scrubber, ScrubberState, Skeleton, Switch, Text, Theme, ThemeKind,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -345,13 +345,7 @@ impl SettingsView {
             t!("settings-window-controls-detail"),
             muted,
             small,
-            Button::new("window-controls")
-                .label(match on {
-                    true => t!("common-on"),
-                    false => t!("common-off"),
-                })
-                .small()
-                .outline()
+            Switch::new("window-controls", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_window_controls(!on, cx));
@@ -400,13 +394,7 @@ impl SettingsView {
             t!("settings-auto-hide-detail"),
             muted,
             small,
-            Button::new("auto-hide-sidebar")
-                .label(match on {
-                    true => t!("common-on"),
-                    false => t!("common-off"),
-                })
-                .small()
-                .outline()
+            Switch::new("auto-hide-sidebar", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_auto_hide_sidebar(!on, cx));
@@ -533,13 +521,7 @@ impl SettingsView {
             t!("settings-transparent-detail"),
             muted,
             small,
-            Button::new("transparent-background")
-                .label(match look.transparent {
-                    true => t!("common-on"),
-                    false => t!("common-off"),
-                })
-                .small()
-                .outline()
+            Switch::new("transparent-background", look.transparent)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let transparent = !look.transparent;
                     this.settings
@@ -619,13 +601,7 @@ impl SettingsView {
             t!("settings-adaptive-detail"),
             muted,
             small,
-            Button::new("adaptive-theme")
-                .label(match on {
-                    true => t!("common-on"),
-                    false => t!("common-off"),
-                })
-                .small()
-                .outline()
+            Switch::new("adaptive-theme", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let adaptive = !on;
                     let kind = match adaptive
@@ -659,13 +635,7 @@ impl SettingsView {
             t!("settings-normalisation-detail"),
             muted,
             small,
-            Button::new("normalisation")
-                .label(match on {
-                    true => t!("common-on"),
-                    false => t!("common-off"),
-                })
-                .small()
-                .outline()
+            Switch::new("normalisation", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_normalisation(!on, cx));
@@ -685,13 +655,7 @@ impl SettingsView {
             t!("settings-gapless-detail"),
             muted,
             small,
-            Button::new("gapless")
-                .label(match on {
-                    true => t!("common-on"),
-                    false => t!("common-off"),
-                })
-                .small()
-                .outline()
+            Switch::new("gapless", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_gapless(!on, cx));
@@ -846,11 +810,27 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_col()
+                    .flex_1()
+                    .min_w_0()
                     .gap_1()
-                    .child(div().child(title))
-                    .child(div().text_color(muted).text_size(small).child(detail)),
+                    .child(
+                        div()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_color(muted)
+                            .text_size(small)
+                            .child(detail),
+                    ),
             )
-            .child(action)
+            .child(div().flex_none().child(action))
     }
 }
 

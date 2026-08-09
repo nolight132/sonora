@@ -24,6 +24,7 @@ mod scroller;
 mod scrubber;
 mod shield;
 mod skeleton;
+mod switch;
 mod theme;
 mod time;
 mod toast;
@@ -63,6 +64,7 @@ pub use scroller::Scroller;
 pub use scrubber::{Scrubber, ScrubberState};
 pub use shield::Shield;
 pub use skeleton::{Initials, Skeleton};
+pub use switch::Switch;
 pub use theme::{
     ActiveTheme, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Theme, ThemeKind, ThemeOverrides,
 };
