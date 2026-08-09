@@ -16,15 +16,15 @@
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
 
       release = {
-        version = "0.4.0";
+        version = "0.4.1";
         assets = {
           x86_64-linux = {
             target = "x86_64-unknown-linux-gnu";
-            hash = "sha256-X59sKxZXp9k1EW3ETp3IB/S/y/X08GiZg8GFxi2L1MI=";
+            hash = "sha256-RT/oPv93QL8hz2xTzQLFwHgpuRhU42IQVgP0sG/Iokc=";
           };
           aarch64-linux = {
             target = "aarch64-unknown-linux-gnu";
-            hash = "sha256-xAiAiegBWQ8Fzdn8mfqABA7VE1RxIQgr+SIexWsB9CE=";
+            hash = "sha256-GjY7zcTgpcrH6sB/jSMcgFgcDJ7psaLnkBiqS+MuQPc=";
           };
         };
       };
@@ -52,7 +52,7 @@
 
             src = ./.;
 
-            cargoHash = "sha256-4+JaTS8OEWbLa/N+1L2ZsvtOgfrWr/VMKN8SsUWIZj0=";
+            cargoHash = "sha256-AMFIYoRN0OTCgTnqvW5y6t6uG4/xRluoE8Ao5qNqPBo=";
 
             nativeBuildInputs = with pkgs; [
               pkg-config
