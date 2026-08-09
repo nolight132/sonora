@@ -20,6 +20,8 @@ nav-settings = Settings
 nav-songs = Songs
 nav-albums = Albums
 nav-playlists = Playlists
+library-liked-songs = Liked Songs
+library-play-liked-songs = Play
 
 # app menu
 app-refresh-library = Refresh Library

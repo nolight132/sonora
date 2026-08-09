@@ -20,6 +20,8 @@ nav-settings = Налаштування
 nav-songs = Треки
 nav-albums = Альбоми
 nav-playlists = Плейлисти
+library-liked-songs = Вподобані пісні
+library-play-liked-songs = Слухати
 
 # app menu
 app-refresh-library = Оновити медіатеку

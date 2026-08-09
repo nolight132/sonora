@@ -100,6 +100,7 @@ pub struct Artwork {
     size: Pixels,
     circle: bool,
     radius: Option<Pixels>,
+    fallback: SharedString,
     interactivity: Interactivity,
 }
 
@@ -111,6 +112,7 @@ impl Artwork {
             size: px(28.),
             circle: false,
             radius: None,
+            fallback: FALLBACK_ICON.into(),
             interactivity: Interactivity::new(),
         }
     }
@@ -127,6 +129,11 @@ impl Artwork {
 
     pub fn corner_radius(mut self, radius: Pixels) -> Self {
         self.radius = Some(radius);
+        self
+    }
+
+    pub fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
+        self.fallback = icon.into();
         self
     }
 }
@@ -150,6 +157,7 @@ impl RenderOnce for Artwork {
             size,
             circle,
             radius,
+            fallback,
             interactivity,
         } = self;
         let muted = cx.theme().muted_foreground;
@@ -158,7 +166,10 @@ impl RenderOnce for Artwork {
             (false, Some(radius)) => radius,
             (false, None) => cx.theme().radius.min(ROUNDED),
         };
-        let placeholder = move || blank(size, rounded, muted).into_any_element();
+        let placeholder = {
+            let fallback = fallback.clone();
+            move || blank(size, rounded, muted, fallback.clone()).into_any_element()
+        };
 
         match url {
             Some(url) => {
@@ -183,7 +194,9 @@ impl RenderOnce for Artwork {
                 )
                 .into_any_element()
             }
-            None => refined(blank(size, rounded, muted), interactivity).into_any_element(),
+            None => {
+                refined(blank(size, rounded, muted, fallback), interactivity).into_any_element()
+            }
         }
     }
 }
@@ -196,7 +209,7 @@ fn refined<T: Styled + InteractiveElement>(mut element: T, mut caller: Interacti
     element
 }
 
-fn blank(size: Pixels, rounded: Pixels, muted: Hsla) -> Div {
+fn blank(size: Pixels, rounded: Pixels, muted: Hsla, fallback: SharedString) -> Div {
     div()
         .size(size)
         .rounded(rounded)
@@ -206,7 +219,7 @@ fn blank(size: Pixels, rounded: Pixels, muted: Hsla) -> Div {
         .justify_center()
         .child(
             svg()
-                .path(FALLBACK_ICON)
+                .path(fallback)
                 .size(size * 0.46)
                 .text_color(muted.opacity(0.5)),
         )

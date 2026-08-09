@@ -20,9 +20,10 @@ use state::{AppSettings, Library, LibraryState, Origin, Playback, PlaybackState,
 use ui::{
     ActiveTheme as _, Button, Card, FlagAxis, GridDelegate, GridEvent, GridSource, GridState, Menu,
     MenuItem, Mode, Popovers, Popup, RangeAxis, Scrollbar, Scroller, Sort, SortAxis, Text, Toggle,
-    Unit, Viewport, heading, scrolled,
+    Unit, Viewport, clock, grid, heading, scrolled,
 };
 
+use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
 use crate::shared::release_card::ReleaseCard;
 use crate::shared::tracks::{
     self, LIBRARY_COLUMNS, PlaybackStatus, TrackField, TrackSieve, TrackSource, Tracks,
@@ -353,6 +354,34 @@ impl LibraryView {
         }
     }
 
+    fn liked(&self, cx: &App) -> Vec<Track> {
+        match self.library.read(cx).state() {
+            LibraryState::Ready { tracks, .. } => tracks.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn liked_header(&self, cx: &Context<Self>) -> AnyElement {
+        let queued = self.liked(cx);
+        let duration: std::time::Duration = queued.iter().map(|track| track.duration).sum();
+        let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = queued.len()));
+        if !duration.is_zero() {
+            strip = strip.text(clock(duration));
+        }
+
+        PageHero::new("liked-songs-hero", t!("library-liked-songs"))
+            .fallback("icons/heart-filled.svg")
+            .eyebrow(t!("detail-playlist"))
+            .meta(strip)
+            .actions(HeroPlayButton::new(
+                "play-liked-songs",
+                t!("library-play-liked-songs"),
+                queued,
+                self.playback.clone(),
+            ))
+            .into_any_element()
+    }
+
     fn play(&mut self, display: usize, cx: &mut Context<Self>) {
         let queued = tracks::ordered(&self.tracks, cx);
         self.playback
@@ -557,7 +586,12 @@ impl Render for LibraryView {
         self.resize(window, cx);
 
         let scroll = self.scrollbar.read(cx).scroll().clone();
-        let viewport = Self::viewport(&scroll, window);
+        let theme = *cx.theme();
+        let inset = theme.metrics.inset;
+        let viewport = match self.section {
+            Section::Tracks => page::viewport(&scroll, inset, window),
+            _ => Self::viewport(&scroll, window),
+        };
         let table = self.table(self.section);
         table.set_viewport(viewport, cx);
 
@@ -582,6 +616,20 @@ impl Render for LibraryView {
         });
         let view = cx.entity().downgrade();
         let section = self.section;
+        let content = match (self.section, self.mode()) {
+            (Section::Tracks, Mode::List) => Scroller::new("library-page", &self.scrollbar)
+                .pt(inset)
+                .pb(inset)
+                .child(div().px(inset).child(self.liked_header(cx)))
+                .child(grid(&self.tracks))
+                .into_any_element(),
+            (_, Mode::List) => Scroller::new("library-page", &self.scrollbar)
+                .child(table.element())
+                .into_any_element(),
+            (_, Mode::Cards) => Scroller::new("library-page", &self.scrollbar)
+                .child(self.cards(window, cx))
+                .into_any_element(),
+        };
 
         div()
             .relative()
@@ -599,12 +647,7 @@ impl Render for LibraryView {
                     cx.notify();
                 });
             })
-            .child(
-                Scroller::new("library-page", &self.scrollbar).child(match self.mode() {
-                    Mode::List => table.element(),
-                    Mode::Cards => self.cards(window, cx),
-                }),
-            )
+            .child(content)
             .when_some(context_menu, |this, menu| this.child(menu))
     }
 }

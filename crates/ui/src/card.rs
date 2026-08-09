@@ -40,6 +40,7 @@ pub struct Card {
     bare: bool,
     trailing: Option<AnyElement>,
     cover: Option<String>,
+    fallback: Option<SharedString>,
     art: Option<Pixels>,
     art_radius: Option<Pixels>,
     match_art_height: bool,
@@ -74,6 +75,7 @@ impl Card {
             bare: false,
             trailing: None,
             cover: None,
+            fallback: None,
             art: None,
             art_radius: None,
             match_art_height: false,
@@ -130,6 +132,11 @@ impl Card {
 
     pub fn cover(mut self, cover: Option<String>) -> Self {
         self.cover = cover;
+        self
+    }
+
+    pub fn fallback(mut self, icon: impl Into<SharedString>) -> Self {
+        self.fallback = Some(icon.into());
         self
     }
 
@@ -258,6 +265,7 @@ impl RenderOnce for Card {
             bare,
             trailing,
             cover,
+            fallback,
             art,
             art_radius,
             match_art_height,
@@ -300,6 +308,7 @@ impl RenderOnce for Card {
             false => Artwork::new(cover)
                 .size(art)
                 .when_some(art_radius, Artwork::corner_radius)
+                .when_some(fallback, Artwork::fallback)
                 .into_any_element(),
         };
         let leading = match play {

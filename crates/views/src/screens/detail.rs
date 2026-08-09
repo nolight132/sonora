@@ -66,10 +66,9 @@ impl DetailView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let inset = cx.theme().metrics.inset;
         let settings = Sonora::global(cx).settings.clone();
         let saved = settings.read(cx).table(section);
-        let width = cells::content_width(window, page::reserved(inset), cx);
+        let width = cells::content_width(window, Pixels::ZERO, cx);
 
         let scrollbar = cx.new(|_| Scrollbar::new(ScrollHandle::new()));
         let scroll = scrollbar.read(cx).scroll().clone();
@@ -322,9 +321,12 @@ impl DetailView {
 
 impl Render for DetailView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.theme();
-        let inset = theme.metrics.inset;
-        page::resize(&self.table, &mut self.width, inset, window, cx);
+        let inset = cx.theme().metrics.inset;
+        let width = cells::content_width(window, Pixels::ZERO, cx);
+        if (width - self.width).abs() >= px(0.5) {
+            self.width = width;
+            self.table.set_width(width, cx);
+        }
 
         let scroll = self.scrollbar.read(cx).scroll().clone();
         let viewport = page::viewport(&scroll, inset, window);
@@ -346,16 +348,10 @@ impl Render for DetailView {
             .size_full()
             .child(
                 Scroller::new("detail-page", &self.scrollbar)
-                    .px(inset)
                     .pt(inset)
                     .pb(inset)
-                    .child(self.header(cx))
-                    .child(
-                        grid(&self.table)
-                            .rounded(theme.radius)
-                            .border_1()
-                            .border_color(theme.border),
-                    ),
+                    .child(div().px(inset).child(self.header(cx)))
+                    .child(grid(&self.table)),
             )
             .when_some(context_menu, |this, menu| this.child(menu))
     }
