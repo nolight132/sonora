@@ -2,10 +2,11 @@
 
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Div, FontWeight, Interactivity, SharedString, StyleRefinement, Window, div, px,
+    AnyElement, App, Div, FontWeight, Interactivity, SharedString, StyleRefinement, Window, div,
 };
 
 use crate::label::eyebrow;
+use crate::separator::Separator;
 use crate::theme::ActiveTheme as _;
 
 #[derive(IntoElement)]
@@ -89,7 +90,7 @@ impl RenderOnce for InfoCard {
                     .items_center()
                     .gap_3()
                     .child(eyebrow(title, cx))
-                    .child(div().h(px(1.)).flex_1().bg(theme.border)),
+                    .child(Separator::horizontal().flex_1()),
             )
             .children(children);
 

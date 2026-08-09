@@ -14,6 +14,7 @@ use gpui::{
 use crate::Artwork;
 use crate::metrics::snapped;
 use crate::scrollbar::Scrollbar;
+use crate::separator::Separator;
 use crate::shield::Shield;
 use crate::theme::ActiveTheme as _;
 
@@ -387,14 +388,7 @@ impl RenderOnce for Menu {
             }
 
             if separator {
-                return div()
-                    .id(id)
-                    .h(px(1.))
-                    .flex_none()
-                    .mx_2()
-                    .my_1()
-                    .bg(theme.border)
-                    .into_any_element();
+                return Separator::horizontal().mx_2().my_1().into_any_element();
             }
             let action = action.clone();
             let press_action = action.clone();
