@@ -5,9 +5,9 @@ use std::ops::Range;
 use gpui::prelude::*;
 
 use gpui::{
-    App, Context, Div, DragMoveEvent, Entity, FontWeight, MouseButton, MouseDownEvent, Pixels,
-    Point, Render, ScrollHandle, ScrollStrategy, SharedString, UniformListScrollHandle, Window,
-    div, px, uniform_list,
+    App, Context, Div, DragMoveEvent, Entity, MouseButton, MouseDownEvent, Pixels, Point, Render,
+    ScrollHandle, ScrollStrategy, SharedString, UniformListScrollHandle, Window, div, px,
+    uniform_list,
 };
 use i18n::t;
 use spotify::Track;
@@ -330,7 +330,6 @@ impl SidebarRight {
             .text_size(theme.text(Text::Small))
             .truncate(),
         )
-        .weight(FontWeight::SEMIBOLD)
         .tint(title)
         .when(track.explicit, Card::explicit)
         .on_mouse_down(
