@@ -348,7 +348,8 @@ impl ArtistView {
                 .button(
                     Button::new("artist-overflow-button")
                         .outline()
-                        .icon("icons/ellipsis.svg"),
+                        .icon("icons/ellipsis.svg")
+                        .tooltip("common-more"),
                 )
                 .menu(
                     artist_menu(id.to_owned())

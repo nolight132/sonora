@@ -9,8 +9,8 @@ mod http;
 use std::sync::Arc;
 
 use gpui::{
-    App, AppContext as _, Bounds, Entity, TitlebarOptions, WindowBounds, WindowOptions, point, px,
-    size,
+    App, AppContext as _, Bounds, Entity, TitlebarOptions, WindowBackgroundAppearance,
+    WindowBounds, WindowOptions, point, px, size,
 };
 use router::Destination;
 use state::{Library, Playback, Queue, Session, Sonora};
@@ -88,6 +88,7 @@ fn open_window(
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_background: WindowBackgroundAppearance::Transparent,
             titlebar: Some(TitlebarOptions {
                 title: Some("sonora".into()),
                 appears_transparent: true,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use gpui::{Context, Entity};
 use spotify::Track;
@@ -98,6 +98,7 @@ pub struct Queue {
     current: Option<Track>,
     upcoming: VecDeque<Track>,
     source: Vec<Track>,
+    similar: usize,
     shuffle: bool,
     revision: u64,
     settings: Entity<AppSettings>,
@@ -112,6 +113,7 @@ impl Queue {
             current: None,
             upcoming: VecDeque::new(),
             source: Vec::new(),
+            similar: 0,
             shuffle,
             revision: 0,
             settings,
@@ -129,10 +131,12 @@ impl Queue {
         self.shuffle = on;
         self.settings
             .update(cx, |settings, cx| settings.set_shuffle(on, cx));
+        let mut suggested = self.upcoming.split_off(self.queued());
         match on {
             true => scramble(&mut self.upcoming),
             false => restore(&mut self.upcoming, &self.source),
         }
+        self.upcoming.append(&mut suggested);
         self.changed(cx);
     }
 
@@ -157,8 +161,41 @@ impl Queue {
         self.current.as_ref()
     }
 
+    fn queued(&self) -> usize {
+        self.upcoming.len() - self.similar
+    }
+
     pub fn upcoming(&self) -> impl ExactSizeIterator<Item = &Track> {
-        self.upcoming.iter()
+        self.upcoming.range(..self.queued())
+    }
+
+    pub fn similar(&self) -> impl ExactSizeIterator<Item = &Track> {
+        self.upcoming.range(self.queued()..)
+    }
+
+    pub fn suggest(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+        self.upcoming.truncate(self.queued());
+        self.similar = tracks.len();
+        self.upcoming.extend(tracks);
+        self.changed(cx);
+    }
+
+    pub fn clear_similar(&mut self, cx: &mut Context<Self>) {
+        if self.similar == 0 {
+            return;
+        }
+        self.upcoming.truncate(self.queued());
+        self.similar = 0;
+        self.changed(cx);
+    }
+
+    pub fn ids(&self) -> HashSet<String> {
+        self.past
+            .iter()
+            .chain(self.current.as_ref())
+            .chain(self.upcoming.iter())
+            .filter_map(|track| track.id.clone())
+            .collect()
     }
 
     pub fn len(&self) -> usize {
@@ -178,10 +215,10 @@ impl Queue {
     }
 
     pub fn clear_upcoming(&mut self, cx: &mut Context<Self>) {
-        if self.upcoming.is_empty() {
+        if self.queued() == 0 {
             return;
         }
-        self.upcoming.clear();
+        self.upcoming.drain(..self.queued());
         self.changed(cx);
     }
 
@@ -190,6 +227,7 @@ impl Queue {
         self.current = None;
         self.upcoming.clear();
         self.source.clear();
+        self.similar = 0;
         self.changed(cx);
     }
 
@@ -230,6 +268,7 @@ impl Queue {
         self.source = tracks.clone();
         let mut past = tracks;
         self.upcoming = past.split_off(index + 1).into();
+        self.similar = 0;
         if self.shuffle {
             scramble(&mut self.upcoming);
         }
@@ -244,7 +283,10 @@ impl Queue {
     }
 
     pub fn append_all(&mut self, tracks: impl IntoIterator<Item = Track>, cx: &mut Context<Self>) {
-        self.upcoming.extend(tracks);
+        let at = self.queued();
+        for (offset, track) in tracks.into_iter().enumerate() {
+            self.upcoming.insert(at + offset, track);
+        }
         self.changed(cx);
     }
 
@@ -266,17 +308,28 @@ impl Queue {
     }
 
     pub fn move_upcoming_to_gap(&mut self, from: usize, gap: usize, cx: &mut Context<Self>) {
-        let to = gap_target(from, gap, self.upcoming.len());
+        let to = gap_target(from, gap, self.queued());
         self.move_upcoming(from, to, cx);
     }
 
     pub fn remove_upcoming(&mut self, index: usize, cx: &mut Context<Self>) {
-        if self.upcoming.remove(index).is_some() {
+        if index < self.queued() && self.upcoming.remove(index).is_some() {
+            self.changed(cx);
+        }
+    }
+
+    pub fn remove_similar(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index >= self.similar {
+            return;
+        }
+        if self.upcoming.remove(self.queued() + index).is_some() {
+            self.similar -= 1;
             self.changed(cx);
         }
     }
 
     pub fn next(&mut self, cx: &mut Context<Self>) -> Option<Track> {
+        self.similar -= usize::from(self.queued() == 0 && self.similar > 0);
         let next = self.upcoming.pop_front()?;
         if let Some(played) = self.current.replace(next) {
             self.past.push(played);
@@ -286,6 +339,8 @@ impl Queue {
     }
 
     pub fn rewind(&mut self, cx: &mut Context<Self>) -> Option<Track> {
+        self.upcoming.truncate(self.queued());
+        self.similar = 0;
         let mut tracks = std::mem::take(&mut self.past);
         tracks.extend(self.current.take());
         tracks.extend(self.upcoming.drain(..));
@@ -310,9 +365,29 @@ impl Queue {
     }
 
     pub fn play_upcoming(&mut self, index: usize, cx: &mut Context<Self>) -> Option<Track> {
-        if !select_upcoming(&mut self.past, &mut self.current, &mut self.upcoming, index) {
+        if index >= self.queued()
+            || !select_upcoming(&mut self.past, &mut self.current, &mut self.upcoming, index)
+        {
             return None;
         }
+        self.changed(cx);
+        self.current.clone()
+    }
+
+    pub fn play_similar(&mut self, index: usize, cx: &mut Context<Self>) -> Option<Track> {
+        if index >= self.similar {
+            return None;
+        }
+        let target = self.queued() + index;
+        if !select_upcoming(
+            &mut self.past,
+            &mut self.current,
+            &mut self.upcoming,
+            target,
+        ) {
+            return None;
+        }
+        self.similar -= index + 1;
         self.changed(cx);
         self.current.clone()
     }

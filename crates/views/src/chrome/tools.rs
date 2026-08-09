@@ -51,6 +51,7 @@ pub(crate) fn columns(
         .button(
             Button::new("columns-toggle")
                 .icon("icons/columns-3.svg")
+                .tooltip("tool-columns")
                 .small()
                 .ghost(),
         )
@@ -85,6 +86,7 @@ pub(crate) fn sorts(
         .button(
             Button::new("sort-toggle")
                 .icon("icons/arrow-up-down.svg")
+                .tooltip("tool-sort")
                 .small()
                 .ghost()
                 .tint(match sorted {
@@ -190,6 +192,7 @@ pub(crate) fn filters(
         .button(
             Button::new("filters-toggle")
                 .icon("icons/funnel.svg")
+                .tooltip("tool-filters")
                 .small()
                 .ghost()
                 .tint(match narrowed {
@@ -226,6 +229,7 @@ pub(crate) fn views(
 
     Button::new("view-toggle")
         .icon(next.icon())
+        .tooltip(next.key())
         .small()
         .ghost()
         .on_click(move |_, _, cx| {

@@ -274,7 +274,8 @@ impl DetailView {
                 .button(
                     Button::new("detail-overflow-button")
                         .outline()
-                        .icon("icons/ellipsis.svg"),
+                        .icon("icons/ellipsis.svg")
+                        .tooltip("common-more"),
                 )
                 .menu(menu.top(theme.metrics.control).left_0())
         });

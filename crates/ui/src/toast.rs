@@ -101,6 +101,7 @@ impl RenderOnce for Toast {
                     .ghost()
                     .small()
                     .icon("icons/x.svg")
+                    .tooltip("common-dismiss")
                     .on_click(move |event, window, cx| dismiss(event, window, cx))
             }))
     }

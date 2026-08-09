@@ -27,6 +27,7 @@ const POSITION_INTERVAL: Duration = Duration::from_millis(500);
 const SKIP_DEBOUNCE: Duration = Duration::from_millis(250);
 const KEY_COOLDOWN: Duration = Duration::from_secs(6);
 const TAPER_DB: f32 = 50.;
+const SIMILAR_LIMIT: usize = 20;
 
 fn gain(level: f32) -> f32 {
     match level.clamp(0., 1.) {
@@ -78,10 +79,12 @@ pub struct Playback {
     normalisation: bool,
     repeat: Repeat,
     radio: bool,
+    seeded: Option<String>,
     task: Option<Task<()>>,
     load: Option<Task<()>>,
     fetch: Option<Task<()>>,
     enqueue: Option<Task<()>>,
+    suggest: Option<Task<()>>,
     blocked_until: Option<Instant>,
 }
 
@@ -104,6 +107,8 @@ impl Playback {
             SessionEvent::SignedOut => this.teardown(cx),
         })
         .detach();
+        cx.observe(&queue, |this, _, cx| this.suggest_similar(cx))
+            .detach();
 
         let level = settings.read(cx).volume();
         let normalisation = settings.read(cx).normalisation();
@@ -122,10 +127,12 @@ impl Playback {
             normalisation,
             repeat,
             radio: false,
+            seeded: None,
             task: None,
             load: None,
             fetch: None,
             enqueue: None,
+            suggest: None,
             blocked_until: None,
         }
     }
@@ -409,7 +416,75 @@ impl Playback {
 
     pub fn toggle_radio(&mut self, cx: &mut Context<Self>) {
         self.radio = !self.radio;
+        match self.radio {
+            true => self.suggest_similar(cx),
+            false => self.forget_similar(cx),
+        }
+    }
+
+    pub fn play_similar(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.fetch = None;
+        let Some(track) = self
+            .queue
+            .update(cx, |queue, cx| queue.play_similar(index, cx))
+        else {
+            return;
+        };
+        self.load_after(&track, SKIP_DEBOUNCE, cx);
+    }
+
+    fn forget_similar(&mut self, cx: &mut Context<Self>) {
+        self.seeded = None;
+        self.suggest = None;
+        self.queue.update(cx, |queue, cx| queue.clear_similar(cx));
         cx.notify();
+    }
+
+    fn seed(&self, cx: &Context<Self>) -> Option<Track> {
+        let queue = self.queue.read(cx);
+        queue.upcoming().last().or_else(|| queue.current()).cloned()
+    }
+
+    fn suggest_similar(&mut self, cx: &mut Context<Self>) {
+        if !self.radio {
+            return;
+        }
+        let Some(id) = self.seed(cx).and_then(|seed| seed.id) else {
+            return self.forget_similar(cx);
+        };
+        if self.seeded.as_deref() == Some(id.as_str()) {
+            return;
+        }
+        let Some(client) = self.session.read(cx).client() else {
+            return self.forget_similar(cx);
+        };
+
+        let queued = self.queue.read(cx).ids();
+        self.seeded = Some(id.clone());
+        let io = Io::global(cx);
+        self.suggest = Some(cx.spawn(async move |this, cx| {
+            let loaded = join(io.spawn(async move {
+                let mut tracks = client.track_radio(&id).await?;
+                tracks.retain(|track| {
+                    track.playable
+                        && track
+                            .id
+                            .as_ref()
+                            .is_some_and(|id| !queued.contains(id.as_str()))
+                });
+                fastrand::shuffle(&mut tracks);
+                tracks.truncate(SIMILAR_LIMIT);
+                anyhow::Ok(tracks)
+            }))
+            .await;
+
+            this.update(cx, |this, cx| match loaded {
+                Ok(_) if !this.radio => {}
+                Ok(tracks) => this.queue.update(cx, |queue, cx| queue.suggest(tracks, cx)),
+                Err(error) => log::warn!("playback: cannot load similar tracks: {error:#}"),
+            })
+            .ok();
+        }));
     }
 
     pub fn repeat(&self) -> Repeat {
@@ -706,6 +781,8 @@ impl Playback {
         self.load = None;
         self.fetch = None;
         self.enqueue = None;
+        self.suggest = None;
+        self.seeded = None;
         self.blocked_until = None;
         self.engine = None;
         self.track = None;

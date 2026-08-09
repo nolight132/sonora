@@ -311,6 +311,10 @@ impl RenderOnce for Card {
                                     true => "icons/pause.svg",
                                     false => "icons/play.svg",
                                 })
+                                .tooltip(match playing {
+                                    true => "play-pause",
+                                    false => "common-play",
+                                })
                                 .size(px((art / px(1.) * PLAY_RATIO).round()).max(PLAY_MIN))
                                 .rounded_full()
                                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
