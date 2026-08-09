@@ -51,7 +51,7 @@ impl Role {
 macro_rules! member {
     ($login:literal, $role:expr) => {
         Member {
-            login: concat!("@", $login),
+            login: $login,
             avatar: concat!("https://github.com/", $login, ".png"),
             profile: concat!("https://github.com/", $login),
             role: $role,
@@ -656,14 +656,11 @@ impl SettingsView {
     }
 
     fn team(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = *cx.theme();
-
-        InfoCard::new(t!("settings-team")).child(
+        InfoCard::new(t!("settings-team")).flex_none().child(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .pb(theme.metrics.pad)
                 .children(MEMBERS.into_iter().enumerate().map(|(index, member)| {
                     div()
                         .id(("team-member", index))
