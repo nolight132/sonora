@@ -217,11 +217,7 @@ impl Playback {
                 let Some(engine) = this.engine.as_ref() else {
                     return;
                 };
-                let loaded = match start {
-                    Start::Segue => engine.segue(&id),
-                    Start::Pick | Start::Skip => engine.load(&id),
-                };
-                if let Err(error) = loaded {
+                if let Err(error) = engine.load(&id, start == Start::Segue) {
                     this.failed(format!("{error:#}"), cx);
                 }
             })

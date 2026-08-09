@@ -82,18 +82,10 @@ impl Engine {
         (engine, events)
     }
 
-    pub fn load(&self, track_id: &str) -> Result<()> {
-        self.begin(track_id, true)
-    }
-
-    pub fn segue(&self, track_id: &str) -> Result<()> {
-        self.begin(track_id, !self.gapless)
-    }
-
-    fn begin(&self, track_id: &str, cut: bool) -> Result<()> {
+    pub fn load(&self, track_id: &str, seamless: bool) -> Result<()> {
         let uri = track_uri(track_id)?;
 
-        if cut {
+        if !seamless || !self.gapless {
             self.flush.request();
         }
         self.player.load(uri, true, 0);
