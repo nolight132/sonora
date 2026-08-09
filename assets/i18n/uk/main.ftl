@@ -265,8 +265,7 @@ settings-theme = Тема
 settings-theme-detail = Кольорова палітра застосунку
 settings-transparent = Прозорий фон
 settings-transparent-detail = Показувати робочий стіл крізь застосунок
-settings-transparency = Прозорість
-settings-transparency-detail = Налаштуйте прозорість фону застосунку
+
 settings-transparency-value = { $percent }%
 settings-theme-config = Відкрити конфіг
 settings-adaptive = Адаптивна тема

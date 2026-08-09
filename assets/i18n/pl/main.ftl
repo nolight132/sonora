@@ -265,8 +265,7 @@ settings-theme = Motyw
 settings-theme-detail = Paleta kolorów aplikacji
 settings-transparent = Przezroczyste tło
 settings-transparent-detail = Pokazuj pulpit przez aplikację
-settings-transparency = Przezroczystość
-settings-transparency-detail = Dostosuj przezroczystość tła aplikacji
+
 settings-transparency-value = { $percent }%
 settings-theme-config = Otwórz konfigurację
 settings-adaptive = Motyw adaptacyjny

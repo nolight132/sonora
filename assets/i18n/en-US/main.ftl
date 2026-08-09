@@ -262,8 +262,7 @@ settings-theme = Theme
 settings-theme-detail = Choose the application colour palette
 settings-transparent = Transparent background
 settings-transparent-detail = Show the desktop through the application
-settings-transparency = Transparency
-settings-transparency-detail = Adjust the app background transparency
+
 settings-transparency-value = { $percent }%
 settings-theme-config = Open config
 settings-adaptive = Adaptive theme

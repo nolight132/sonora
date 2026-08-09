@@ -116,12 +116,6 @@ impl SettingsView {
                 self.transparent_row(cx).into_any_element(),
             ]
             .into_iter()
-            .chain(
-                self.settings
-                    .read(cx)
-                    .transparent()
-                    .then(|| self.transparency_row(cx).into_any_element()),
-            )
             .chain([
                 self.adaptive_row(cx).into_any_element(),
                 self.corners_row(cx).into_any_element(),
@@ -480,38 +474,12 @@ impl SettingsView {
         let small = theme.text(Text::Small);
         let look = self.look(cx);
         let overrides = self.settings.read(cx).theme_overrides().clone();
-
-        self.row(
-            t!("settings-transparent"),
-            t!("settings-transparent-detail"),
-            muted,
-            small,
-            Switch::new("transparent-background", look.transparent)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    let transparent = !look.transparent;
-                    this.settings
-                        .update(cx, |settings, cx| settings.set_transparent(transparent, cx));
-                    Theme::fade(
-                        Look {
-                            transparent,
-                            ..look
-                        },
-                        &overrides,
-                        cx,
-                    );
-                }))
-                .into_any_element(),
-        )
-    }
-
-    fn transparency_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.theme();
-        let muted = theme.muted_foreground;
-        let small = theme.text(Text::Small);
-        let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
-        let value = look.transparency / MAX_TRANSPARENCY;
-        let percent = (look.transparency * 100.).round() as i64;
+        let transparency = match look.transparent {
+            true => look.transparency,
+            false => 0.,
+        };
+        let value = transparency / MAX_TRANSPARENCY;
+        let percent = (transparency * 100.).round() as i64;
 
         let control = div()
             .flex()
@@ -523,11 +491,14 @@ impl SettingsView {
                         .colors(theme.progress_bar, theme.muted, theme.foreground)
                         .on_move(cx.listener(move |this, fraction: &f32, _, cx| {
                             let transparency = *fraction * MAX_TRANSPARENCY;
+                            let transparent = transparency > 0.;
                             this.settings.update(cx, |settings, cx| {
-                                settings.set_transparency(transparency, cx)
+                                settings.set_transparent(transparent, cx);
+                                settings.set_transparency(transparency, cx);
                             });
                             Theme::set(
                                 Look {
+                                    transparent,
                                     transparency,
                                     ..look
                                 },
@@ -545,8 +516,8 @@ impl SettingsView {
             );
 
         self.row(
-            t!("settings-transparency"),
-            t!("settings-transparency-detail"),
+            t!("settings-transparent"),
+            t!("settings-transparent-detail"),
             muted,
             small,
             control.into_any_element(),

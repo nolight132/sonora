@@ -265,8 +265,7 @@ settings-theme = Тема
 settings-theme-detail = Цветовая палитра приложения
 settings-transparent = Прозрачный фон
 settings-transparent-detail = Показывать рабочий стол сквозь приложение
-settings-transparency = Прозрачность
-settings-transparency-detail = Настройте прозрачность фона приложения
+
 settings-transparency-value = { $percent }%
 settings-theme-config = Открыть конфиг
 settings-adaptive = Адаптивная тема
