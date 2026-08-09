@@ -25,6 +25,7 @@ mod scrubber;
 mod separator;
 mod shield;
 mod skeleton;
+mod switch;
 mod theme;
 mod time;
 mod toast;
@@ -65,6 +66,7 @@ pub use scrubber::{Scrubber, ScrubberState};
 pub use separator::Separator;
 pub use shield::Shield;
 pub use skeleton::{Initials, Skeleton};
+pub use switch::Switch;
 pub use theme::{
     ActiveTheme, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Theme, ThemeKind, ThemeOverrides,
 };
