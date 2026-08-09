@@ -21,7 +21,7 @@ use crate::chrome::tools::{self, Sift, Sliders};
 use crate::chrome::{Chrome, Searchable, Toolbar, Tooled};
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero, release_date_label};
 use crate::shared::tracks::{
-    PlaybackStatus, TrackField, TrackSieve, TrackSource, Tracks, playback_status,
+    self, PlaybackStatus, TrackField, TrackSieve, TrackSource, Tracks, playback_status,
 };
 use crate::shared::{cells, page};
 
@@ -242,8 +242,8 @@ impl DetailView {
             .unwrap_or_default();
         let release_date = header.and_then(|header| header.release_date.as_deref());
         let meta = header.map(|header| header.meta.clone()).unwrap_or_default();
-        let queued = self.detail.read(cx).tracks().to_vec();
-        let duration: std::time::Duration = queued.iter().map(|track| track.duration).sum();
+        let listed = self.detail.read(cx).tracks();
+        let duration: std::time::Duration = listed.iter().map(|track| track.duration).sum();
         let (eyebrow, label) = match kind {
             Collection::Playlist => (t!("detail-playlist"), t!("detail-play-playlist")),
             Collection::Album => (t!("detail-album"), t!("detail-play-album")),
@@ -286,7 +286,7 @@ impl DetailView {
             .child(HeroPlayButton::new(
                 "play-detail",
                 label,
-                queued,
+                tracks::ordered(&self.table, cx),
                 self.playback.clone(),
             ))
             .children(overflow);
