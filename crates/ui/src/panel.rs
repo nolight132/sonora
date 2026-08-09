@@ -22,6 +22,7 @@ pub enum Side {
 }
 
 struct Grab {
+    panel: ElementId,
     width: Pixels,
     origin: Cell<Pixels>,
 }
@@ -29,10 +30,12 @@ struct Grab {
 #[derive(IntoElement)]
 pub struct Panel {
     base: Stateful<Div>,
+    key: ElementId,
     side: Side,
     width: Pixels,
     min: Pixels,
     max: Pixels,
+    reach: Option<Pixels>,
     fill: bool,
     resize: Option<Resize>,
     children: Vec<AnyElement>,
@@ -41,12 +44,15 @@ pub struct Panel {
 impl Panel {
     #[track_caller]
     pub fn new(id: impl Into<ElementId>, side: Side, width: Pixels) -> Self {
+        let key: ElementId = id.into();
         Self {
-            base: div().id(id),
+            base: div().id(key.clone()),
+            key,
             side,
             width,
             min: Pixels::ZERO,
             max: Pixels::MAX,
+            reach: None,
             fill: false,
             resize: None,
             children: Vec::new(),
@@ -56,6 +62,11 @@ impl Panel {
     pub fn limits(mut self, min: Pixels, max: Pixels) -> Self {
         self.min = min;
         self.max = max;
+        self
+    }
+
+    pub fn reach(mut self, reach: Pixels) -> Self {
+        self.reach = Some(reach);
         self
     }
 
@@ -94,10 +105,12 @@ impl RenderOnce for Panel {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let Self {
             mut base,
+            key,
             side,
             width,
             min,
             max,
+            reach,
             fill,
             resize,
             children,
@@ -107,7 +120,7 @@ impl RenderOnce for Panel {
         let handle = (!fill)
             .then_some(resize)
             .flatten()
-            .map(|resize| grip(side, width, min, max, resize));
+            .map(|resize| grip(key, side, width, min, reach.unwrap_or(max), resize));
 
         let mut panel = base
             .relative()
@@ -128,7 +141,16 @@ impl RenderOnce for Panel {
     }
 }
 
-fn grip(side: Side, width: Pixels, min: Pixels, max: Pixels, resize: Resize) -> impl IntoElement {
+fn grip(
+    key: ElementId,
+    side: Side,
+    width: Pixels,
+    min: Pixels,
+    max: Pixels,
+    resize: Resize,
+) -> impl IntoElement {
+    let dragged = key.clone();
+
     div()
         .id("panel-grip")
         .absolute()
@@ -142,6 +164,9 @@ fn grip(side: Side, width: Pixels, min: Pixels, max: Pixels, resize: Resize) -> 
         })
         .on_drag_move(move |event: &DragMoveEvent<Grab>, window, cx| {
             let grab = event.drag(cx);
+            if grab.panel != dragged {
+                return;
+            }
             let (start, origin) = (grab.width, grab.origin.get());
             let travel = event.event.position.x - origin;
             let dragged = match side {
@@ -153,6 +178,7 @@ fn grip(side: Side, width: Pixels, min: Pixels, max: Pixels, resize: Resize) -> 
         })
         .on_drag(
             Grab {
+                panel: key,
                 width,
                 origin: Cell::new(Pixels::ZERO),
             },
