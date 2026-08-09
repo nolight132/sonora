@@ -256,7 +256,9 @@ impl RenderOnce for Button {
                         .text_color(tint.unwrap_or(palette.foreground)),
                 )
             })
-            .when_some(label, |this, label| this.child(label))
+            .when_some(label, |this, label| {
+                this.child(div().min_w_0().truncate().child(label))
+            })
             .when(interactive, |this| {
                 this.when_some(on_click, |this, handler| {
                     this.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
