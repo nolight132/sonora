@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use ui::{ActiveTheme as _, Button, MIN_CONTENT, Panel, SNUG, Shield, Side};
+use ui::{ActiveTheme as _, Button, MIN_CONTENT, Panel, SNUG, Shield, Side, Tabs};
 
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, ElementId, Entity, Hsla, MouseButton, MouseDownEvent, Pixels, Render,
 };
 use gpui::{Window, div, px};
-use router::{Destination, LibraryTab, Navigation, NavigationEvent, navigate};
+use router::{Destination, LibraryTab, Navigation, NavigationEvent, SettingsTab, navigate};
 use state::{AppSettings, Sonora};
 
 const NAV: [(&str, &str, Option<Destination>); 4] = [
@@ -21,14 +21,21 @@ const NAV: [(&str, &str, Option<Destination>); 4] = [
     (
         "nav-settings",
         "icons/settings.svg",
-        Some(Destination::Settings),
+        Some(Destination::Settings(SettingsTab::Appearance)),
     ),
 ];
 
-const TABS: [(&str, LibraryTab); 3] = [
+const LIBRARY_TABS: [(&str, LibraryTab); 3] = [
     ("nav-songs", LibraryTab::Songs),
     ("nav-albums", LibraryTab::Albums),
     ("nav-playlists", LibraryTab::Playlists),
+];
+
+const SETTINGS_TABS: [(&str, SettingsTab); 4] = [
+    ("settings-tab-appearance", SettingsTab::Appearance),
+    ("settings-tab-playback", SettingsTab::Playback),
+    ("settings-tab-account", SettingsTab::Account),
+    ("settings-tab-about", SettingsTab::About),
 ];
 
 const MIN_WIDTH: Pixels = px(160.);
@@ -43,6 +50,7 @@ pub(crate) struct SidebarLeft {
     cramped: bool,
     forced: Option<bool>,
     library_open: bool,
+    settings_open: bool,
 }
 
 impl SidebarLeft {
@@ -65,6 +73,7 @@ impl SidebarLeft {
             forced: None,
             cramped: false,
             library_open: true,
+            settings_open: false,
         }
     }
 
@@ -149,7 +158,7 @@ impl Render for SidebarLeft {
         let muted = theme.muted_foreground;
         let sidebar_bg = theme.sidebar;
         let sidebar_border = theme.sidebar_border;
-        let nav = theme.metrics.control;
+
         let current = self.trail.read(cx).current();
         self.adapt(window, cx);
 
@@ -175,51 +184,60 @@ impl Render for SidebarLeft {
                 );
 
                 if self.library_open {
-                    let middle = nav / 2.;
-
                     rows.push(
-                        div()
-                            .relative()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .ml_4()
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .top_0()
-                                    .bottom(middle)
-                                    .w(px(1.))
-                                    .bg(sidebar_border),
-                            )
-                            .children(TABS.into_iter().map(|(name, tab)| {
+                        Tabs::new()
+                            .items(LIBRARY_TABS.into_iter().map(|(name, tab)| {
                                 let chosen = current == Destination::Library(tab);
                                 let tint = if chosen { foreground } else { muted };
 
-                                div()
-                                    .relative()
-                                    .flex()
-                                    .items_center()
-                                    .h(nav)
-                                    .pl_3()
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .left_0()
-                                            .top(middle)
-                                            .w(px(6.))
-                                            .h(px(1.))
-                                            .bg(sidebar_border),
-                                    )
-                                    .child(
-                                        nav_row(name, name, tint, sidebar_accent)
-                                            .flex_1()
-                                            .when(chosen, |button| button.bg(sidebar_accent))
-                                            .on_click(move |_, _, cx| {
-                                                navigate(Destination::Library(tab), cx)
-                                            }),
-                                    )
+                                nav_row(name, name, tint, sidebar_accent)
+                                    .flex_1()
+                                    .when(chosen, |button| button.bg(sidebar_accent))
+                                    .on_click(move |_, _, cx| {
+                                        navigate(Destination::Library(tab), cx)
+                                    })
+                            }))
+                            .into_any_element(),
+                    );
+                }
+                continue;
+            }
+
+            if matches!(destination, Some(Destination::Settings(_))) {
+                let inside = matches!(current, Destination::Settings(_));
+                let text = if inside { foreground } else { muted };
+                let link_destination = if inside { None } else { destination };
+                let target = link_destination.unwrap_or(current.clone());
+
+                rows.push(
+                    nav_row(index, key, text, sidebar_accent)
+                        .icon(icon)
+                        .on_click(cx.listener(move |this, _, _, cx| match inside {
+                            true => {
+                                this.settings_open = !this.settings_open;
+                                cx.notify();
+                            }
+                            false => {
+                                this.settings_open = true;
+                                navigate(target.clone(), cx);
+                            }
+                        }))
+                        .into_any_element(),
+                );
+
+                if self.settings_open {
+                    rows.push(
+                        Tabs::new()
+                            .items(SETTINGS_TABS.into_iter().map(|(name, tab)| {
+                                let chosen = current == Destination::Settings(tab);
+                                let tint = if chosen { foreground } else { muted };
+
+                                nav_row(name, name, tint, sidebar_accent)
+                                    .flex_1()
+                                    .when(chosen, |button| button.bg(sidebar_accent))
+                                    .on_click(move |_, _, cx| {
+                                        navigate(Destination::Settings(tab), cx)
+                                    })
                             }))
                             .into_any_element(),
                     );

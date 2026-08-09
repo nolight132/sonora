@@ -26,6 +26,7 @@ mod separator;
 mod shield;
 mod skeleton;
 mod switch;
+mod tabs;
 mod theme;
 mod time;
 mod toast;
@@ -67,6 +68,7 @@ pub use separator::Separator;
 pub use shield::Shield;
 pub use skeleton::{Initials, Skeleton};
 pub use switch::Switch;
+pub use tabs::Tabs;
 pub use theme::{
     ActiveTheme, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Theme, ThemeKind, ThemeOverrides,
 };

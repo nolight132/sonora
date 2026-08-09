@@ -4,7 +4,7 @@ use gpui::{AnyView, Context, Entity, MouseButton, NavigationDirection, Render};
 use gpui::{Window, div};
 use gpui::{font, prelude::*};
 use input::{OpenFilter, OpenSearch, OpenSettings, ToggleFullscreen};
-use router::{Destination, NavigationEvent, back, forward, navigate};
+use router::{Destination, NavigationEvent, SettingsTab, back, forward, navigate};
 use state::{
     ArtistDetail, Detail, Home, Io, Library, Playback, Queue, Search, Session, SessionState,
     SongDetail,
@@ -228,7 +228,7 @@ impl Root {
     }
 
     fn open_settings(&mut self, cx: &mut Context<Self>) {
-        navigate(Destination::Settings, cx);
+        navigate(Destination::Settings(SettingsTab::Appearance), cx);
         self.pending = Some(Focus::Workspace);
         cx.notify();
     }
@@ -279,7 +279,12 @@ impl Root {
                 artist.into()
             }
             Destination::Search => self.screens.search.clone().into(),
-            Destination::Settings => self.screens.settings.clone().into(),
+            Destination::Settings(tab) => {
+                self.screens
+                    .settings
+                    .update(cx, |settings, cx| settings.select(tab, cx));
+                self.screens.settings.clone().into()
+            }
         };
 
         self.toolbar = toolbar;

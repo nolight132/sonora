@@ -8,6 +8,7 @@ use gpui::{
 };
 use gpui::{ScrollHandle, prelude::*};
 use i18n::{Language, t};
+use router::SettingsTab;
 use state::{AppSettings, Playback, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller};
 use ui::{
@@ -68,41 +69,11 @@ const MEMBERS: [Member; 5] = [
     member!("imizgun", Role::Contributor),
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
-    Appearance,
-    Playback,
-    Account,
-    About,
-}
-
-impl Tab {
-    const ALL: [Self; 4] = [Self::Appearance, Self::Playback, Self::Account, Self::About];
-
-    fn id(self) -> &'static str {
-        match self {
-            Self::Appearance => "tab-appearance",
-            Self::Playback => "tab-playback",
-            Self::Account => "tab-account",
-            Self::About => "tab-about",
-        }
-    }
-
-    fn label(self) -> SharedString {
-        match self {
-            Self::Appearance => t!("settings-tab-appearance"),
-            Self::Playback => t!("settings-tab-playback"),
-            Self::Account => t!("settings-tab-account"),
-            Self::About => t!("settings-tab-about"),
-        }
-    }
-}
-
 pub struct SettingsView {
     session: Entity<Session>,
     playback: Entity<Playback>,
     settings: Entity<AppSettings>,
-    tab: Tab,
+    tab: SettingsTab,
     scrollbar: Entity<Scrollbar>,
     transparency: ScrubberState,
     popovers: Popovers,
@@ -121,30 +92,22 @@ impl SettingsView {
             session,
             playback,
             settings,
-            tab: Tab::Appearance,
+            tab: SettingsTab::Appearance,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new())),
             transparency: ScrubberState::new("transparency"),
             popovers: Popovers::default(),
         }
     }
 
-    fn tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div().flex().gap_1().children(Tab::ALL.map(|tab| {
-            Button::new(tab.id())
-                .label(tab.label())
-                .small()
-                .selected(self.tab == tab)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.tab = tab;
-                    this.popovers.close();
-                    cx.notify();
-                }))
-        }))
+    pub(crate) fn select(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+        self.tab = tab;
+        self.popovers.close();
+        cx.notify();
     }
 
     fn panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let rows: Vec<AnyElement> = match self.tab {
-            Tab::Appearance => vec![
+            SettingsTab::Appearance => vec![
                 self.theme_row(cx).into_any_element(),
                 self.transparent_row(cx).into_any_element(),
             ]
@@ -165,12 +128,12 @@ impl SettingsView {
             .chain(decorated().then(|| self.decorations_row(cx).into_any_element()))
             .chain(decorated().then(|| self.side_row(cx).into_any_element()))
             .collect(),
-            Tab::Playback => vec![
+            SettingsTab::Playback => vec![
                 self.playback_row(cx).into_any_element(),
                 self.gapless_row(cx).into_any_element(),
             ],
-            Tab::Account => vec![self.account_row(cx).into_any_element()],
-            Tab::About => vec![
+            SettingsTab::Account => vec![self.account_row(cx).into_any_element()],
+            SettingsTab::About => vec![
                 self.version_row(cx).into_any_element(),
                 self.license_row(cx).into_any_element(),
                 self.source_row(cx).into_any_element(),
@@ -870,9 +833,8 @@ impl Render for SettingsView {
                     .p_6()
                     .child(self.profile(cx))
                     .child(Separator::horizontal().w_full())
-                    .child(self.tabs(cx))
                     .child(self.panel(cx))
-                    .when(self.tab == Tab::About, |this| {
+                    .when(self.tab == SettingsTab::About, |this| {
                         this.child(self.team(cx)).child(self.notice(cx))
                     }),
             )
