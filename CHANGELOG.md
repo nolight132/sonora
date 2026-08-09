@@ -12,8 +12,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Copy link actions for tracks, albums, playlists and artists.
 - Monthly listeners on the artist page, and play counts beside an artist's popular tracks.
 - Toasts confirming queue and playlist additions.
-- Turning on radio in the queue lists what it will play under a Similar tracks section, picked from
-  the last track in the queue; clicking one plays it straight away.
+- Turning on radio appends what it will play to the queue and lists it under a Similar tracks
+  section, picked from the last track you queued. Those tracks play, reorder and can be removed like
+  any other queue entry.
 - Tooltips on icon-only controls across the player, title bar, toolbar and queue.
 
 ### Changed

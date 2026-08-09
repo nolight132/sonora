@@ -79,7 +79,6 @@ pub struct Playback {
     normalisation: bool,
     repeat: Repeat,
     radio: bool,
-    similar: Vec<Track>,
     seeded: Option<String>,
     task: Option<Task<()>>,
     load: Option<Task<()>>,
@@ -128,7 +127,6 @@ impl Playback {
             normalisation,
             repeat,
             radio: false,
-            similar: Vec::new(),
             seeded: None,
             task: None,
             load: None,
@@ -424,24 +422,21 @@ impl Playback {
         }
     }
 
-    pub fn similar(&self) -> &[Track] {
-        &self.similar
-    }
-
     pub fn play_similar(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index >= self.similar.len() {
-            return;
-        }
-        let track = self.similar.remove(index);
         self.fetch = None;
-        self.queue.update(cx, |queue, cx| queue.prepend(track, cx));
-        self.follow_queue(cx);
+        let Some(track) = self
+            .queue
+            .update(cx, |queue, cx| queue.play_similar(index, cx))
+        else {
+            return;
+        };
+        self.load_after(&track, SKIP_DEBOUNCE, cx);
     }
 
     fn forget_similar(&mut self, cx: &mut Context<Self>) {
-        self.similar.clear();
         self.seeded = None;
         self.suggest = None;
+        self.queue.update(cx, |queue, cx| queue.clear_similar(cx));
         cx.notify();
     }
 
@@ -484,10 +479,8 @@ impl Playback {
             .await;
 
             this.update(cx, |this, cx| match loaded {
-                Ok(tracks) => {
-                    this.similar = tracks;
-                    cx.notify();
-                }
+                Ok(_) if !this.radio => {}
+                Ok(tracks) => this.queue.update(cx, |queue, cx| queue.suggest(tracks, cx)),
                 Err(error) => log::warn!("playback: cannot load similar tracks: {error:#}"),
             })
             .ok();
@@ -523,9 +516,6 @@ impl Playback {
                 }
             }
             _ if self.radio && !self.queue.read(cx).has_next() => {
-                if !self.similar.is_empty() {
-                    return self.follow_similar(cx);
-                }
                 match ended.or_else(|| self.track.clone()) {
                     Some(seed) => self.extend_radio(&seed, cx),
                     None => self.next(cx),
@@ -533,14 +523,6 @@ impl Playback {
             }
             _ => self.next(cx),
         }
-    }
-
-    fn follow_similar(&mut self, cx: &mut Context<Self>) {
-        self.fetch = None;
-        let tracks = std::mem::take(&mut self.similar);
-        self.queue
-            .update(cx, |queue, cx| queue.append_all(tracks, cx));
-        self.follow_queue(cx);
     }
 
     fn extend_radio(&mut self, seed: &Track, cx: &mut Context<Self>) {
@@ -800,7 +782,6 @@ impl Playback {
         self.fetch = None;
         self.enqueue = None;
         self.suggest = None;
-        self.similar.clear();
         self.seeded = None;
         self.blocked_until = None;
         self.engine = None;

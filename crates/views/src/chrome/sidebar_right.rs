@@ -39,12 +39,12 @@ fn section_label(key: &'static str, window: &Window, cx: &App) -> Div {
         .child(eyebrow(i18n::lookup(key, None), cx))
 }
 
-fn track(queue: &Queue, similar: &[Track], position: QueuePosition) -> Option<Track> {
+fn track(queue: &Queue, position: QueuePosition) -> Option<Track> {
     match position {
         QueuePosition::Past(index) => queue.past().nth(index).cloned(),
         QueuePosition::Current => queue.current().cloned(),
         QueuePosition::Upcoming(index) => queue.upcoming().nth(index).cloned(),
-        QueuePosition::Similar(index) => similar.get(index).cloned(),
+        QueuePosition::Similar(index) => queue.similar().nth(index).cloned(),
     }
 }
 
@@ -434,9 +434,27 @@ impl SidebarRight {
         })
         .when_some(similar_index, |this, target| {
             this.press(cx.listener(move |this, _, _, cx| {
-                this.playback
-                    .update(cx, |playback, cx| playback.play_similar(target, cx));
+                if this.queue.read(cx).revision() == queue_revision {
+                    this.playback
+                        .update(cx, |playback, cx| playback.play_similar(target, cx));
+                }
             }))
+            .action(
+                Button::new(("remove-similar-track", index))
+                    .ghost()
+                    .small()
+                    .icon("icons/x.svg")
+                    .tooltip("menu-remove-from-queue")
+                    .tint(theme.muted_foreground)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.queue.update(cx, |queue, cx| {
+                            if queue.revision() == queue_revision {
+                                queue.remove_similar(target, cx);
+                            }
+                        });
+                    })),
+            )
         })
         .when_some(dragged, |this, dragged| {
             this.on_drag(dragged, |dragged, position, _, cx| {
@@ -555,7 +573,6 @@ impl SidebarRight {
 
     fn rows(&self, sections: Sections, cx: &mut Context<Self>) -> gpui::UniformList {
         let queue = self.queue.clone();
-        let playback = self.playback.clone();
         let drop_gap = self.drop_gap;
         let upcoming = sections.upcoming;
 
@@ -565,14 +582,13 @@ impl SidebarRight {
             cx.processor(move |_, range: Range<usize>, window, cx| {
                 let (revision, slots) = {
                     let queue = queue.read(cx);
-                    let similar = playback.read(cx).similar();
                     let slots = range
                         .clone()
                         .map(|index| {
                             let slot = sections.slot(index);
                             let found = match slot {
                                 Slot::Header(_) => None,
-                                Slot::Track(position) => track(queue, similar, position),
+                                Slot::Track(position) => track(queue, position),
                             };
                             (index, slot, found)
                         })
@@ -618,7 +634,7 @@ impl Render for SidebarRight {
             past: queue.past().len(),
             current: queue.current().is_some(),
             upcoming: queue.upcoming().len(),
-            similar: self.playback.read(cx).similar().len(),
+            similar: queue.similar().len(),
         };
         let empty = sections.len() == 0;
         if !cx.has_active_drag() {
