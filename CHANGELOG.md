@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Sonora is on the AUR: `sonora-bin` installs the released binary, `sonora` builds it from source.
+
 ## [0.9.0] - 2026-08-11
 
 ### Added

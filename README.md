@@ -57,9 +57,14 @@ xattr -dr com.apple.quarantine /Applications/Sonora.app
 
 ### Linux
 
+Arch and derivatives, from the AUR:
+
 ```sh
-AUR, COPR, .deb coming soon.
+paru -S sonora-bin        # the released binary
+paru -S sonora            # built from source
 ```
+
+COPR and .deb coming soon.
 
 ### Nix
 Just use the flake in the project root.
