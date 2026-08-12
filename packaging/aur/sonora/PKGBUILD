@@ -1,0 +1,67 @@
+# Maintainer: nolight132 <vatsetmax@proton.me>
+
+pkgname=sonora
+pkgver=0.10.0
+pkgrel=1
+pkgdesc="An unofficial minimal native Spotify client built with GPUI"
+arch=('x86_64' 'aarch64')
+url="https://github.com/nolight132/sonora"
+license=('GPL-3.0-or-later' 'OFL-1.1' 'ISC')
+depends=(
+  'alsa-lib'
+  'dbus'
+  'fontconfig'
+  'gcc-libs'
+  'glibc'
+  'libxcb'
+  'libxkbcommon'
+  'libxkbcommon-x11'
+  'vulkan-driver'
+  'vulkan-icd-loader'
+  'wayland'
+)
+makedepends=(
+  'cargo'
+  'pkgconf'
+)
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('8412588f555efcc4caa06dff2bacde18d6e3494cda542f011acec4f75586e895')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release --package sonora
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --workspace
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+
+  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+
+  install -Dm644 assets/linux/sonora.desktop -t "$pkgdir/usr/share/applications"
+  install -Dm644 assets/linux/sonora.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/sonora.svg"
+  for icon in assets/linux/icons/hicolor/*/apps/sonora.png; do
+    size="$(basename "$(dirname "$(dirname "$icon")")")"
+    install -Dm644 "$icon" "$pkgdir/usr/share/icons/hicolor/$size/apps/sonora.png"
+  done
+
+  install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 THIRD-PARTY.md -t "$pkgdir/usr/share/licenses/$pkgname"
+  install -Dm644 assets/fonts/LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE.Inter"
+  install -Dm644 assets/icons/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE.Lucide"
+}
