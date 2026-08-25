@@ -109,5 +109,5 @@ debug = false
 opt-level = 2
 
 [patch."https://github.com/nolight132/zed"]
-gpui = { git = "https://github.com/nolight132/gpui", rev = "e8d6306158911ffa582bb94894528913e64c7e14" }
-gpui_platform = { git = "https://github.com/nolight132/gpui", rev = "e8d6306158911ffa582bb94894528913e64c7e14" }
+gpui = { path = "/home/sleebu/Projects/Personal/gpui/crates/gpui" }
+gpui_platform = { path = "/home/sleebu/Projects/Personal/gpui/crates/gpui_platform" }

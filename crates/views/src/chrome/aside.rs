@@ -30,6 +30,8 @@ const TAIL_ROWS: usize = 2;
 const BLUR: f32 = 0.07;
 const PAST: f32 = 0.4;
 const REVEAL: f32 = 0.6;
+const KARAOKE_WEIGHT: f32 = 500.;
+const KARAOKE_EMBOLDEN_SHARE: f32 = 0.018;
 const PINNED_SHARE: f32 = 0.25;
 const PIN: f32 = 0.3;
 const SETTLE: std::time::Duration = std::time::Duration::from_secs(4);
@@ -1143,6 +1145,8 @@ fn karaoke_lane(
     theme: &ui::Theme,
 ) -> Div {
     let edge_fade = verse * REVEAL;
+    let weight = FontWeight(KARAOKE_WEIGHT);
+    let rest = px(0.);
     div()
         .flex()
         .flex_wrap()
@@ -1151,9 +1155,12 @@ fn karaoke_lane(
                 let text = SharedString::from(fragment);
                 let (highlight_start, highlight_end) = karaoke_window(line_start, words, index);
                 let highlighted = progress_between(highlight_start, highlight_end, position);
+                let embolden = karaoke_embolden(highlighted, verse);
                 div()
                     .relative()
                     .whitespace_nowrap()
+                    .font_weight(weight)
+                    .msdf_text(rest)
                     .child(text.clone())
                     .when(highlighted > 0., |this| {
                         this.child(
@@ -1166,11 +1173,15 @@ fn karaoke_lane(
                                 .overflow_hidden()
                                 .text_color(theme.foreground)
                                 .when(highlighted < 1., |this| this.fade_sides(px(0.), edge_fade))
-                                .child(div().whitespace_nowrap().child(text)),
+                                .child(div().whitespace_nowrap().msdf_text(embolden).child(text)),
                         )
                     })
             },
         ))
+}
+
+fn karaoke_embolden(progress: f32, verse: Pixels) -> Pixels {
+    verse * KARAOKE_EMBOLDEN_SHARE * progress.clamp(0., 1.)
 }
 
 fn secondary_lyrics_lane(
@@ -1428,7 +1439,7 @@ mod tests {
     use music::{LyricsLine, LyricsWord};
 
     use super::{
-        QueuePosition, Sections, Slot, active_lyrics_row, anchored_lyrics_offset,
+        QueuePosition, Sections, Slot, active_lyrics_row, anchored_lyrics_offset, karaoke_embolden,
         karaoke_fragments, karaoke_window, line_has_passed, line_row, lyric_row_count,
     };
     use gpui::px;
@@ -1632,6 +1643,14 @@ mod tests {
                 "night"
             ]
         );
+    }
+
+    #[test]
+    fn karaoke_embolden_progress_is_bounded() {
+        let verse = px(20.);
+        assert_eq!(karaoke_embolden(-1., verse), px(0.));
+        assert!((karaoke_embolden(0.5, verse) - px(0.18)).abs() < px(0.001));
+        assert!((karaoke_embolden(2., verse) - px(0.36)).abs() < px(0.001));
     }
 
     #[test]

@@ -93,6 +93,8 @@ impl Element for Text {
             len: text.len(),
             font: style.font(),
             color,
+            glyph_render_mode: style.glyph_render_mode,
+            text_embolden: style.text_embolden,
             background_color: None,
             underline: None,
             strikethrough: None,
