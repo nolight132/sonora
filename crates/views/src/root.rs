@@ -482,7 +482,7 @@ impl Render for Root {
         div()
             .relative()
             .flex()
-            .font(font("Inter"))
+            .font(font("Inter Variable"))
             .flex_col()
             .size_full()
             .bg(theme.background)
