@@ -831,9 +831,16 @@ impl Aside {
                     let dimming = (animations && Some(index) == self.departing_line)
                         .then_some(self.departure);
 
-                    let primary = match (primary_karaoke, line.words.as_ref()) {
+                    let primary = match (primary_karaoke_capable, line.words.as_ref()) {
                         (true, Some(words)) => karaoke_lane(
-                            &line.text, line.start, words, position, verse, line.voice, sung,
+                            &line.text,
+                            line.start,
+                            words,
+                            position,
+                            verse,
+                            primary_karaoke,
+                            line.voice,
+                            sung,
                         )
                         .into_any_element(),
                         _ => div().child(text).into_any_element(),
@@ -1247,6 +1254,7 @@ fn karaoke_lane(
     words: &[music::LyricsWord],
     position: std::time::Duration,
     verse: Pixels,
+    active: bool,
     voice: Voice,
     sung: Sung,
 ) -> Div {
@@ -1264,7 +1272,11 @@ fn karaoke_lane(
                 let text = SharedString::from(fragment);
                 let (highlight_start, highlight_end) = karaoke_window(line_start, words, index);
                 let tail = index + 1 >= words.len();
-                let highlighted = swept(highlight_start, highlight_end, position, tail, sung.sweep);
+                let highlighted = if active {
+                    swept(highlight_start, highlight_end, position, tail, sung.sweep)
+                } else {
+                    0.
+                };
                 let landing = ((1. - highlighted) / LANDING).min(1.);
                 let embolden = karaoke_embolden(highlighted, verse);
                 div()
@@ -1323,11 +1335,12 @@ fn secondary_lyrics_lane(
         (false, false, false) => theme.muted_foreground,
     };
     let size = theme.text(Text::Body);
+    let karaoke_capable = sung.karaoke && lane.worded();
     let lyrics = div()
         .text_size(size)
-        .map(|this| match (karaoke, lane.words.as_ref()) {
+        .map(|this| match (karaoke_capable, lane.words.as_ref()) {
             (true, Some(words)) => this.child(karaoke_lane(
-                &lane.text, lane.start, words, position, size, voice, sung,
+                &lane.text, lane.start, words, position, size, karaoke, voice, sung,
             )),
             _ => this.child(SharedString::from(lane.text.clone())),
         });
