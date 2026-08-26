@@ -667,10 +667,13 @@ impl Aside {
         };
         let mut body: Vec<gpui::AnyElement> = match (&lines, &state) {
             (Some(lines), _) => {
-                if singing && karaoke_effects && lines.iter().any(|line| line.worded()) {
+                let active_line = music::lyrics::active(lines, position);
+                let active_karaoke = active_line
+                    .and_then(|index| lines.get(index))
+                    .is_some_and(|line| line.worded());
+                if singing && karaoke_effects && active_karaoke {
                     window.request_animation_frame();
                 }
-                let active_line = music::lyrics::active(lines, position);
                 if self.previous_active_line != active_line {
                     self.departing_line = self.previous_active_line;
                     self.previous_active_line = active_line;
@@ -720,13 +723,15 @@ impl Aside {
                     }
 
                     let text = SharedString::from(line.text.clone());
-                    let near = index == focus_line || index == focus_line + 1;
+                    let near = index == focus_line || index == focus_line.saturating_add(1);
                     let hazed = !near;
                     let waking = self.hovered == Some(index);
                     let settling = self.fading == Some(index);
                     let karaoke = Some(index) == active_line && line.worded() && karaoke_effects;
                     let primary_karaoke_capable = karaoke_effects
                         && line.words.as_ref().is_some_and(|words| !words.is_empty());
+                    let karaoke_prepared = karaoke_effects
+                        && prepares_karaoke_line(index, focus_line, self.departing_line);
                     let primary_karaoke = karaoke && primary_karaoke_capable;
                     let line_has_ended = line_has_passed(line, position);
                     let tint = match (Some(index) == active_line, line_has_ended) {
@@ -736,7 +741,10 @@ impl Aside {
                         (false, false) => theme.muted_foreground,
                     };
 
-                    let primary = match (primary_karaoke_capable, line.words.as_ref()) {
+                    let primary = match (
+                        primary_karaoke_capable && karaoke_prepared,
+                        line.words.as_ref(),
+                    ) {
                         (true, Some(words)) => karaoke_lane(
                             &line.text,
                             line.start,
@@ -763,7 +771,7 @@ impl Aside {
                                 lane,
                                 Some(index) == active_line,
                                 position,
-                                karaoke_effects,
+                                karaoke_prepared,
                                 romanization_scripts,
                                 &theme,
                             )
@@ -1205,6 +1213,10 @@ fn karaoke_embolden(progress: f32, verse: Pixels) -> Pixels {
     verse * KARAOKE_EMBOLDEN_SHARE * progress.clamp(0., 1.)
 }
 
+fn prepares_karaoke_line(index: usize, focus: usize, departing: Option<usize>) -> bool {
+    index == focus || index == focus.saturating_add(1) || departing == Some(index)
+}
+
 fn secondary_lyrics_lane(
     lane: &music::LyricsLane,
     line_active: bool,
@@ -1461,6 +1473,7 @@ mod tests {
     use super::{
         QueuePosition, Sections, Slot, active_lyrics_row, anchored_lyrics_offset, karaoke_embolden,
         karaoke_fragments, karaoke_window, line_has_passed, line_row, lyric_row_count,
+        prepares_karaoke_line,
     };
     use gpui::px;
 
@@ -1671,6 +1684,15 @@ mod tests {
         assert_eq!(karaoke_embolden(-1., verse), px(0.));
         assert!((karaoke_embolden(0.5, verse) - px(0.18)).abs() < px(0.001));
         assert!((karaoke_embolden(2., verse) - px(0.36)).abs() < px(0.001));
+    }
+
+    #[test]
+    fn karaoke_prepares_only_focus_next_and_departing_lines() {
+        assert!(prepares_karaoke_line(4, 4, Some(2)));
+        assert!(prepares_karaoke_line(5, 4, Some(2)));
+        assert!(prepares_karaoke_line(2, 4, Some(2)));
+        assert!(!prepares_karaoke_line(3, 4, Some(2)));
+        assert!(!prepares_karaoke_line(6, 4, Some(2)));
     }
 
     #[test]
