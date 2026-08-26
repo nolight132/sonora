@@ -17,7 +17,7 @@ use state::{
 use ui::{
     ActiveTheme as _, Button, Card, DraggedPin, Edge, Motion, Motioned as _, Pin, PinKind,
     Pinnable as _, Popup, Scrollbar, Scroller, Spot, Sweep, Text, drop_gap, drop_marker,
-    ease_out_quad, eyebrow, mix, snapped, vacant,
+    ease_out_expo, eyebrow, mix, snapped, vacant,
 };
 
 use crate::chrome::{Chrome, section_label};
@@ -963,7 +963,7 @@ impl Aside {
                         (true, _) => verse_line
                             .with_animation(
                                 ("verse-activate", self.arrival as usize),
-                                Animation::new(Motion::Base.span()).with_easing(ease_out_quad),
+                                Animation::new(Motion::Base.span()).with_easing(ease_out_expo),
                                 move |this, t| {
                                     let this = this.text_size(verse + ACTIVE_VERSE_GROWTH * t);
                                     match karaoke {
@@ -976,7 +976,7 @@ impl Aside {
                         (_, true) => verse_line
                             .with_animation(
                                 ("verse-deactivate", self.departure as usize),
-                                Animation::new(Motion::Base.span()).with_easing(ease_out_quad),
+                                Animation::new(Motion::Base.span()).with_easing(ease_out_expo),
                                 move |this, t| {
                                     this.text_size(active_size - ACTIVE_VERSE_GROWTH * t)
                                         .text_color(mix(lit, tint, t))
