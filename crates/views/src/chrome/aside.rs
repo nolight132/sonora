@@ -865,15 +865,15 @@ impl Aside {
                             |this, text| this.child(romanized_lyrics_lane(text, &theme)),
                         )
                         .children(line.secondary.iter().map(|lane| {
-                            let lit_at_end = line.sung_end().is_some_and(|end| {
-                                lane.start <= end && lane.sung_end().is_none_or(|sung| sung >= end)
-                            });
+                            let sung_by_end = line
+                                .sung_end()
+                                .is_some_and(|end| secondary_lane_started(lane, end));
                             secondary_lyrics_lane(
                                 lane,
                                 Some(index) == active_line,
                                 line_has_ended,
                                 position,
-                                dimming.filter(|_| lit_at_end),
+                                dimming.filter(|_| sung_by_end),
                                 line.voice,
                                 Sung {
                                     karaoke: karaoke_prepared,
@@ -1363,7 +1363,8 @@ fn secondary_lyrics_lane(
     let active =
         line_active && position >= lane.start && lane.sung_end().is_none_or(|end| position < end);
     let passed = line_passed || lane.sung_end().is_some_and(|end| position >= end);
-    let karaoke = active && sung.karaoke && lane.worded();
+    let karaoke =
+        secondary_karaoke_visible(lane, line_active, position) && sung.karaoke && lane.worded();
     let tint = match (active, passed, karaoke) {
         (_, _, true) => theme.muted_foreground,
         (true, _, false) => theme.foreground,
@@ -1399,6 +1400,18 @@ fn secondary_lyrics_lane(
             |this, text| this.child(romanized_lyrics_lane(text, theme)),
         )
         .into_any_element()
+}
+
+fn secondary_lane_started(lane: &music::LyricsLane, position: std::time::Duration) -> bool {
+    position >= lane.start
+}
+
+fn secondary_karaoke_visible(
+    lane: &music::LyricsLane,
+    line_active: bool,
+    position: std::time::Duration,
+) -> bool {
+    line_active && secondary_lane_started(lane, position)
 }
 
 fn selected_romanization(
@@ -1648,12 +1661,13 @@ fn wordless(key: &'static str, icon: &'static str, cx: &App) -> gpui::AnyElement
 mod tests {
     use std::time::Duration;
 
-    use music::{LyricsLine, LyricsWord, Voice};
+    use music::{LyricsLane, LyricsLine, LyricsWord, Voice};
 
     use super::{
         QueuePosition, Sections, Slot, active_lyrics_row, active_verse_size,
         anchored_lyrics_offset, karaoke_embolden, karaoke_fragments, karaoke_window,
         line_has_passed, line_row, lyric_row_count, prepares_karaoke_line,
+        secondary_karaoke_visible,
     };
     use gpui::px;
 
@@ -1882,6 +1896,42 @@ mod tests {
     #[test]
     fn active_verse_size_adds_two_pixels() {
         assert_eq!(active_verse_size(px(20.)), px(22.));
+    }
+
+    #[test]
+    fn a_finished_background_lane_stays_sung_until_its_line_departs() {
+        let lane = LyricsLane {
+            start: Duration::from_secs(2),
+            end: Some(Duration::from_secs(3)),
+            text: "(E)".to_owned(),
+            romanized: None,
+            words: Some(vec![LyricsWord {
+                start: Duration::from_secs(2),
+                end: Duration::from_secs(3),
+                text: "(E)".to_owned(),
+            }]),
+        };
+
+        assert!(!secondary_karaoke_visible(
+            &lane,
+            true,
+            Duration::from_millis(1999)
+        ));
+        assert!(secondary_karaoke_visible(
+            &lane,
+            true,
+            Duration::from_secs(2)
+        ));
+        assert!(secondary_karaoke_visible(
+            &lane,
+            true,
+            Duration::from_secs(4)
+        ));
+        assert!(!secondary_karaoke_visible(
+            &lane,
+            false,
+            Duration::from_secs(4)
+        ));
     }
 
     #[test]
