@@ -301,13 +301,21 @@ fn tighten(words: &mut Option<Vec<LyricsWord>>, text: &mut String) {
     match words {
         Some(words) if spaced => {
             let mut trailing = true;
-            for word in words.iter_mut() {
-                let mut tidied = squeezed(&word.text);
+            for index in 0..words.len() {
+                let mut tidied = unspace_punctuation(&squeezed(&words[index].text));
                 if trailing && tidied.starts_with(' ') {
                     tidied.remove(0);
                 }
+                if tidied.chars().next().is_some_and(closing_punctuation)
+                    && let Some(previous) = words[..index]
+                        .iter_mut()
+                        .rev()
+                        .find(|word| !word.text.is_empty())
+                {
+                    previous.text = previous.text.trim_end().to_owned();
+                }
                 trailing = tidied.ends_with(' ');
-                word.text = tidied;
+                words[index].text = tidied;
             }
             if let Some(last) = words.last_mut()
                 && last.text.ends_with(' ')
@@ -316,8 +324,33 @@ fn tighten(words: &mut Option<Vec<LyricsWord>>, text: &mut String) {
             }
             *text = words.iter().map(|word| word.text.as_str()).collect();
         }
-        _ => *text = squeezed(text).trim().to_owned(),
+        _ => *text = unspace_punctuation(&squeezed(text)).trim().to_owned(),
     }
+}
+
+fn unspace_punctuation(text: &str) -> String {
+    let mut tightened = String::with_capacity(text.len());
+    let mut spacing = String::new();
+    for letter in text.chars() {
+        if letter.is_whitespace() {
+            spacing.push(letter);
+            continue;
+        }
+        if !closing_punctuation(letter) {
+            tightened.push_str(&spacing);
+        }
+        spacing.clear();
+        tightened.push(letter);
+    }
+    tightened.push_str(&spacing);
+    tightened
+}
+
+fn closing_punctuation(letter: char) -> bool {
+    matches!(
+        letter,
+        ')' | ']' | '}' | ',' | '.' | '!' | '?' | ';' | ':' | '%'
+    )
 }
 
 fn squeezed(text: &str) -> String {
@@ -792,6 +825,50 @@ mod tests {
             lines[0].secondary[0].sung_end(),
             Some(Duration::from_millis(2500))
         );
+    }
+
+    #[test]
+    fn removing_an_inline_background_lane_closes_the_punctuation_gap() {
+        let mut lines = vec![LyricsLine {
+            start: Duration::from_secs(1),
+            end: Some(Duration::from_secs(4)),
+            text: "Может, я murder (E), они все".to_owned(),
+            romanized: None,
+            words: Some(vec![
+                LyricsWord {
+                    start: Duration::from_secs(1),
+                    end: Duration::from_secs(2),
+                    text: "Может, я murder ".to_owned(),
+                },
+                LyricsWord {
+                    start: Duration::from_secs(2),
+                    end: Duration::from_millis(2500),
+                    text: "(E)".to_owned(),
+                },
+                LyricsWord {
+                    start: Duration::from_millis(2500),
+                    end: Duration::from_secs(4),
+                    text: ", они все".to_owned(),
+                },
+            ]),
+            secondary: Vec::new(),
+            voice: Voice::Lead,
+        }];
+
+        normalize(&mut lines);
+
+        assert_eq!(lines[0].text, "Может, я murder, они все");
+        assert_eq!(
+            lines[0]
+                .words
+                .as_ref()
+                .expect("timed primary words")
+                .iter()
+                .map(|word| word.text.as_str())
+                .collect::<String>(),
+            lines[0].text
+        );
+        assert_eq!(lines[0].secondary[0].text, "(E)");
     }
 
     #[test]
