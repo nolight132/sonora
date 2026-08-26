@@ -29,7 +29,6 @@ const REST: f32 = FADE * 0.75;
 const TAIL_ROWS: usize = 2;
 const BLUR: f32 = 0.07;
 const PAST: f32 = 0.4;
-const REVEAL: f32 = 0.6;
 const KARAOKE_WEIGHT: f32 = 500.;
 const KARAOKE_EMBOLDEN_SHARE: f32 = 0.018;
 const PINNED_SHARE: f32 = 0.25;
@@ -726,7 +725,9 @@ impl Aside {
                     let waking = self.hovered == Some(index);
                     let settling = self.fading == Some(index);
                     let karaoke = Some(index) == active_line && line.worded() && karaoke_effects;
-                    let primary_karaoke = karaoke && line.words.is_some();
+                    let primary_karaoke_capable = karaoke_effects
+                        && line.words.as_ref().is_some_and(|words| !words.is_empty());
+                    let primary_karaoke = karaoke && primary_karaoke_capable;
                     let line_has_ended = line_has_passed(line, position);
                     let tint = match (Some(index) == active_line, line_has_ended) {
                         (true, _) if primary_karaoke => theme.muted_foreground,
@@ -771,9 +772,13 @@ impl Aside {
                         .hover(|style| style.bg(theme.table_hover))
                         .text_size(verse)
                         .text_color(tint)
-                        .when(Some(index) == active_line, |this| {
-                            this.font_weight(FontWeight::SEMIBOLD)
+                        .when(primary_karaoke_capable, |this| {
+                            this.font_weight(FontWeight(KARAOKE_WEIGHT))
                         })
+                        .when(
+                            Some(index) == active_line && !primary_karaoke_capable,
+                            |this| this.font_weight(FontWeight::SEMIBOLD),
+                        )
                         .on_hover(cx.listener(move |this, over: &bool, _, cx| {
                             this.set_hovered(index, *over, cx)
                         }))
@@ -1144,7 +1149,6 @@ fn karaoke_lane(
     verse: Pixels,
     theme: &ui::Theme,
 ) -> Div {
-    let edge_fade = verse * REVEAL;
     let weight = FontWeight(KARAOKE_WEIGHT);
     let rest = px(0.);
     div()
@@ -1156,12 +1160,39 @@ fn karaoke_lane(
                 let (highlight_start, highlight_end) = karaoke_window(line_start, words, index);
                 let highlighted = progress_between(highlight_start, highlight_end, position);
                 let embolden = karaoke_embolden(highlighted, verse);
+                let remainder = 1. - highlighted;
                 div()
                     .relative()
                     .whitespace_nowrap()
                     .font_weight(weight)
-                    .msdf_text(rest)
-                    .child(text.clone())
+                    .child(
+                        div()
+                            .whitespace_nowrap()
+                            .invisible()
+                            .msdf_text(rest)
+                            .child(text.clone()),
+                    )
+                    .when(remainder > 0., |this| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .left(relative(highlighted))
+                                .right_0()
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top_0()
+                                        .left(relative(-highlighted / remainder))
+                                        .w(relative(1. / remainder))
+                                        .whitespace_nowrap()
+                                        .msdf_text(rest)
+                                        .child(text.clone()),
+                                ),
+                        )
+                    })
                     .when(highlighted > 0., |this| {
                         this.child(
                             div()
@@ -1172,7 +1203,6 @@ fn karaoke_lane(
                                 .w(relative(highlighted))
                                 .overflow_hidden()
                                 .text_color(theme.foreground)
-                                .when(highlighted < 1., |this| this.fade_sides(px(0.), edge_fade))
                                 .child(
                                     div()
                                         .whitespace_nowrap()
