@@ -139,6 +139,8 @@ pub fn text_width(text: impl Into<SharedString>, window: &Window) -> Pixels {
         len: text.len(),
         font: style.font(),
         color: style.color,
+        glyph_render_mode: style.glyph_render_mode,
+        text_embolden: style.text_embolden,
         background_color: None,
         underline: None,
         strikethrough: None,
