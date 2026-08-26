@@ -1266,7 +1266,7 @@ fn karaoke_lane(
                     .relative()
                     .whitespace_nowrap()
                     .font_weight(weight)
-                    .msdf_text(rest)
+                    .msdf_text_horizontal(rest)
                     .child(text.clone())
                     .when(highlighted > 0., |this| {
                         this.child(
@@ -1281,7 +1281,12 @@ fn karaoke_lane(
                                 .when(highlighted < 1., |this| {
                                     this.fade_sides(px(0.), edge_fade * landing)
                                 })
-                                .child(div().whitespace_nowrap().msdf_text(embolden).child(text)),
+                                .child(
+                                    div()
+                                        .whitespace_nowrap()
+                                        .msdf_text_horizontal(embolden)
+                                        .child(text),
+                                ),
                         )
                     })
             },
