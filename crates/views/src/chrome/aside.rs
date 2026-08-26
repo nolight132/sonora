@@ -29,6 +29,7 @@ const REST: f32 = FADE * 0.75;
 const TAIL_ROWS: usize = 2;
 const BLUR: f32 = 0.07;
 const PAST: f32 = 0.4;
+const REVEAL: f32 = 0.6;
 const KARAOKE_WEIGHT: f32 = 500.;
 const KARAOKE_EMBOLDEN_SHARE: f32 = 0.018;
 const PINNED_SHARE: f32 = 0.25;
@@ -1266,39 +1267,12 @@ fn karaoke_lane(
                 let highlighted = swept(highlight_start, highlight_end, position, tail, sung.sweep);
                 let landing = ((1. - highlighted) / LANDING).min(1.);
                 let embolden = karaoke_embolden(highlighted, verse);
-                let remainder = 1. - highlighted;
                 div()
                     .relative()
                     .whitespace_nowrap()
                     .font_weight(weight)
-                    .child(
-                        div()
-                            .whitespace_nowrap()
-                            .invisible()
-                            .msdf_text_horizontal(rest)
-                            .child(text.clone()),
-                    )
-                    .when(remainder > 0., |this| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .bottom_0()
-                                .left(relative(highlighted))
-                                .right_0()
-                                .overflow_hidden()
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top_0()
-                                        .left(relative(-highlighted / remainder))
-                                        .w(relative(1. / remainder))
-                                        .whitespace_nowrap()
-                                        .msdf_text_horizontal(rest)
-                                        .child(text.clone()),
-                                ),
-                        )
-                    })
+                    .msdf_text_horizontal(rest)
+                    .child(text.clone())
                     .when(highlighted > 0., |this| {
                         this.child(
                             div()
