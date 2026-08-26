@@ -32,9 +32,7 @@ const TAIL_ROWS: usize = 2;
 const BLUR: f32 = 0.07;
 const PAST: f32 = 0.4;
 const REVEAL: f32 = 0.6;
-const KARAOKE_BASE_WEIGHT: f32 = 600.;
-const KARAOKE_SUNG_WEIGHT: f32 = 750.;
-const KARAOKE_WEIGHT_STEP: f32 = 5.;
+const KARAOKE_ACTIVE_WEIGHT: FontWeight = FontWeight(625.);
 const ACTIVE_VERSE_GROWTH: Pixels = px(2.);
 const LYRICS_HORIZONTAL_INSET_REM: f32 = 1.5;
 const PINNED_SHARE: f32 = 0.25;
@@ -919,7 +917,7 @@ impl Aside {
                         .hover(|style| style.bg(theme.table_hover))
                         .text_size(verse)
                         .text_color(tint)
-                        .when(Some(index) == active_line, |this| {
+                        .when(Some(index) == active_line && !primary_karaoke, |this| {
                             this.font_weight(FontWeight::SEMIBOLD)
                         })
                         .on_hover(cx.listener(move |this, over: &bool, _, cx| {
@@ -1349,7 +1347,7 @@ fn karaoke_lane(
                         .w(relative(highlighted))
                         .overflow_hidden()
                         .text_color(theme.foreground)
-                        .font_weight(karaoke_weight(highlighted))
+                        .font_weight(KARAOKE_ACTIVE_WEIGHT)
                         .when(highlighted < 1., |this| {
                             this.fade_sides(px(0.), edge_fade * landing)
                         })
@@ -1376,12 +1374,6 @@ fn karaoke_lane(
             .when(!voice.lead(), |this| this.justify_end())
             .children((0..fragments.len()).map(fragment)),
     }
-}
-
-fn karaoke_weight(progress: f32) -> FontWeight {
-    let progress = progress.clamp(0., 1.);
-    let weight = KARAOKE_BASE_WEIGHT + (KARAOKE_SUNG_WEIGHT - KARAOKE_BASE_WEIGHT) * progress;
-    FontWeight((weight / KARAOKE_WEIGHT_STEP).round() * KARAOKE_WEIGHT_STEP)
 }
 
 fn secondary_lyrics_lane(
@@ -1773,8 +1765,8 @@ mod tests {
 
     use super::{
         QueuePosition, Sections, Slot, active_lyrics_row, anchored_lyrics_offset,
-        karaoke_fragments, karaoke_weight, karaoke_window, line_has_passed, line_row,
-        lyric_row_count, plain_lyrics_fragments, secondary_karaoke_visible, wrap_fragment_widths,
+        karaoke_fragments, karaoke_window, line_has_passed, line_row, lyric_row_count,
+        plain_lyrics_fragments, secondary_karaoke_visible, wrap_fragment_widths,
     };
     use gpui::px;
 
@@ -1981,19 +1973,6 @@ mod tests {
                 "night"
             ]
         );
-    }
-
-    #[test]
-    fn karaoke_weight_interpolates_the_variable_axis() {
-        assert_eq!(karaoke_weight(-1.), gpui::FontWeight(600.));
-        assert_eq!(karaoke_weight(0.5), gpui::FontWeight(675.));
-        assert_eq!(karaoke_weight(2.), gpui::FontWeight(750.));
-
-        let mut weights = (0..=1000)
-            .map(|step| karaoke_weight(step as f32 / 1000.).0)
-            .collect::<Vec<_>>();
-        weights.dedup();
-        assert_eq!(weights.len(), 31);
     }
 
     #[test]
