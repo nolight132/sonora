@@ -1173,7 +1173,12 @@ fn karaoke_lane(
                                 .overflow_hidden()
                                 .text_color(theme.foreground)
                                 .when(highlighted < 1., |this| this.fade_sides(px(0.), edge_fade))
-                                .child(div().whitespace_nowrap().msdf_text(embolden).child(text)),
+                                .child(
+                                    div()
+                                        .whitespace_nowrap()
+                                        .msdf_text_horizontal(embolden)
+                                        .child(text),
+                                ),
                         )
                     })
             },
