@@ -321,4 +321,12 @@ mod tests {
             previous = value;
         }
     }
+
+    #[test]
+    fn quad_easing_matches_css_curve() {
+        assert_eq!(ease_out_quad(0.), 0.);
+        assert_eq!(ease_out_quad(1.), 1.);
+        assert!(ease_out_quad(0.25) > 0.4);
+        assert!(ease_out_quad(0.5) > 0.7);
+    }
 }
