@@ -737,11 +737,17 @@ impl Aside {
                         (false, false) => theme.muted_foreground,
                     };
 
-                    let primary = match (primary_karaoke, line.words.as_ref()) {
-                        (true, Some(words)) => {
-                            karaoke_lane(&line.text, line.start, words, position, verse, &theme)
-                                .into_any_element()
-                        }
+                    let primary = match (primary_karaoke_capable, line.words.as_ref()) {
+                        (true, Some(words)) => karaoke_lane(
+                            &line.text,
+                            line.start,
+                            words,
+                            position,
+                            verse,
+                            primary_karaoke,
+                            &theme,
+                        )
+                        .into_any_element(),
                         _ => div().child(text).into_any_element(),
                     };
                     let content = div()
@@ -1148,6 +1154,7 @@ fn karaoke_lane(
     words: &[music::LyricsWord],
     position: std::time::Duration,
     verse: Pixels,
+    active: bool,
     theme: &ui::Theme,
 ) -> Div {
     let edge_fade = verse * REVEAL;
@@ -1160,7 +1167,11 @@ fn karaoke_lane(
             |(index, fragment)| {
                 let text = SharedString::from(fragment);
                 let (highlight_start, highlight_end) = karaoke_window(line_start, words, index);
-                let highlighted = progress_between(highlight_start, highlight_end, position);
+                let highlighted = if active {
+                    progress_between(highlight_start, highlight_end, position)
+                } else {
+                    0.
+                };
                 let embolden = karaoke_embolden(highlighted, verse);
                 div()
                     .relative()
@@ -1214,16 +1225,15 @@ fn secondary_lyrics_lane(
         (false, false, false) => theme.muted_foreground,
     };
     let size = theme.text(Text::Body);
-    let lyrics =
-        div()
-            .text_size(size)
-            .text_color(tint)
-            .map(|this| match (karaoke, lane.words.as_ref()) {
-                (true, Some(words)) => this.child(karaoke_lane(
-                    &lane.text, lane.start, words, position, size, theme,
-                )),
-                _ => this.child(SharedString::from(lane.text.clone())),
-            });
+    let karaoke_capable = karaoke_enabled && lane.worded();
+    let lyrics = div().text_size(size).text_color(tint).map(|this| {
+        match (karaoke_capable, lane.words.as_ref()) {
+            (true, Some(words)) => this.child(karaoke_lane(
+                &lane.text, lane.start, words, position, size, karaoke, theme,
+            )),
+            _ => this.child(SharedString::from(lane.text.clone())),
+        }
+    });
     div().flex().flex_col().child(lyrics).when_some(
         selected_romanization(&lane.romanized, romanization_scripts),
         |this, text| this.child(romanized_lyrics_lane(text, theme)),
