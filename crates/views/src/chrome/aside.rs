@@ -5,8 +5,7 @@ use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt as _, App, Context, Div, DragMoveEvent, Entity, FontWeight,
     MouseDownEvent, Pixels, Point, Render, ScrollHandle, ScrollStrategy, ScrollWheelEvent,
-    SharedString, Task, UniformListScrollHandle, Window, div, ease_in_out, px, relative, svg,
-    uniform_list,
+    SharedString, Task, UniformListScrollHandle, Window, div, ease_in_out, px, svg, uniform_list,
 };
 use i18n::t;
 use music::{Track, Voice};
@@ -32,7 +31,7 @@ const TAIL_ROWS: usize = 2;
 const BLUR: f32 = 0.07;
 const PAST: f32 = 0.4;
 const REVEAL: f32 = 0.6;
-const KARAOKE_ACTIVE_WEIGHT: FontWeight = FontWeight(625.);
+const KARAOKE_EMBOLDEN_SHARE: f32 = 0.0175;
 const ACTIVE_VERSE_GROWTH: Pixels = px(2.);
 const LYRICS_HORIZONTAL_INSET_REM: f32 = 1.5;
 const PINNED_SHARE: f32 = 0.25;
@@ -747,10 +746,16 @@ impl Aside {
 
         let mut body: Vec<gpui::AnyElement> = match (&lines, &state) {
             (Some(lines), _) => {
-                if singing && karaoke_effects && lines.iter().any(|line| line.worded()) {
+                let active_line = sung_line(lines, position);
+                if singing
+                    && karaoke_effects
+                    && active_line.is_some_and(|index| {
+                        let line = &lines[index];
+                        line.worded() || line.secondary.iter().any(music::LyricsLane::worded)
+                    })
+                {
                     window.request_animation_frame();
                 }
-                let active_line = sung_line(lines, position);
                 if self.previous_active_line != active_line {
                     if self.previous_active_line.is_some() {
                         self.departing_line = self.previous_active_line;
@@ -862,19 +867,20 @@ impl Aside {
                     let dimming = (animations && Some(index) == self.departing_line)
                         .then_some(self.departure);
 
-                    let primary = match (primary_karaoke, line.words.as_ref(), primary_rows) {
-                        (true, Some(words), Some(rows)) => karaoke_lane(
+                    let primary = match (line.words.as_ref(), primary_rows) {
+                        (Some(words), Some(rows)) if primary_karaoke => karaoke_lane(
                             &line.text,
                             line.start,
                             words,
                             position,
                             verse,
+                            primary_karaoke,
                             line.voice,
                             sung,
                             Some(rows),
                         )
                         .into_any_element(),
-                        (_, _, Some(rows)) => {
+                        (_, Some(rows)) => {
                             fixed_lyrics_lane(&fragments, &rows, line.voice).into_any_element()
                         }
                         _ => div().child(text).into_any_element(),
@@ -1320,6 +1326,7 @@ fn karaoke_lane(
     words: &[music::LyricsWord],
     position: std::time::Duration,
     verse: Pixels,
+    active: bool,
     voice: Voice,
     sung: Sung,
     rows: Option<Vec<Range<usize>>>,
@@ -1331,29 +1338,21 @@ fn karaoke_lane(
         let text = SharedString::from(fragments[index].clone());
         let (highlight_start, highlight_end) = karaoke_window(line_start, words, index);
         let tail = index + 1 >= words.len();
-        let highlighted = swept(highlight_start, highlight_end, position, tail);
+        let highlighted = if active {
+            swept(highlight_start, highlight_end, position, tail)
+        } else {
+            0.
+        };
         let landing = ((1. - highlighted) / LANDING).min(1.);
         div()
-            .relative()
             .whitespace_nowrap()
-            .child(text.clone())
-            .when(highlighted > 0., |this| {
-                this.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .top_0()
-                        .bottom_0()
-                        .w(relative(highlighted))
-                        .overflow_hidden()
-                        .text_color(theme.foreground)
-                        .font_weight(KARAOKE_ACTIVE_WEIGHT)
-                        .when(highlighted < 1., |this| {
-                            this.fade_sides(px(0.), edge_fade * landing)
-                        })
-                        .child(div().whitespace_nowrap().child(text)),
-                )
-            })
+            .raster_text_sweep(
+                theme.foreground,
+                highlighted,
+                edge_fade * landing,
+                verse * KARAOKE_EMBOLDEN_SHARE,
+            )
+            .child(text)
     };
 
     match rows {
@@ -1398,12 +1397,11 @@ fn secondary_lyrics_lane(
         (false, false, false) => theme.muted_foreground,
     };
     let size = theme.text(Text::Body);
-    let karaoke_capable = sung.karaoke && lane.worded();
     let lyrics = div()
         .text_size(size)
-        .map(|this| match (karaoke_capable, lane.words.as_ref()) {
+        .map(|this| match (karaoke, lane.words.as_ref()) {
             (true, Some(words)) => this.child(karaoke_lane(
-                &lane.text, lane.start, words, position, size, voice, sung, None,
+                &lane.text, lane.start, words, position, size, karaoke, voice, sung, None,
             )),
             _ => this.child(SharedString::from(lane.text.clone())),
         });
