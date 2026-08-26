@@ -720,6 +720,7 @@ impl Aside {
             true => theme.text(Text::Large),
             false => theme.text(Text::Title),
         };
+        let karaoke_highlight_y = px(1.) / window.scale_factor();
 
         let mut body: Vec<gpui::AnyElement> = match (&lines, &state) {
             (Some(lines), _) => {
@@ -839,6 +840,7 @@ impl Aside {
                             position,
                             verse,
                             primary_karaoke,
+                            karaoke_highlight_y,
                             line.voice,
                             sung,
                         )
@@ -865,6 +867,7 @@ impl Aside {
                                 line_has_ended,
                                 position,
                                 dimming.filter(|_| lit_at_end),
+                                karaoke_highlight_y,
                                 line.voice,
                                 sung,
                             )
@@ -1255,6 +1258,7 @@ fn karaoke_lane(
     position: std::time::Duration,
     verse: Pixels,
     active: bool,
+    highlight_y: Pixels,
     voice: Voice,
     sung: Sung,
 ) -> Div {
@@ -1290,8 +1294,8 @@ fn karaoke_lane(
                             div()
                                 .absolute()
                                 .left_0()
-                                .top_0()
-                                .bottom_0()
+                                .top(highlight_y)
+                                .bottom(-highlight_y)
                                 .w(relative(highlighted))
                                 .overflow_hidden()
                                 .text_color(theme.foreground)
@@ -1320,6 +1324,7 @@ fn secondary_lyrics_lane(
     line_passed: bool,
     position: std::time::Duration,
     dimming: Option<u64>,
+    highlight_y: Pixels,
     voice: Voice,
     sung: Sung,
 ) -> gpui::AnyElement {
@@ -1340,7 +1345,15 @@ fn secondary_lyrics_lane(
         .text_size(size)
         .map(|this| match (karaoke_capable, lane.words.as_ref()) {
             (true, Some(words)) => this.child(karaoke_lane(
-                &lane.text, lane.start, words, position, size, karaoke, voice, sung,
+                &lane.text,
+                lane.start,
+                words,
+                position,
+                size,
+                karaoke,
+                highlight_y,
+                voice,
+                sung,
             )),
             _ => this.child(SharedString::from(lane.text.clone())),
         });
