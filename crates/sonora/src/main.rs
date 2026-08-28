@@ -143,6 +143,7 @@ fn open_window(
 ) {
     let placement = state::window_placement(LEAST_SIZE, cx)
         .unwrap_or_else(|| WindowBounds::Windowed(Bounds::centered(None, FIRST_SIZE, cx)));
+    let saver = Sonora::global(cx).settings.read(cx).saver();
     cx.open_window(
         WindowOptions {
             window_bounds: Some(placement),
@@ -152,7 +153,7 @@ fn open_window(
                 appears_transparent: true,
                 traffic_light_position: Some(point(px(9.), px(9.))),
             }),
-            inactive_frame_interval: None,
+            inactive_frame_interval: saver.interval(),
             is_movable: true,
             is_resizable: true,
             app_id: Some("sonora".into()),

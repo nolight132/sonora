@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A battery saving setting under Appearance caps the frame rate of animations while Sonora is not
+  the focused window: light, medium or strong, for 90, 60 or 30 frames a second. It is off by
+  default, and a change applies from the next launch.
+
 ## [0.22.0] - 2026-08-28
 
 ### Added

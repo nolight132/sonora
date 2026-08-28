@@ -68,7 +68,7 @@ pub use menu::{MENU_CONTEXT, Menu, MenuItem, SubmenuState};
 pub use metrics::{LEADING, Metrics, Rounding, Text, snapped, tucked};
 pub use modal::Modal;
 pub use motion::{
-    Motion, Motioned, Pace, Stillness, ease_in_out_cubic, ease_in_out_expo, ease_out_cubic,
+    Motion, Motioned, Pace, Saver, Stillness, ease_in_out_cubic, ease_in_out_expo, ease_out_cubic,
     ease_out_expo, ease_out_quad, mix,
 };
 pub use notice::Notice;

@@ -15,7 +15,7 @@ use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, 
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Menu,
-    MenuItem, Modal, Pace, Picker, Popovers, Rounding, Scrubber, ScrubberState, SelectNext,
+    MenuItem, Modal, Pace, Picker, Popovers, Rounding, Saver, Scrubber, ScrubberState, SelectNext,
     SelectPrevious, Separator, Skeleton, Stillness, Submit, Switch, Text, Theme, ThemeKind,
 };
 
@@ -33,6 +33,7 @@ const TYPEFACE_LEAD: usize = 2;
 const STARTUP: &str = "startup";
 const MOTION: &str = "motion";
 const PACE: &str = "pace";
+const SAVER: &str = "saver";
 
 enum Row {
     Item(AnyElement),
@@ -199,6 +200,7 @@ impl SettingsView {
                 self.title("settings-group-motion", cx),
                 Row::Item(self.motion_row(cx).into_any_element()),
                 Row::Item(self.pace_row(cx).into_any_element()),
+                Row::Item(self.saver_row(cx).into_any_element()),
             ]
             .into_iter()
             .chain(decorated().then(|| self.title("settings-group-title-bar", cx)))
@@ -830,6 +832,33 @@ impl SettingsView {
         self.row(
             t!("settings-pace"),
             t!("settings-pace-detail"),
+            muted,
+            small,
+            picker.into_any_element(),
+        )
+    }
+
+    fn saver_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let current = self.settings.read(cx).saver();
+
+        let picker = Picker::new(SAVER, &self.popovers, current.label())
+            .width(Picker::NARROW)
+            .items(Saver::ALL.into_iter().map(|saver| {
+                MenuItem::new(saver.id(), saver.label())
+                    .selected(current == saver)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.settings
+                            .update(cx, |settings, cx| settings.set_saver(saver, cx));
+                        cx.notify();
+                    }))
+            }));
+
+        self.row(
+            t!("settings-saver"),
+            t!("settings-saver-detail"),
             muted,
             small,
             picker.into_any_element(),

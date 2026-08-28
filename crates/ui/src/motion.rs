@@ -84,6 +84,60 @@ impl Pace {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Saver {
+    #[default]
+    Off,
+    Light,
+    Medium,
+    Strong,
+}
+
+impl Saver {
+    pub const ALL: [Self; 4] = [Self::Off, Self::Light, Self::Medium, Self::Strong];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Light => "light",
+            Self::Medium => "medium",
+            Self::Strong => "strong",
+        }
+    }
+
+    pub fn label(self) -> SharedString {
+        match (self, self.rate()) {
+            (Self::Light, Some(fps)) => t!("saver-light", fps = fps),
+            (Self::Medium, Some(fps)) => t!("saver-medium", fps = fps),
+            (Self::Strong, Some(fps)) => t!("saver-strong", fps = fps),
+            _ => t!("saver-off"),
+        }
+    }
+
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "light" => Self::Light,
+            "medium" => Self::Medium,
+            "strong" => Self::Strong,
+            _ => Self::Off,
+        }
+    }
+
+    pub fn interval(self) -> Option<Duration> {
+        self.rate()
+            .map(|rate| Duration::from_nanos(1_000_000_000 / rate as u64))
+    }
+
+    fn rate(self) -> Option<u32> {
+        match self {
+            Self::Off => None,
+            Self::Light => Some(90),
+            Self::Medium => Some(60),
+            Self::Strong => Some(30),
+        }
+    }
+}
+
 pub fn mix(from: Hsla, to: Hsla, t: f32) -> Hsla {
     let (from, to) = (Rgba::from(from), Rgba::from(to));
     let step = t.clamp(0., 1.);
