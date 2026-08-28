@@ -71,6 +71,10 @@ const INSTRUMENTAL_BREAK: std::time::Duration = std::time::Duration::from_secs(5
 const GLYPH: f32 = 0.35;
 const GLYPH_SIZE: f32 = 0.5;
 const SWEEP_LEAST: std::time::Duration = std::time::Duration::from_millis(180);
+// karaoke sweep ceiling
+const KARAOKE_HZ: u32 = 45;
+const KARAOKE_FRAME: std::time::Duration =
+    std::time::Duration::from_nanos(1_000_000_000 / KARAOKE_HZ as u64);
 const SWEEP_STRETCH: f32 = 1.4;
 const SWEPT: f32 = 0.98;
 const LANDING: f32 = 0.2;
@@ -278,6 +282,8 @@ pub(crate) struct Aside {
     rising: Option<Warm>,
     sank: std::time::Instant,
     sinking: Option<Task<()>>,
+    swept_frame: std::time::Instant,
+    sweeping: Option<Task<()>>,
     showed: bool,
     resolving: bool,
 }
@@ -370,6 +376,8 @@ impl Aside {
             rising: None,
             sank: std::time::Instant::now(),
             sinking: None,
+            swept_frame: std::time::Instant::now(),
+            sweeping: None,
             showed: false,
             resolving: false,
         }
@@ -461,6 +469,22 @@ impl Aside {
             }
         }
         cx.notify();
+    }
+
+    fn sweep_karaoke(&mut self, cx: &mut Context<Self>) {
+        if self.sweeping.is_some() {
+            return;
+        }
+        let wait = KARAOKE_FRAME.saturating_sub(self.swept_frame.elapsed());
+        self.sweeping = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(wait).await;
+            this.update(cx, |this, cx| {
+                this.swept_frame = std::time::Instant::now();
+                this.sweeping = None;
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     fn sharpen_progress(&self, window: &mut Window) -> f32 {
@@ -984,7 +1008,7 @@ impl Aside {
                     && karaoke_effects
                     && active_line.is_some_and(|index| lines[index].worded())
                 {
-                    window.request_animation_frame();
+                    self.sweep_karaoke(cx);
                 }
                 if self.previous_active_line != active_line {
                     if self.previous_active_line.is_some() {
