@@ -835,7 +835,7 @@ impl<S: TableSource> TableState<S> {
             .flex()
             .flex_none()
             .h(head)
-            .bg(theme.table_head)
+            .when(!theme.transparent, |this| this.bg(theme.table_head))
             .rounded_tl(top.top_left)
             .rounded_tr(top.top_right)
             .border_b_1()
@@ -933,6 +933,7 @@ impl<S: TableSource> TableState<S> {
 
     fn rows(&self, head: Pixels, row_height: Pixels, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = *cx.theme();
+        let hover = theme.glass(theme.table_hover);
         let count = self.delegate.order.len();
         let first = self.viewport.first(head, row_height);
         let last = (first + self.viewport.rows(row_height)).min(count);
@@ -979,9 +980,7 @@ impl<S: TableSource> TableState<S> {
                     })
                     .when(playing, |this| this.bg(theme.muted))
                     .when(selected, |this| this.bg(theme.table_active))
-                    .when(!selected, |this| {
-                        this.hover(move |style| style.bg(theme.table_hover))
-                    })
+                    .when(!selected, |this| this.hover(move |style| style.bg(hover)))
                     .when_some(self.delegate.source.pin(row, cx), Pinnable::pin)
                     .on_mouse_down(
                         MouseButton::Left,

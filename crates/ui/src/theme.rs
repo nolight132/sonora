@@ -17,6 +17,7 @@ const FRAME: Duration = Duration::from_millis(8);
 const SURFACE_TINT: f32 = 0.5;
 const BORDER_TINT: f32 = 0.4;
 const TEXT_TINT: f32 = 0.12;
+const GLASS_FILL: f32 = 0.8;
 const MAX_WASH_SATURATION: f32 = 0.7;
 const MIN_ACCENT_SATURATION: f32 = 0.6;
 const MAX_ACCENT_SATURATION: f32 = 0.85;
@@ -687,6 +688,13 @@ impl Theme {
 
     pub fn text(&self, step: Text) -> Pixels {
         px((self.font_size / px(1.) * step.ratio()).round())
+    }
+
+    pub fn glass(&self, color: Hsla) -> Hsla {
+        match self.transparent {
+            true => color.alpha(self.background.a + (1. - self.background.a) * GLASS_FILL),
+            false => color,
+        }
     }
 
     pub fn init(look: Look, overrides: &ThemeOverrides, cx: &mut App) {

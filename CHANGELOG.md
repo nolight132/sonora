@@ -19,6 +19,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Table headers and hovered rows respect window transparency.
 - Content no longer shows through an overlaid sidebar when window transparency is enabled.
 - Building Sonora on Windows no longer requires a separately installed SQLite library.
 - A sign-in failure in Settings now appears on the card of the service you were signing in to.
