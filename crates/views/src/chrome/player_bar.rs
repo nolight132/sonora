@@ -19,7 +19,7 @@ use ui::{
 use crate::chrome::SidebarRight;
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
-use crate::shared::visualization_glow::VisualizationGlow;
+use crate::shared::visualizations::FrameGlow;
 
 const SEEK_MAX: f32 = 560.;
 const VOLUME_WIDTH: f32 = 110.;
@@ -40,7 +40,7 @@ pub(crate) struct PlayerBar {
     over_volume: Option<f32>,
     volume_held: bool,
     muted: Option<f32>,
-    visualization: VisualizationGlow,
+    artwork_visualization: FrameGlow,
 }
 
 impl PlayerBar {
@@ -68,7 +68,7 @@ impl PlayerBar {
             over_volume: None,
             volume_held: false,
             muted: None,
-            visualization: VisualizationGlow::new(),
+            artwork_visualization: FrameGlow::new(),
         }
     }
 
@@ -280,14 +280,14 @@ impl PlayerBar {
                     .relative()
                     .size(artwork)
                     .child({
-                        self.visualization.sync(
+                        self.artwork_visualization.sync(
                             artwork,
                             corner,
                             self.playback.read(cx),
                             window,
                             cx,
                         );
-                        self.visualization.glow()
+                        self.artwork_visualization.glow()
                     })
                     .child(Artwork::new(cover).size(artwork)),
             )

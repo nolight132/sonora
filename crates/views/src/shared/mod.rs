@@ -19,7 +19,7 @@ pub(crate) mod track_card;
 pub(crate) mod tracks;
 pub(crate) mod transport;
 pub(crate) mod trouble;
-pub(crate) mod visualization_glow;
+pub(crate) mod visualizations;
 
 use gpui::prelude::*;
 use gpui::{App, Div, Pixels, div, px, svg};

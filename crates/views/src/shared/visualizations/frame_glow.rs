@@ -90,7 +90,7 @@ const GLOW_COLOUR: Hsla = Hsla {
     a: GLOW_BASELINE_OPACITY,
 };
 
-pub(crate) struct VisualizationGlow {
+pub(crate) struct FrameGlow {
     chased: Pulse,
     last: Option<Instant>,
     frame: Option<Frame>,
@@ -105,7 +105,7 @@ struct Frame {
     glow_scale: f32,
 }
 
-impl VisualizationGlow {
+impl FrameGlow {
     pub(crate) fn new() -> Self {
         Self {
             chased: Pulse::default(),
@@ -184,7 +184,7 @@ impl VisualizationGlow {
     }
 }
 
-impl VisualizationGlow {
+impl FrameGlow {
     fn smooth(&mut self, target: Pulse) {
         let now = Instant::now();
         let step = match self.last.replace(now) {
