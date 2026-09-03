@@ -114,6 +114,7 @@ fn main() {
 
         let Sonora {
             session,
+            connect: _,
             cover: _,
             library,
             history: _,

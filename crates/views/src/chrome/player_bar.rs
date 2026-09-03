@@ -1,4 +1,4 @@
-use router::{Destination, Link, navigate};
+use router::{Destination, Link, SettingsTab, navigate};
 use std::time::Duration;
 use ui::ActiveTheme as _;
 
@@ -10,7 +10,7 @@ use gpui::{
 use gpui::{Window, div, px};
 use i18n::t;
 use input::{ToggleFullscreen, ToggleLyrics, ToggleQueue};
-use state::{AppSettings, Playback, Queue, SideTab, Sonora};
+use state::{AppSettings, Connect, Playback, Queue, SideTab, Sonora};
 use ui::{
     Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Popup, Room, Scrollbar, Scrubber,
     ScrubberState, clock,
@@ -30,6 +30,7 @@ pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
     queue: Entity<Queue>,
     settings: Entity<AppSettings>,
+    connect: Entity<Connect>,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
     seek: ScrubberState,
@@ -45,10 +46,12 @@ impl PlayerBar {
     pub fn new(playback: Entity<Playback>, queue: Entity<Queue>, cx: &mut Context<Self>) -> Self {
         let library = Sonora::global(cx).library.clone();
         let settings = Sonora::global(cx).settings.clone();
+        let connect = Sonora::global(cx).connect.clone();
         cx.observe(&playback, |_, _, cx| cx.notify()).detach();
         cx.observe(&queue, |_, _, cx| cx.notify()).detach();
         cx.observe(&library, |_, _, cx| cx.notify()).detach();
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
+        cx.observe(&connect, |_, _, cx| cx.notify()).detach();
 
         let me = cx.entity_id();
         let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(me));
@@ -57,6 +60,7 @@ impl PlayerBar {
             playback,
             queue,
             settings,
+            connect,
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
             seek: ScrubberState::new("seek"),
@@ -207,11 +211,26 @@ impl PlayerBar {
                 })
         };
 
+        let connected = self.connect.read(cx).connected();
+
         div()
             .flex()
             .flex_none()
             .items_center()
             .gap_1()
+            .when(connected, |this| {
+                this.child(
+                    Button::new("player-connect")
+                        .ghost()
+                        .small()
+                        .icon("icons/cast.svg")
+                        .tooltip_above("player-connect")
+                        .tint(theme.foreground)
+                        .on_click(|_, _, cx| {
+                            navigate(Destination::Settings(SettingsTab::Playback), cx);
+                        }),
+                )
+            })
             .child(button(
                 "player-lyrics",
                 "icons/mic-vocal.svg",

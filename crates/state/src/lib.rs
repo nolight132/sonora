@@ -1,5 +1,6 @@
 mod artist;
 mod catalog;
+mod connect;
 mod cover;
 mod detail;
 mod genre;
@@ -23,6 +24,7 @@ mod updates;
 mod usage;
 
 pub use artist::ArtistDetail;
+pub use connect::Connect;
 pub use cover::Cover;
 pub use detail::{Collection, Detail, Header};
 pub use genre::{GenreDetails, Genres};
@@ -87,6 +89,7 @@ pub(crate) async fn join<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
 
 pub struct Sonora {
     pub session: Entity<Session>,
+    pub connect: Entity<Connect>,
     pub cover: Entity<Cover>,
     pub library: Entity<Library>,
     pub history: Entity<History>,
@@ -134,10 +137,13 @@ pub fn init(
     });
     let cover = cx.new(|cx| Cover::new(session.clone(), playback.clone(), io.clone(), cx));
     let updates = cx.new(|cx| Updates::new(settings.clone(), io.clone(), cx));
-    let usage = cx.new(|cx| Usage::new(session.clone(), io, cx));
+    let usage = cx.new(|cx| Usage::new(session.clone(), io.clone(), cx));
+    let connect =
+        cx.new(|cx| Connect::new(session.clone(), playback.clone(), settings.clone(), io, cx));
 
     cx.set_global(Sonora {
         session,
+        connect,
         cover,
         library,
         history,

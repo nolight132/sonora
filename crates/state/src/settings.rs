@@ -163,6 +163,7 @@ struct Values {
     shuffle: bool,
     repeat: Repeat,
     radio: bool,
+    spotify_connect: bool,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -225,6 +226,7 @@ impl Default for Values {
             shuffle: false,
             repeat: Repeat::Off,
             radio: false,
+            spotify_connect: false,
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             provider: "spotify".to_owned(),
@@ -385,6 +387,10 @@ impl AppSettings {
 
     pub fn radio(&self) -> bool {
         self.values.radio
+    }
+
+    pub fn spotify_connect(&self) -> bool {
+        self.values.spotify_connect
     }
 
     pub fn language(&self) -> &str {
@@ -665,6 +671,11 @@ impl AppSettings {
 
     pub fn set_radio(&mut self, radio: bool, cx: &mut Context<Self>) {
         self.values.radio = radio;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_spotify_connect(&mut self, spotify_connect: bool, cx: &mut Context<Self>) {
+        self.values.spotify_connect = spotify_connect;
         self.schedule_save(cx);
     }
 

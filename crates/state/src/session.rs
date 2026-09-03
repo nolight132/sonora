@@ -234,6 +234,10 @@ impl Session {
         self.restore(cx);
     }
 
+    pub fn provider(&self) -> Option<Arc<dyn MusicProvider>> {
+        self.providers.get(self.active?).cloned()
+    }
+
     pub fn provider_name(&self) -> Option<&'static str> {
         let provider = &self.providers[self.active?];
         Some(provider.name())

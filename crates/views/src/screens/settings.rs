@@ -214,13 +214,28 @@ impl SettingsView {
                 Row::Item(self.adaptive_menu_row(cx).into_any_element()),
             ])
             .collect(),
-            SettingsTab::Playback => vec![
-                Row::Item(self.playback_row(cx).into_any_element()),
-                Row::Item(self.gapless_row(cx).into_any_element()),
-                self.title("settings-group-lyrics", cx),
-                Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
-                Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
-            ],
+            SettingsTab::Playback => {
+                let spotify_connected = self
+                    .session
+                    .read(cx)
+                    .connected()
+                    .any(|info| info.slug == "spotify");
+                vec![
+                    Row::Item(self.playback_row(cx).into_any_element()),
+                    Row::Item(self.gapless_row(cx).into_any_element()),
+                ]
+                .into_iter()
+                .chain(
+                    spotify_connected
+                        .then(|| Row::Item(self.spotify_connect_row(cx).into_any_element())),
+                )
+                .chain([
+                    self.title("settings-group-lyrics", cx),
+                    Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
+                    Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
+                ])
+                .collect()
+            }
             SettingsTab::About => vec![
                 Row::Item(self.version_row(cx).into_any_element()),
                 Row::Item(self.updates_row(cx).into_any_element()),
@@ -1004,6 +1019,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_gapless(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn spotify_connect_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).spotify_connect();
+
+        self.row(
+            t!("settings-spotify-connect"),
+            t!("settings-spotify-connect-detail"),
+            muted,
+            small,
+            Switch::new("spotify-connect", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_spotify_connect(!on, cx));
                 }))
                 .into_any_element(),
         )

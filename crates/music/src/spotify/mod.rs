@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod connect;
 
 mod albums;
 mod artists;
@@ -22,7 +23,10 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::spotify::playback::Factory;
-use crate::{MusicApi as _, MusicProvider, ProviderSession, SignInFailure, SignInProblem};
+use crate::{
+    ConnectEvents, ConnectHandle, MusicApi as _, MusicProvider, PlaybackConfig, ProviderSession,
+    SignInFailure, SignInProblem,
+};
 
 pub use auth::AuthConfig;
 pub use client::LibrespotClient;
@@ -109,5 +113,15 @@ impl MusicProvider for SpotifyProvider {
 
     fn sign_out(&self) {
         auth::forget(&self.config);
+    }
+
+    fn connect(
+        &self,
+        runtime: tokio::runtime::Handle,
+        name: String,
+        config: PlaybackConfig,
+    ) -> Option<(Box<dyn ConnectHandle>, ConnectEvents)> {
+        let (handle, events) = connect::start(runtime, self.config.clone(), name, config);
+        Some((Box::new(handle), events))
     }
 }

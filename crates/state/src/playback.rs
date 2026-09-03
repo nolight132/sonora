@@ -134,7 +134,7 @@ fn shifted(base: Duration, seconds: f64) -> Duration {
     }
 }
 
-fn gain(level: f32) -> f32 {
+pub(crate) fn gain(level: f32) -> f32 {
     match level.clamp(0., 1.) {
         level if level <= 0. => 0.,
         level => 10f32.powf(TAPER_DB * (level - 1.) / 20.),
