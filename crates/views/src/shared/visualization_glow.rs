@@ -4,8 +4,21 @@ use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, Window, div, px};
 use music::Pulse;
 use state::{Playback, PlaybackState, Sonora};
-use ui::ActiveTheme as _;
 use ui::motion::animates;
+
+/// Master intensity applied to blended strength. `1.0` is the designed response.
+const LEVEL: f32 = 1.;
+
+/// Strength weight in glow blur radius, in pixels at full signal.
+const GLOW_BLUR_SIGNAL: f32 = 50.;
+
+/// Upper bound on glow blur radius, in pixels.
+const GLOW_RADIUS_MAX: f32 = 20.;
+
+/// Baseline opacity for the glow wash.
+/// 
+/// This is the maximum opacity that the glow wash will reach when the strength is at its maximum.
+const GLOW_BASELINE_OPACITY: f32 = 0.8;
 
 /// Exponential rise rate for chased pulse values, per second.
 const ATTACK: f32 = 24.;
@@ -26,9 +39,6 @@ const STRENGTH_BASS: f32 = 0.5;
 
 const UPPER_MULITPLIER: f32 = 3.0;
 
-/// Upper opacity clamp for the signal-driven glow wash.
-const GLOW_ALPHA_MAX: f32 = 0.85;
-
 /// Glow wash opacity before strength contributes.
 const GLOW_ALPHA_BASE: f32 = 0.08;
 
@@ -47,9 +57,6 @@ const GLOW_LIGHT_SIGNAL: f32 = 0.22;
 /// RMS weight in glow wash lightness.
 const GLOW_LIGHT_RMS: f32 = 0.06;
 
-/// Strength weight in glow blur radius, in pixels at full signal.
-const GLOW_BLUR_SIGNAL: f32 = 75.;
-
 /// RMS weight in glow blur radius, in pixels at full signal.
 const GLOW_BLUR_RMS: f32 = 10.;
 
@@ -57,7 +64,7 @@ const GLOW_BLUR_RMS: f32 = 10.;
 const GLOW_SCALE_SIGNAL: f32 = 0.35;
 
 /// Input gain in the `1 - e^(-x·k)` curve applied to each pulse band.
-const CURVE_GAIN: f32 = 5.;
+const CURVE_GAIN: f32 = 0.5;
 
 /// Corner-radius weight when deriving the minimum glow blur from artwork geometry.
 const RIM_BLUR_CORNER: f32 = 0.9;
@@ -74,13 +81,17 @@ const RIM_SCALE_CORNER: f32 = 2.;
 /// Minimum glow scale above 1.0 for small artwork, as a fraction of side length.
 const RIM_SCALE_FLOOR: f32 = 0.012;
 
-/// Minimum seconds between stderr debug lines from each glow instance.
-const LOG_INTERVAL: f32 = 0.5;
+/// Colour of the glow wash - for now just white.
+const GLOW_COLOUR: Hsla = Hsla {
+    h: 0.,
+    s: 0.,
+    l: 1.,
+    a: GLOW_BASELINE_OPACITY,
+};
 
 pub(crate) struct VisualizationGlow {
     chased: Pulse,
     last: Option<Instant>,
-    logged: Option<Instant>,
     frame: Option<Frame>,
 }
 
@@ -98,7 +109,6 @@ impl VisualizationGlow {
         Self {
             chased: Pulse::default(),
             last: None,
-            logged: None,
             frame: None,
         }
     }
@@ -121,38 +131,24 @@ impl VisualizationGlow {
 
         self.smooth(target);
         let shaped = shaped(self.chased);
-        let strength = strength(&shaped);
+        let strength = strength(&shaped) * LEVEL;
         if allowed && (playing || strength > STRENGTH_MIN) {
             window.request_animation_frame();
         }
 
-        let tint = cx.theme().tint.unwrap_or(cx.theme().primary);
         let rim = rim(size, corner);
         let glow = wash(
-            tint,
+            GLOW_COLOUR,
             strength * GLOW_SAT_SIGNAL + shaped.rms * GLOW_SAT_RMS,
             strength * GLOW_LIGHT_SIGNAL + shaped.rms * GLOW_LIGHT_RMS,
             GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL,
         );
-        let glow_blur = rim
-            .min_blur
-            .max(px(strength * GLOW_BLUR_SIGNAL + shaped.rms * GLOW_BLUR_RMS));
-        let glow_scale = rim.min_scale.max(1. + strength * GLOW_SCALE_SIGNAL);
-
-        self.log(
-            allowed,
-            playing,
-            allowed && (playing || strength > STRENGTH_MIN),
-            target,
-            self.chased,
-            shaped,
-            strength,
-            rim.min_blur,
-            rim.min_scale,
-            glow.a,
-            glow_blur,
-            glow_scale,
+        let glow_blur = px(
+            (strength * GLOW_BLUR_SIGNAL + shaped.rms * GLOW_BLUR_RMS)
+                .min(GLOW_RADIUS_MAX)
+                .max(rim.min_blur.as_f32()),
         );
+        let glow_scale = rim.min_scale.max(1. + strength * GLOW_SCALE_SIGNAL);
 
         self.frame = Some(Frame {
             show: allowed && strength > STRENGTH_MIN,
@@ -188,58 +184,6 @@ impl VisualizationGlow {
 }
 
 impl VisualizationGlow {
-    fn log(
-        &mut self,
-        allowed: bool,
-        playing: bool,
-        animate: bool,
-        target: Pulse,
-        chased: Pulse,
-        shaped: Pulse,
-        strength: f32,
-        min_blur: Pixels,
-        min_scale: f32,
-        glow_a: f32,
-        glow_blur: Pixels,
-        glow_scale: f32,
-    ) {
-        let due = match self.logged {
-            Some(last) => last.elapsed().as_secs_f32() >= LOG_INTERVAL,
-            None => true,
-        };
-        if !due {
-            return;
-        }
-        self.logged = Some(Instant::now());
-
-        eprintln!(
-            "visualization-glow: allowed={allowed} playing={playing} animate={animate} \
-             strength={strength:.3} bass={:.3} upper={:.3} \
-             min_blur={min_blur} min_scale={min_scale:.3} \
-             target=({:.3},{:.3},{:.3},{:.3},{:.3}) \
-             chased=({:.3},{:.3},{:.3},{:.3},{:.3}) \
-             shaped=({:.3},{:.3},{:.3},{:.3},{:.3}) \
-             glow_alpha={glow_a:.3} glow_blur={glow_blur} glow_scale={glow_scale:.3}",
-            shaped.bass,
-            upper(&shaped),
-            target.peak,
-            target.rms,
-            target.bass,
-            target.body,
-            target.air,
-            chased.peak,
-            chased.rms,
-            chased.bass,
-            chased.body,
-            chased.air,
-            shaped.peak,
-            shaped.rms,
-            shaped.bass,
-            shaped.body,
-            shaped.air,
-        );
-    }
-
     fn smooth(&mut self, target: Pulse) {
         let now = Instant::now();
         let step = match self.last.replace(now) {
@@ -311,6 +255,6 @@ fn wash(base: Hsla, sat: f32, light: f32, alpha: f32) -> Hsla {
         h: base.h,
         s: (base.s * (0.72 + sat)).clamp(0.18, 1.),
         l: (base.l + light).clamp(0.2, 0.78),
-        a: alpha.clamp(0., GLOW_ALPHA_MAX),
+        a: (alpha * base.a).clamp(0., base.a),
     }
 }

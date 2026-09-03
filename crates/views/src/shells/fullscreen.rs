@@ -19,7 +19,6 @@ use ui::{
 use crate::chrome::{Aside, TitleBarOptions};
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
-use crate::shared::visualization_glow::VisualizationGlow;
 use crate::shells::Shell;
 
 const COVER_TALL: f32 = 0.46;
@@ -75,8 +74,6 @@ pub struct FullscreenView {
     spring_beat: Instant,
     rest: Option<Task<()>>,
     focus: FocusHandle,
-    artwork_visualizer: VisualizationGlow,
-    strip_visualizer: VisualizationGlow,
 }
 
 impl FullscreenView {
@@ -122,8 +119,6 @@ impl FullscreenView {
             spring_beat: Instant::now(),
             rest: None,
             focus: cx.focus_handle(),
-            artwork_visualizer: VisualizationGlow::new(),
-            strip_visualizer: VisualizationGlow::new(),
         };
         this.stir(cx);
         this
@@ -264,7 +259,6 @@ impl FullscreenView {
         layout_side: Pixels,
         raster_side: Pixels,
         presentation_scale: f32,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let radius = cx.theme().radius * 2.;
@@ -309,17 +303,6 @@ impl FullscreenView {
                             .top(pad)
                             .left(pad)
                             .size(raster_side)
-                            .relative()
-                            .child({
-                                self.artwork_visualizer.sync(
-                                    raster_side,
-                                    radius,
-                                    self.playback.read(cx),
-                                    window,
-                                    cx,
-                                );
-                                self.artwork_visualizer.glow()
-                            })
                             .child(
                                 Artwork::new(small)
                                     .size(raster_side)
@@ -438,14 +421,13 @@ impl FullscreenView {
     }
 
     fn strip(
-        &mut self,
+        &self,
         hide: f32,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = *cx.theme();
         let cover = ui::snapped(theme.metrics.row, window);
-        let corner = theme.radius.min(px(4.));
         let track = self.playback.read(cx).track().cloned();
         let title = match &track {
             Some(track) => SharedString::from(track.name.clone()),
@@ -468,18 +450,7 @@ impl FullscreenView {
                         this.cursor_pointer()
                             .on_click(move |_, _, cx| open_album(&album, cx))
                     })
-                    .relative()
                     .size(cover)
-                    .child({
-                        self.strip_visualizer.sync(
-                            cover,
-                            corner,
-                            self.playback.read(cx),
-                            window,
-                            cx,
-                        );
-                        self.strip_visualizer.glow()
-                    })
                     .child(Artwork::new(track.as_ref().and_then(|t| t.cover.clone())).size(cover)),
             )
             .child(
@@ -975,7 +946,7 @@ impl Render for FullscreenView {
                                     |this| this.flex_1().h_full(),
                                     |this| this.w_full(),
                                 )
-                                .child(self.artwork(side, raster_side, cover_scale, window, cx))
+                                .child(self.artwork(side, raster_side, cover_scale, cx))
                                 .child(self.meta(hide, cx))
                                 .when(split, |this| {
                                     this.child(self.dock(theme.metrics.player_bar * DOCK, hide, cx))

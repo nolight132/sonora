@@ -65,10 +65,12 @@ impl Output {
 
         let applied = volume.get();
         let (sink, source) = rodio::Sink::new();
-        let gain = SmoothGain::new(source, volume.clone(), applied, RAMP);
         match visualizer {
-            Some(visualizer) => stream.mixer().add(visualizer.wrap(gain)),
-            None => stream.mixer().add(gain),
+            Some(visualizer) => {
+                let gain = SmoothGain::new(visualizer.wrap(source), volume.clone(), applied, RAMP);
+                stream.mixer().add(gain);
+            }
+            None => stream.mixer().add(SmoothGain::new(source, volume.clone(), applied, RAMP)),
         }
 
         Ok(Self {
