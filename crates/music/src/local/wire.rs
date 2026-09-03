@@ -39,7 +39,9 @@ const ARTIST_NAMES: &[&str] = &[
     "cover.webp",
 ];
 
-const PLAYABLE_EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "wav"];
+const PLAYABLE_EXTENSIONS: &[&str] = &[
+    "mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "wav", "opus",
+];
 
 fn is_playable(path: &Path) -> bool {
     path.extension()

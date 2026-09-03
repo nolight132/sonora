@@ -188,6 +188,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "alsa"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c88dbbce13b232b26250e1e2e6ac18b6a891a646b8148285036ebce260ac5c3"
+dependencies = [
+ "alsa-sys",
+ "bitflags 2.13.1",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "alsa-sys"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -576,7 +588,7 @@ dependencies = [
  "log",
  "num-rational",
  "num-traits",
- "pastey",
+ "pastey 0.1.1",
  "rayon",
  "thiserror 2.0.19",
  "v_frame",
@@ -685,6 +697,9 @@ name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "bitstream-io"
@@ -967,6 +982,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.58"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "cocoa"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1056,7 +1080,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "gpui_util",
  "indexmap",
@@ -1339,7 +1363,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbd307f43cc2a697e2d1f8bc7a1d824b5269e052209e28883e5bc04d095aaa3f"
 dependencies = [
- "alsa",
+ "alsa 0.9.1",
  "coreaudio-rs",
  "dasp_sample",
  "jni",
@@ -1357,6 +1381,36 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "windows 0.54.0",
+]
+
+[[package]]
+name = "cpal"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b1f9c7312f19fc2fa12fd7acaf38de54e8320ba10d1a02dcbe21038def51ccb"
+dependencies = [
+ "alsa 0.10.0",
+ "coreaudio-rs",
+ "dasp_sample",
+ "jni",
+ "js-sys",
+ "libc",
+ "mach2 0.5.0",
+ "ndk",
+ "ndk-context",
+ "num-derive",
+ "num-traits",
+ "objc2 0.6.4",
+ "objc2-audio-toolbox",
+ "objc2-avf-audio",
+ "objc2-core-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -1642,7 +1696,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1746,6 +1800,12 @@ name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
+name = "dpi"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
 name = "dunce"
@@ -1909,7 +1969,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2520,7 +2580,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2591,7 +2651,7 @@ dependencies = [
 [[package]]
 name = "gpui_apple"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "anyhow",
  "block",
@@ -2614,7 +2674,7 @@ dependencies = [
 [[package]]
 name = "gpui_linux"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -2660,7 +2720,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -2706,7 +2766,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2717,7 +2777,7 @@ dependencies = [
 [[package]]
 name = "gpui_platform"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "gpui",
  "gpui_linux",
@@ -2728,7 +2788,7 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "schemars",
  "serde",
@@ -2738,7 +2798,7 @@ dependencies = [
 [[package]]
 name = "gpui_util"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "anyhow",
  "log",
@@ -2748,7 +2808,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2774,7 +2834,7 @@ dependencies = [
 [[package]]
 name = "gpui_windows"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -3042,7 +3102,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -3636,6 +3696,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyboard-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b750dcadc39a09dbadd74e118f6dd6598df77fa01df0cfcdc52c28dece74528a"
+dependencies = [
+ "bitflags 2.13.1",
+ "serde",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3651,6 +3722,24 @@ name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
+
+[[package]]
+name = "ksni"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "814b44c24cd2cb236c3b8a41c7f08237b452a8e76ecaa81f1cec40b5b678215b"
+dependencies = [
+ "async-executor",
+ "async-io",
+ "async-lock",
+ "futures-channel",
+ "futures-lite",
+ "futures-util",
+ "pastey 0.2.3",
+ "serde",
+ "task-local",
+ "zbus",
+]
 
 [[package]]
 name = "kurbo"
@@ -3860,7 +3949,7 @@ name = "librespot-playback"
 version = "0.8.0"
 source = "git+https://github.com/nolight132/librespot?rev=e7eb953d5848fd97bacd00e6c0e33500765eaa63#e7eb953d5848fd97bacd00e6c0e33500765eaa63"
 dependencies = [
- "cpal",
+ "cpal 0.16.0",
  "form_urlencoded",
  "futures-util",
  "librespot-audio",
@@ -3870,7 +3959,7 @@ dependencies = [
  "portable-atomic",
  "rand 0.9.5",
  "rand_distr",
- "rodio",
+ "rodio 0.21.1",
  "shell-words",
  "symphonia",
  "thiserror 2.0.19",
@@ -4116,7 +4205,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -4230,6 +4319,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "muda"
+version = "0.19.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dd04e60bc0b07438a6771710ee1698f98f6ebbc7f89b61264af1563b8aeb878"
+dependencies = [
+ "crossbeam-channel",
+ "dpi",
+ "keyboard-types",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "once_cell",
+ "png 0.18.1",
+ "thiserror 2.0.19",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "music"
 version = "0.29.0"
 dependencies = [
@@ -4237,7 +4345,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bytes",
- "cpal",
+ "cpal 0.17.1",
  "deunicode",
  "dirs",
  "flate2",
@@ -4252,9 +4360,11 @@ dependencies = [
  "percent-encoding",
  "protobuf",
  "reqwest",
- "rodio",
+ "rodio 0.22.2",
  "roxmltree 0.21.1",
+ "rtrb",
  "rusqlite",
+ "rustfft",
  "serde",
  "serde_json",
  "serde_norway",
@@ -4670,6 +4780,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-avf-audio"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13a380031deed8e99db00065c45937da434ca987c034e13b87e4441f9e4090be"
+dependencies = [
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
 name = "objc2-core-audio"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4679,6 +4799,7 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-core-audio-types",
  "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]
@@ -4710,8 +4831,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
 dependencies = [
  "bitflags 2.13.1",
+ "block2 0.6.2",
  "dispatch2",
+ "libc",
  "objc2 0.6.4",
+]
+
+[[package]]
+name = "objc2-core-graphics"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
+dependencies = [
+ "bitflags 2.13.1",
+ "objc2-core-foundation",
 ]
 
 [[package]]
@@ -4961,6 +5094,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "opusic-sys"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9d1ecdf206421bc74343ab3bb2f30ad2abbfee41fa341f7181fecbaf957769a"
+dependencies = [
+ "cmake",
+]
+
+[[package]]
 name = "ordered-float"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5021,6 +5163,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
+name = "pastey"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+
+[[package]]
 name = "pathfinder_geometry"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5067,7 +5215,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "perf"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "collections",
  "serde",
@@ -5363,6 +5511,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "primal-check"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc0d895b311e3af9902528fbb8f928688abbd95872819320517cc24ca6b2bd08"
+dependencies = [
+ "num-integer",
+]
+
+[[package]]
 name = "priority-queue"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5613,7 +5770,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5918,7 +6075,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "derive_refineable",
 ]
@@ -6060,10 +6217,22 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e40ecf59e742e03336be6a3d53755e789fd05a059fa22dfa0ed624722319e183"
 dependencies = [
- "cpal",
+ "cpal 0.16.0",
+ "dasp_sample",
+ "num-rational",
+]
+
+[[package]]
+name = "rodio"
+version = "0.22.2"
+source = "git+https://github.com/RustAudio/rodio?rev=4aa22e85e5ad5565c45dfdda95051158eb6b56c3#4aa22e85e5ad5565c45dfdda95051158eb6b56c3"
+dependencies = [
+ "cpal 0.17.1",
  "dasp_sample",
  "num-rational",
  "symphonia",
+ "symphonia-adapter-libopus",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -6139,6 +6308,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtrb"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fae8ee26b0371a29a77d2b2d6b3ae13aa81def6f9bf1b1b92a32d279a5e709b7"
+
+[[package]]
 name = "rusqlite"
 version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6180,6 +6355,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustfft"
+version = "6.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21db5f9893e91f41798c88680037dba611ca6674703c1a18601b01a72c8adb89"
+dependencies = [
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "primal-check",
+ "strength_reduce",
+ "transpose",
+]
+
+[[package]]
 name = "rustix"
 version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6189,7 +6378,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6202,7 +6391,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6350,7 +6539,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "async-task",
  "backtrace",
@@ -6824,17 +7013,22 @@ dependencies = [
  "gpui_platform",
  "i18n",
  "icons",
+ "image",
  "input",
  "interprocess",
+ "ksni",
  "libc",
  "log",
  "music",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "raw-window-handle",
  "reqwest",
  "router",
  "sha2",
  "state",
  "tokio",
+ "tray-icon",
  "ui",
  "views",
  "windows-sys 0.61.2",
@@ -6978,6 +7172,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "strength_reduce"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
+
+[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7022,7 +7222,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "heapless",
  "log",
@@ -7155,6 +7355,17 @@ dependencies = [
  "symphonia-format-ogg",
  "symphonia-format-riff",
  "symphonia-metadata",
+]
+
+[[package]]
+name = "symphonia-adapter-libopus"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfc8e95f95c23ed1b5328eb66920ad28d9968c797f9c7aa755d4b45a5f47a41"
+dependencies = [
+ "log",
+ "opusic-sys",
+ "symphonia-core",
 ]
 
 [[package]]
@@ -7426,6 +7637,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "task-local"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2972044a9e5e448a506a7ff6f0d03b566d8ef4cd6918a58fc59835a0f8666626"
+dependencies = [
+ "pin-project-lite",
+]
+
+[[package]]
 name = "tauri-winrt-notification"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7446,7 +7666,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7903,6 +8123,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "transpose"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
+dependencies = [
+ "num-integer",
+ "strength_reduce",
+]
+
+[[package]]
+name = "tray-icon"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "045979e3f037cd18ad1cb2a419dfda133c5c29c9f3453370079f2255d46c257e"
+dependencies = [
+ "crossbeam-channel",
+ "dirs",
+ "muda",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "once_cell",
+ "png 0.18.1",
+ "thiserror 2.0.19",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8173,7 +8423,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "util_macros"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "perf",
  "quote",
@@ -8799,7 +9049,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9732,7 +9982,7 @@ dependencies = [
 [[package]]
 name = "zlog"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "anyhow",
  "chrono",
@@ -9749,7 +9999,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[package]]
 name = "ztracing"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -9760,7 +10010,7 @@ dependencies = [
 [[package]]
 name = "ztracing_macro"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/gpui?rev=fc81ff8044c5d2785bef5dd1cb1328f2c92671ee#fc81ff8044c5d2785bef5dd1cb1328f2c92671ee"
+source = "git+https://github.com/nolight132/gpui?rev=96ffcd35c2d1eaccb2a27dddf3de588476b72000#96ffcd35c2d1eaccb2a27dddf3de588476b72000"
 
 [[package]]
 name = "zune-core"

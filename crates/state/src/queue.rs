@@ -581,9 +581,9 @@ impl Queue {
     }
 
     pub fn previous(&mut self, cx: &mut Context<Self>) -> Option<Track> {
-        let previous = self.past.pop()?;
-        if let Some(playing) = self.current.replace(previous) {
-            self.upcoming.push_front(playing);
+        let index = self.past.iter().rposition(|track| track.playable)?;
+        if !select_past(&mut self.past, &mut self.current, &mut self.upcoming, index) {
+            return None;
         }
         self.changed(cx);
         self.current.clone()

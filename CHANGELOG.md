@@ -10,14 +10,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Playing artwork can pulse a theme-tinted glow with the music. Turn it off under Settings >
-  Appearance.
+  Appearance > Visualizer, the same switch as the fullscreen spectrum bars.
+- Closing the window no longer stops the music: Sonora stays in the system tray with play/pause,
+  previous, next, show and quit at hand, and the Dock icon steps aside on macOS until the window
+  is back. Turn it off under Settings → General → Window if you would rather it quit.
 - Sonora speaks Spanish. Pick Español under Settings > General > Language, or leave the language on
   System and it follows a Spanish desktop on its own.
+- Sonora speaks Japanese. Pick 日本語 under Settings > General > Language, or leave the language on
+  System and it follows a Japanese desktop on its own.
+- Lyrics have their own size, set separately for each surface. Settings > Playback > Lyrics size
+  (panel) and Lyrics size (fullscreen) scale the lyrics text from 60% to 200% on top of the base
+  font size.
+
+### Changed
+
+- The fullscreen title and artist names stay on screen while the player is idle. Only the heart
+  beside the title fades, the way it already did in the narrow lyrics view.
 
 ### Fixed
 
+- Playback now skips deleted or unavailable playlist songs when moving forward or backward.
 - Installing the standalone `.flatpak` bundle now registers the Sonora repository, so `flatpak update`
   keeps it current, and it can replace an install made from the repository.
+- Emoji in playlist, track, and artist names now render instead of falling back to missing-glyph
+  boxes when the UI font has no emoji glyphs.
+- Cookie onboarding for YTMusic is now easier to read
 
 ## [0.29.0] - 2026-09-03
 

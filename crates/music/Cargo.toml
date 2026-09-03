@@ -28,9 +28,10 @@ percent-encoding.workspace = true
 protobuf.workspace = true
 reqwest.workspace = true
 roxmltree.workspace = true
-rodio = { workspace = true, features = ["symphonia-aac", "symphonia-alac", "symphonia-isomp4", "flac", "mp3", "vorbis", "wav"] }
-rodio_tap.workspace = true
+rodio = { workspace = true, features = ["symphonia-aac", "symphonia-alac", "symphonia-isomp4", "symphonia-libopus", "flac", "mp3", "vorbis", "wav"] }
+rtrb.workspace = true
 rusqlite.workspace = true
+rustfft.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true

@@ -21,6 +21,9 @@ struct Attached {
 impl Global for Attached {}
 
 pub fn attach(hwnd: Option<*mut c_void>, cx: &mut App) {
+    if cx.has_global::<Attached>() {
+        return;
+    }
     let config = PlatformConfig {
         dbus_name: BUS_NAME,
         display_name: DISPLAY_NAME,

@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::shared::local;
-use crate::shared::popups::{AccountPicker, BrowserPicker, SearchPopup, matches_query};
+use crate::shared::popups::{
+    AccountPicker, BrowserPicker, CookiePrompt, SearchPopup, matches_query,
+};
 use gpui::{
     AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, TextRun, Window,
     div, font, px,
@@ -16,9 +18,9 @@ use router::{NavEntry, Screen, SettingsTab};
 use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
-    Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT,
-    MenuItem, Modal, Pace, Picker, Popovers, Rounding, Saver, Scrubber, ScrubberState, Separator,
-    Skeleton, Stillness, Switch, Text, Theme, ThemeKind,
+    Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
+    MIN_FONT, MIN_LYRICS_SCALE, MenuItem, Pace, Picker, Popovers, Rounding, Saver, Scrubber,
+    ScrubberState, Separator, Skeleton, Stillness, Switch, Text, Theme, ThemeKind,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -186,6 +188,8 @@ impl SettingsView {
                 Row::Item(self.startup_row(cx).into_any_element()),
                 Row::Item(self.entries_row(cx).into_any_element()),
                 Row::Item(self.language_row(cx).into_any_element()),
+                self.title("settings-group-window", cx),
+                Row::Item(self.tray_row(cx).into_any_element()),
                 self.title("settings-group-accounts", cx),
                 Row::Item(self.accounts_row(cx).into_any_element()),
                 self.title("settings-group-library", cx),
@@ -194,6 +198,7 @@ impl SettingsView {
             SettingsTab::Appearance => vec![
                 Row::Item(self.theme_row(cx).into_any_element()),
                 Row::Item(self.adaptive_row(cx).into_any_element()),
+                Row::Item(self.visualizer_row(cx).into_any_element()),
                 Row::Item(self.icons_row(cx).into_any_element()),
                 Row::Item(self.opacity_row(cx).into_any_element()),
                 Row::Item(self.corners_row(cx).into_any_element()),
@@ -201,7 +206,6 @@ impl SettingsView {
                 Row::Item(self.font_row(cx).into_any_element()),
                 Row::Item(self.typeface_row(cx).into_any_element()),
                 self.title("settings-group-motion", cx),
-                Row::Item(self.visualization_row(cx).into_any_element()),
                 Row::Item(self.motion_row(cx).into_any_element()),
                 Row::Item(self.pace_row(cx).into_any_element()),
                 Row::Item(self.saver_row(cx).into_any_element()),
@@ -219,6 +223,8 @@ impl SettingsView {
                 Row::Item(self.playback_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
+                Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
+                Row::Item(self.fullscreen_lyrics_size_row(cx).into_any_element()),
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
                 Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
             ],
@@ -868,21 +874,21 @@ impl SettingsView {
         )
     }
 
-    fn visualization_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn visualizer_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
-        let on = self.playback.read(cx).visualization();
+        let on = self.settings.read(cx).visualizer();
 
         self.row(
-            t!("settings-visualization"),
-            t!("settings-visualization-detail"),
+            t!("settings-visualizer"),
+            t!("settings-visualizer-detail"),
             muted,
             small,
-            Switch::new("visualization", on)
+            Switch::new("visualizer", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.playback
-                        .update(cx, |playback, cx| playback.set_visualization(!on, cx));
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_visualizer(!on, cx));
                 }))
                 .into_any_element(),
         )
@@ -1010,6 +1016,26 @@ impl SettingsView {
         )
     }
 
+    fn tray_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).close_to_tray();
+
+        self.row(
+            t!("settings-close-to-tray"),
+            t!("settings-close-to-tray-detail"),
+            muted,
+            small,
+            Switch::new("close-to-tray", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_close_to_tray(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
     fn gapless_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1047,6 +1073,80 @@ impl SettingsView {
                         .update(cx, |settings, cx| settings.set_check_updates(!on, cx));
                 }))
                 .into_any_element(),
+        )
+    }
+
+    fn panel_lyrics_size_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let scale = self.settings.read(cx).panel_lyrics_scale();
+
+        self.lyrics_size_row(
+            "panel-lyrics-size",
+            "settings-panel-lyrics-size",
+            "settings-panel-lyrics-size-detail",
+            scale,
+            |settings, scale, cx| settings.set_panel_lyrics_scale(scale, cx),
+            cx,
+        )
+    }
+
+    fn fullscreen_lyrics_size_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let scale = self.settings.read(cx).fullscreen_lyrics_scale();
+
+        self.lyrics_size_row(
+            "fullscreen-lyrics-size",
+            "settings-fullscreen-lyrics-size",
+            "settings-fullscreen-lyrics-size-detail",
+            scale,
+            |settings, scale, cx| settings.set_fullscreen_lyrics_scale(scale, cx),
+            cx,
+        )
+    }
+
+    fn lyrics_size_row(
+        &self,
+        id: &'static str,
+        title: &'static str,
+        detail: &'static str,
+        scale: f32,
+        apply: fn(&mut AppSettings, f32, &mut Context<AppSettings>),
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+
+        let step = move |suffix: &'static str, label: &'static str, delta: f32| {
+            let wanted = (scale + delta).clamp(MIN_LYRICS_SCALE, MAX_LYRICS_SCALE);
+
+            Button::new(SharedString::from(format!("{id}-{suffix}")))
+                .label(label)
+                .small()
+                .outline()
+                .disabled(wanted == scale)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| apply(settings, wanted, cx));
+                    cx.notify();
+                }))
+        };
+
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(step("smaller", "\u{2212}", -0.1))
+            .child(div().child(t!(
+                "settings-lyrics-size-value",
+                size = (scale * 100.).round() as i64
+            )))
+            .child(step("larger", "+", 0.1));
+
+        self.row(
+            i18n::lookup(title, None),
+            i18n::lookup(detail, None),
+            muted,
+            small,
+            actions.into_any_element(),
         )
     }
 
@@ -1378,23 +1478,9 @@ impl SettingsView {
     }
 
     fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Modal::new("settings-cookie-prompt", t!("login-cookie-title"))
-            .w(px(560.))
-            .detail(t!("login-cookie-detail"))
-            .child(self.secret.clone())
-            .action(
-                Button::new("settings-cancel-cookies")
-                    .ghost()
-                    .label(t!("common-cancel"))
-                    .on_click(cx.listener(|this, _, _, cx| this.abandon(cx))),
-            )
-            .action(
-                Button::new("settings-submit-cookies")
-                    .label(t!("login-cookie-submit"))
-                    .primary()
-                    .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
-            )
-            .on_dismiss(cx.listener(|this, _, _, cx| this.abandon(cx)))
+        CookiePrompt::new(self.secret.clone())
+            .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
+            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
     }
 
     fn method(

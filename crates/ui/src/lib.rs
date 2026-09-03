@@ -40,6 +40,7 @@ mod toast;
 mod tooltip;
 mod vacancy;
 mod view;
+mod visualizer;
 
 pub use artwork::{Artwork, Avatar, artwork_usage};
 pub use button::Button;
@@ -90,10 +91,12 @@ pub use table::{
 };
 pub use tabs::{TabBar, Tabs};
 pub use theme::{
-    ActiveTheme, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT, Theme, ThemeKind, ThemeOverrides,
+    ActiveTheme, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE,
+    Theme, ThemeKind, ThemeOverrides,
 };
 pub use time::clock;
 pub use toast::Toast;
 pub use tooltip::{Perch, Tooltip};
 pub use vacancy::Vacancy;
 pub use view::Mode;
+pub use visualizer::Visualizer;

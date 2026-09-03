@@ -8,6 +8,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use ytmusic::YtMusic;
 
 use crate::audio::{Output, RAMP, SmoothGain, Trimmed, Volume};
+use crate::spectrum::Spectrum;
 use crate::youtube::trim;
 use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, PlaybackFactory, Player};
 
@@ -38,18 +39,24 @@ impl PlaybackFactory for Factory {
         let (commands, command_rx) = unbounded_channel();
         let (events, event_rx) = unbounded_channel();
         let api = self.api.clone();
+        let spectrum = Spectrum::new();
+        let engine_spectrum = spectrum.clone();
         let spawned = std::thread::Builder::new()
             .name("yt-playback".to_string())
-            .spawn(move || run(api, config, command_rx, events));
+            .spawn(move || run(api, config, command_rx, events, engine_spectrum));
         if let Err(error) = spawned {
             log::error!("playback: cannot spawn engine thread: {error}");
         }
-        (Box::new(Engine { commands }), Box::new(Events(event_rx)))
+        (
+            Box::new(Engine { commands, spectrum }),
+            Box::new(Events(event_rx)),
+        )
     }
 }
 
 struct Engine {
     commands: UnboundedSender<Command>,
+    spectrum: Spectrum,
 }
 
 impl Player for Engine {
@@ -93,6 +100,10 @@ impl Player for Engine {
 
     fn set_gain(&self, gain: f32) {
         self.commands.send(Command::Gain(gain)).ok();
+    }
+
+    fn spectrum(&self) -> Option<Spectrum> {
+        Some(self.spectrum.clone())
     }
 }
 
@@ -146,6 +157,7 @@ fn run(
     config: PlaybackConfig,
     commands: UnboundedReceiver<Command>,
     events: UnboundedSender<PlaybackEvent>,
+    spectrum: Spectrum,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -157,7 +169,7 @@ fn run(
             return;
         }
     };
-    runtime.block_on(engine_loop(api, config, commands, events));
+    runtime.block_on(engine_loop(api, config, commands, events, spectrum));
 }
 
 async fn engine_loop(
@@ -165,8 +177,9 @@ async fn engine_loop(
     config: PlaybackConfig,
     mut commands: UnboundedReceiver<Command>,
     events: UnboundedSender<PlaybackEvent>,
+    spectrum: Spectrum,
 ) {
-    let output = match Output::open(Volume::new(config.gain), config.visualizer.clone()) {
+    let output = match Output::open(Volume::new(config.gain), spectrum) {
         Ok(output) => output,
         Err(error) => {
             log::error!("playback: cannot open audio output: {error:#}");
@@ -181,6 +194,7 @@ async fn engine_loop(
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let report_every = (config.position_interval.as_millis() / POLL.as_millis()).max(1) as u32;
     let mut ticks = 0u32;
+    let mut output_ticks = 0u32;
 
     let mut playing = false;
     let mut autostart = true;
@@ -227,6 +241,10 @@ async fn engine_loop(
                                 Some(spawn(&api, id.clone(), epoch, Kind::Play, &fetched));
                         }
                         events.send(PlaybackEvent::Loading(at.unwrap_or_default())).ok();
+                        if output.failed() || output.changed() {
+                            events.send(PlaybackEvent::OutputChanged).ok();
+                            return;
+                        }
                         silence(&sink, current.as_ref()).await;
                         current = None;
                         queued = None;
@@ -259,6 +277,10 @@ async fn engine_loop(
                     }
                     Command::Play => {
                         autostart = true;
+                        if output.failed() || output.changed() {
+                            events.send(PlaybackEvent::OutputChanged).ok();
+                            return;
+                        }
                         if let Some(slot) = &current {
                             sink.play();
                             slot.unmute();
@@ -344,6 +366,14 @@ async fn engine_loop(
                 }
             }
             _ = ticker.tick() => {
+                output_ticks += 1;
+                if playing && (output.failed() || output_ticks >= report_every && output.changed()) {
+                    events.send(PlaybackEvent::OutputChanged).ok();
+                    return;
+                }
+                if output_ticks >= report_every {
+                    output_ticks = 0;
+                }
                 let len = sink.len();
                 ticks += 1;
                 if current.is_some() && playing && len < prev_len {
@@ -394,7 +424,7 @@ fn spawn(
     .abort_handle()
 }
 
-async fn silence(sink: &rodio::Sink, slot: Option<&Slot>) {
+async fn silence(sink: &rodio::Player, slot: Option<&Slot>) {
     let Some(slot) = slot else {
         sink.clear();
         return;
@@ -404,7 +434,7 @@ async fn silence(sink: &rodio::Sink, slot: Option<&Slot>) {
     sink.clear();
 }
 
-async fn await_drain(sink: &rodio::Sink) {
+async fn await_drain(sink: &rodio::Player) {
     if sink.is_paused() {
         return;
     }
@@ -412,7 +442,7 @@ async fn await_drain(sink: &rodio::Sink) {
 }
 
 fn begin(
-    sink: &rodio::Sink,
+    sink: &rodio::Player,
     id: &str,
     loaded: &Loaded,
     config: &PlaybackConfig,
@@ -434,7 +464,7 @@ fn begin(
 }
 
 fn append(
-    sink: &rodio::Sink,
+    sink: &rodio::Player,
     id: &str,
     loaded: &Loaded,
     config: &PlaybackConfig,

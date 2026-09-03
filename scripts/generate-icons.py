@@ -15,6 +15,8 @@ MASTER = ROOT / "assets" / "icon.svg"
 
 LINUX_SIZES = [16, 24, 32, 48, 64, 128, 256, 512]
 WINDOWS_SIZES = [16, 24, 32, 48, 64, 128, 256]
+TRAY_SIZES = [32, 64]
+TRAY_STROKE = 3.2
 
 ICNS_TYPES = [
     ("icp4", 16),
@@ -165,6 +167,15 @@ def squircle_svg(master, pixels):
     )
 
 
+def template_svg(master):
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{master.span:g}"'
+        f' height="{master.span:g}" viewBox="0 0 {master.span:g} {master.span:g}">\n'
+        f"{master.glyph(TRAY_STROKE)}\n"
+        f"</svg>\n"
+    )
+
+
 def rounded_svg(master, pixels):
     radius = master.span * WINDOWS_RADIUS
     return (
@@ -274,7 +285,19 @@ def main():
         windows.mkdir(parents=True, exist_ok=True)
         write_ico(ico, windows / "sonora.ico")
 
-    print(f"icons: {len(LINUX_SIZES)} linux png, 1 linux svg, 1 icns, 1 ico")
+        tray = assets / "tray"
+        tray.mkdir(parents=True, exist_ok=True)
+        for pixels in TRAY_SIZES:
+            blob = rasterize(template_svg(master), pixels, workdir, f"t{pixels}")
+            (tray / f"template-{pixels}.png").write_bytes(blob)
+        (tray / "sonora.png").write_bytes(
+            rasterize(round_svg(master, 32), 32, workdir, "tray")
+        )
+
+    print(
+        f"icons: {len(LINUX_SIZES)} linux png, 1 linux svg, 1 icns, 1 ico,"
+        f" {len(TRAY_SIZES) + 1} tray png"
+    )
 
 
 if __name__ == "__main__":

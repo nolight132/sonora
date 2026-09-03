@@ -1,5 +1,6 @@
 mod accounts;
 mod browsers;
+mod cookie;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -10,6 +11,7 @@ use ui::{Input, Menu, Picker, Scrollbar, SelectNext, SelectPrevious, Submit};
 
 pub(crate) use accounts::AccountPicker;
 pub(crate) use browsers::BrowserPicker;
+pub(crate) use cookie::CookiePrompt;
 
 const SEARCH_HEIGHT: Pixels = px(320.);
 const SELECTED_LEAD: usize = 2;

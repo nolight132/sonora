@@ -125,15 +125,12 @@ fn system_font() -> String {
     SYSTEM_FONT.to_owned()
 }
 
-fn visualization_on() -> bool {
-    true
-}
-
 const SAVE_DELAY: Duration = Duration::from_millis(300);
 const DEFAULT_VOLUME: f32 = 0.7;
 const DEFAULT_SIDEBAR_WIDTH: f32 = 195.;
 const DEFAULT_SIDEBAR_RIGHT_WIDTH: f32 = 254.;
 const DEFAULT_FONT_SIZE: f32 = 14.;
+const DEFAULT_LYRICS_SCALE: f32 = 1.;
 const DEFAULT_STARTUP: &str = "home";
 
 pub const SYSTEM_FONT: &str = "auto";
@@ -156,9 +153,12 @@ struct Values {
     gapless: bool,
     karaoke_lyrics: bool,
     romanized_lyrics: bool,
+    panel_lyrics_scale: f32,
+    fullscreen_lyrics_scale: f32,
     romanization_scripts: RomanizationScripts,
     adaptive_menu: bool,
     check_updates: bool,
+    close_to_tray: bool,
     sidebar_width: f32,
     sidebar_open: bool,
     sidebar_right_width: f32,
@@ -195,6 +195,7 @@ struct Values {
 struct Appearance {
     theme: String,
     adaptive_theme: bool,
+    visualizer: bool,
     icons: String,
     rounding: String,
     font_size: f32,
@@ -205,7 +206,6 @@ struct Appearance {
     reduce_motion: String,
     motion_pace: String,
     battery_saver: String,
-    visualization: bool,
     system_theme: String,
     theme_overrides: ThemeOverrides,
 }
@@ -219,9 +219,12 @@ impl Default for Values {
             gapless: true,
             karaoke_lyrics: true,
             romanized_lyrics: true,
+            panel_lyrics_scale: DEFAULT_LYRICS_SCALE,
+            fullscreen_lyrics_scale: DEFAULT_LYRICS_SCALE,
             romanization_scripts: RomanizationScripts::default(),
             adaptive_menu: false,
             check_updates: cfg!(target_os = "windows"),
+            close_to_tray: true,
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
             sidebar_open: true,
             sidebar_right_width: DEFAULT_SIDEBAR_RIGHT_WIDTH,
@@ -276,6 +279,7 @@ impl Default for Appearance {
         Self {
             theme: "dark".to_owned(),
             adaptive_theme: true,
+            visualizer: true,
             icons: icons::BASE.to_owned(),
             rounding: Rounding::Rounded.id().to_owned(),
             font_size: DEFAULT_FONT_SIZE,
@@ -286,7 +290,6 @@ impl Default for Appearance {
             reduce_motion: Stillness::default().id().to_owned(),
             motion_pace: Pace::default().id().to_owned(),
             battery_saver: Saver::default().id().to_owned(),
-            visualization: true,
             system_theme: ThemeKind::Dark.id().to_owned(),
             theme_overrides: ThemeOverrides::default(),
         }
@@ -349,6 +352,18 @@ impl AppSettings {
         self.values.romanized_lyrics
     }
 
+    pub fn panel_lyrics_scale(&self) -> f32 {
+        self.values
+            .panel_lyrics_scale
+            .clamp(ui::MIN_LYRICS_SCALE, ui::MAX_LYRICS_SCALE)
+    }
+
+    pub fn fullscreen_lyrics_scale(&self) -> f32 {
+        self.values
+            .fullscreen_lyrics_scale
+            .clamp(ui::MIN_LYRICS_SCALE, ui::MAX_LYRICS_SCALE)
+    }
+
     pub fn romanization_scripts(&self) -> RomanizationScripts {
         self.values.romanization_scripts
     }
@@ -359,6 +374,10 @@ impl AppSettings {
 
     pub fn check_updates(&self) -> bool {
         self.values.check_updates
+    }
+
+    pub fn close_to_tray(&self) -> bool {
+        self.values.close_to_tray
     }
 
     pub fn sidebar_width(&self) -> f32 {
@@ -417,6 +436,10 @@ impl AppSettings {
         self.values.appearance.adaptive_theme
     }
 
+    pub fn visualizer(&self) -> bool {
+        self.values.appearance.visualizer
+    }
+
     pub fn icons(&self) -> &str {
         &self.values.appearance.icons
     }
@@ -435,10 +458,6 @@ impl AppSettings {
 
     pub fn saver(&self) -> Saver {
         Saver::from_id(&self.values.appearance.battery_saver)
-    }
-
-    pub fn visualization(&self) -> bool {
-        self.values.appearance.visualization
     }
 
     pub fn system_theme(&self) -> ThemeKind {
@@ -518,6 +537,17 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    pub fn set_panel_lyrics_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
+        self.values.panel_lyrics_scale = scale.clamp(ui::MIN_LYRICS_SCALE, ui::MAX_LYRICS_SCALE);
+        self.schedule_save(cx);
+    }
+
+    pub fn set_fullscreen_lyrics_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
+        self.values.fullscreen_lyrics_scale =
+            scale.clamp(ui::MIN_LYRICS_SCALE, ui::MAX_LYRICS_SCALE);
+        self.schedule_save(cx);
+    }
+
     pub fn set_romanization_script(
         &mut self,
         writing_system: WritingSystem,
@@ -537,6 +567,11 @@ impl AppSettings {
 
     pub fn set_check_updates(&mut self, check_updates: bool, cx: &mut Context<Self>) {
         self.values.check_updates = check_updates;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_close_to_tray(&mut self, close_to_tray: bool, cx: &mut Context<Self>) {
+        self.values.close_to_tray = close_to_tray;
         self.schedule_save(cx);
     }
 
@@ -738,6 +773,11 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    pub fn set_visualizer(&mut self, visualizer: bool, cx: &mut Context<Self>) {
+        self.values.appearance.visualizer = visualizer;
+        self.schedule_save(cx);
+    }
+
     pub fn set_icons(&mut self, pack: impl Into<String>, cx: &mut Context<Self>) {
         let pack = pack.into();
         if self.values.appearance.icons == pack {
@@ -786,15 +826,6 @@ impl AppSettings {
         }
         self.values.appearance.battery_saver = saver.id().to_owned();
         self.schedule_save(cx);
-    }
-
-    pub fn set_visualization(&mut self, on: bool, cx: &mut Context<Self>) {
-        if self.visualization() == on {
-            return;
-        }
-        self.values.appearance.visualization = on;
-        self.schedule_save(cx);
-        cx.notify();
     }
 
     pub fn set_window_controls(&mut self, shown: bool, cx: &mut Context<Self>) {

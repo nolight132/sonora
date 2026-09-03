@@ -23,7 +23,7 @@ A native music streaming client, built with Rust and [GPUI](https://github.com/z
 
 ```
 crates/
-  sonora/     binary: main, window, actions, asset registry, HTTP client shim
+  sonora/     binary: main, window, actions, asset registry, HTTP client shim, tray, dock
   views/      screens plus app chrome: title bar, sidebar, player bar, filter/search field
   state/      GPUI entities holding app state; owns all async orchestration
   music/      provider traits + models; spotify/ = librespot data access and playback (no GPUI)
@@ -676,6 +676,21 @@ field in the title bar. Don't build a second search box.
 `bindings()`, handle them with `cx.on_action` (global, in `sonora/src/actions.rs`) or
 `.on_action(cx.listener(…))` (scoped). Key contexts: `Workspace`, `Input`, `Table`. Both `cmd-` and
 `ctrl-` bindings are registered for every shortcut.
+
+**The tray outlives the window.** `sonora/src/tray.rs` owns one `Tray` entity driven by two
+backends: `tray/native.rs` (`tray-icon`, macOS and Windows) and `tray/sni.rs` (`ksni`, Linux over
+D-Bus, no gtk). Both expose the same `Icon::new(sender) -> Option<Icon>` / `Icon::show(&Shown)`
+pair; the entity turns tray events into `Playback` calls the way `state::remote` does and rebuilds
+the labels from `t!` on every playback change, so they follow the language. `install` returns
+`false` when no tray can be placed — no StatusNotifierWatcher on the bus, say — and
+`actions::register` then keeps the old quit-on-last-window behaviour, so a headless Sonora never
+lingers unreachable. With a tray and `close_to_tray` on, the last window closing only flips
+`dock::show(false)` (Accessory policy on macOS; a no-op elsewhere) and `show_window` in `main.rs`
+brings it back from the tray, a Dock relaunch (`on_reopen`) or a `spotify:` link. `ksni` must stay
+on `async-io`: `gpui_linux` already drives `zbus` on that executor, and mixing in `zbus/tokio`
+panics at runtime. The icons come from `assets/tray/`, which `scripts/generate-icons.py` derives
+from the master like every other artefact — a template glyph for the macOS menu bar, the round
+one for Windows and Linux.
 
 **Assets.** `crates/sonora/src/assets.rs` answers GPUI for both icons and fonts: icons come from
 the `icons` crate, fonts from a `FONTS` table its build script writes by walking `assets/fonts`.

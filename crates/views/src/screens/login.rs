@@ -1,4 +1,4 @@
-use crate::shared::popups::{AccountPicker, BrowserPicker};
+use crate::shared::popups::{AccountPicker, BrowserPicker, CookiePrompt};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, ClipboardItem, Context, Entity, FontWeight, IntoElement, Pixels, Render,
@@ -8,7 +8,7 @@ use i18n::t;
 use music::{AccountChoice, SignIn, SignInPrompt};
 use state::{Session, SessionState, Sonora, Usage};
 use ui::ActiveTheme as _;
-use ui::{Button, Checkbox, Input, Modal, TabBar, Text};
+use ui::{Button, Checkbox, Input, TabBar, Text};
 
 const COLUMN: Pixels = px(280.);
 const LOGO: Pixels = px(48.);
@@ -285,23 +285,9 @@ impl LoginView {
     }
 
     fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Modal::new("cookie-prompt", t!("login-cookie-title"))
-            .w(px(560.))
-            .detail(t!("login-cookie-detail"))
-            .child(self.secret.clone())
-            .action(
-                Button::new("cancel-cookies")
-                    .ghost()
-                    .label(t!("common-cancel"))
-                    .on_click(cx.listener(|this, _, _, cx| this.abandon(cx))),
-            )
-            .action(
-                Button::new("submit-cookies")
-                    .label(t!("login-cookie-submit"))
-                    .primary()
-                    .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
-            )
-            .on_dismiss(cx.listener(|this, _, _, cx| this.abandon(cx)))
+        CookiePrompt::new(self.secret.clone())
+            .on_submit(cx.listener(|this, _, _, cx| this.submit(cx)))
+            .on_cancel(cx.listener(|this, _, _, cx| this.abandon(cx)))
     }
 
     fn account_modal(

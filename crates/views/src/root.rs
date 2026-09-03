@@ -483,7 +483,7 @@ impl Root {
 
 const UI_FONT: &str = "Inter";
 
-const SCRIPTS: [&str; 15] = [
+const SCRIPTS: [&str; 18] = [
     "Source Han Sans",
     "Noto Sans CJK JP",
     "Noto Sans CJK SC",
@@ -499,6 +499,9 @@ const SCRIPTS: [&str; 15] = [
     "Yu Gothic UI",
     "Microsoft YaHei UI",
     "Malgun Gothic",
+    "Noto Color Emoji",
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
 ];
 
 fn ui_font(cx: &App) -> Font {

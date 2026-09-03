@@ -1,5 +1,5 @@
 //! Vairious visualizations for the Sonora UI.
-//! 
+//!
 //! The idea here is that we may have multiple different visualizations that can be used in different contexts.
 //! For now, we just have the frame glow used on the play bar around the artwork.
 

@@ -3,17 +3,36 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { nixpkgs, ... }:
+    {
+      nixpkgs,
+      rust-overlay,
+      ...
+    }:
     let
       systems = [
         "x86_64-linux"
         "aarch64-linux"
       ];
 
-      forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
+      forEachSystem =
+        fn:
+        nixpkgs.lib.genAttrs systems (
+          system:
+          let
+            pkgs = import nixpkgs {
+              inherit system;
+              overlays = [ (import rust-overlay) ];
+            };
+          in
+          fn pkgs
+        );
 
       release = {
         version = "0.29.0";
@@ -117,6 +136,7 @@
       devShells = forEachSystem (
         pkgs:
         let
+          rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           runtimeLibraries = with pkgs; [
             vulkan-loader
             wayland
@@ -137,9 +157,8 @@
             nativeBuildInputs = with pkgs; [
               mold
               pkg-config
-              rustc
-              rust-analyzer
-              rustfmt
+              cmake
+              rustToolchain
               sccache
             ];
 

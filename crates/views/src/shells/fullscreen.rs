@@ -1,24 +1,28 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyView, App, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, MouseButton,
+    AnyView, App, Bounds, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render, ScrollWheelEvent,
     SharedString, SpringState, Task,
 };
-use gpui::{Window, div, px, relative};
+use gpui::{Window, canvas, div, px, relative};
 use i18n::t;
 use input::{ToggleFullscreen, WORKSPACE_CONTEXT};
 use router::{Destination, navigate};
-use state::{Cover, Playback, Queue, SideTab, Sonora};
+use state::{AppSettings, Cover, Playback, Queue, SideTab, Sonora};
 use ui::{
     ActiveTheme as _, Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Motion,
-    Motioned as _, Popup, Room, Scrollbar, Scrubber, ScrubberState, Springs, Text, clock, snapped,
+    Motioned as _, Popup, Room, Scrollbar, Scrubber, ScrubberState, Springs, Text, Visualizer,
+    clock, snapped,
 };
 
 use crate::chrome::{Aside, TitleBarOptions};
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
+use crate::shared::visualizer::VisualizerDrive;
 use crate::shells::Shell;
 
 const COVER_TALL: f32 = 0.46;
@@ -43,6 +47,7 @@ const VOLUME_RISE: f32 = 132.;
 const VOLUME_ZONE: f32 = 14.;
 const CLOCK_SHORT: f32 = 3.4;
 const CLOCK_LONG: f32 = 5.4;
+const VISUALIZER_MIN: f32 = 160.;
 const REST: Duration = Duration::from_millis(1500);
 const WAKE_DEBOUNCE: Duration = Duration::from_millis(400);
 const SPRING_REST: f32 = 0.001;
@@ -52,6 +57,7 @@ pub struct FullscreenView {
     playback: Entity<Playback>,
     queue: Entity<Queue>,
     cover: Entity<Cover>,
+    settings: Entity<AppSettings>,
     aside: Entity<Aside>,
     panel: Option<SideTab>,
     seek: ScrubberState,
@@ -74,6 +80,9 @@ pub struct FullscreenView {
     spring_beat: Instant,
     rest: Option<Task<()>>,
     focus: FocusHandle,
+    visualizer: VisualizerDrive,
+    root_bounds: Rc<Cell<Bounds<Pixels>>>,
+    artwork_bounds: Rc<Cell<Bounds<Pixels>>>,
 }
 
 impl FullscreenView {
@@ -94,6 +103,7 @@ impl FullscreenView {
             playback,
             queue,
             cover,
+            settings,
             aside,
             panel: Some(SideTab::Lyrics),
             seek: ScrubberState::new("fullscreen-seek"),
@@ -119,6 +129,9 @@ impl FullscreenView {
             spring_beat: Instant::now(),
             rest: None,
             focus: cx.focus_handle(),
+            visualizer: VisualizerDrive::default(),
+            root_bounds: Rc::new(Cell::new(Bounds::default())),
+            artwork_bounds: Rc::new(Cell::new(Bounds::default())),
         };
         this.stir(cx);
         this
@@ -280,6 +293,7 @@ impl FullscreenView {
         }
         let revision = self.revision;
         let waiting = large.is_none();
+        let artwork_bounds = self.artwork_bounds.clone();
 
         div()
             .id("fullscreen-artwork")
@@ -290,6 +304,14 @@ impl FullscreenView {
                 this.cursor_pointer()
                     .on_click(move |_, _, cx| open_album(&album, cx))
             })
+            .child(
+                canvas(
+                    move |bounds, _, _| artwork_bounds.set(bounds),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(
                 div()
                     .absolute()
@@ -314,11 +336,13 @@ impl FullscreenView {
                                     Artwork::new(Some(url))
                                         .size(raster_side)
                                         .corner_radius(radius)
-                                        .motion(("cover-large", revision), Motion::Slow, |art, t| {
-                                            art.opacity(t)
-                                        }),
+                                        .motion(
+                                            ("cover-large", revision),
+                                            Motion::Slow,
+                                            |art, t| art.opacity(t),
+                                        ),
                                 )
-                            })
+                            }),
                     ),
             )
     }
@@ -334,9 +358,8 @@ impl FullscreenView {
         cx.notify();
     }
 
-    fn meta(&self, hide: f32, cx: &mut Context<Self>) -> impl IntoElement {
+    fn meta(&self, hide: f32, lift: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
-        let shown = 1. - hide;
         let track = self.playback.read(cx).track().cloned();
         let title = match &track {
             Some(track) => SharedString::from(track.name.clone()),
@@ -355,12 +378,7 @@ impl FullscreenView {
             .gap_1()
             .w_full()
             .min_w_0()
-            .when(hide > 0., |this| {
-                this.max_h(theme.metrics.player_bar * shown)
-                    .overflow_hidden()
-                    .opacity(shown)
-                    .top(px(SINK) * hide)
-            })
+            .top(lift)
             .child(
                 div()
                     .flex()
@@ -399,7 +417,13 @@ impl FullscreenView {
                     .when(explicit, |this| {
                         this.child(div().flex_none().child(ExplicitBadge::new()))
                     })
-                    .child(div().flex().flex_none().child(like(track.clone(), cx))),
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .opacity(1. - hide)
+                            .child(like(track.clone(), cx)),
+                    ),
             )
             .when_some(track, |this, track| {
                 this.child(
@@ -420,12 +444,7 @@ impl FullscreenView {
             })
     }
 
-    fn strip(
-        &self,
-        hide: f32,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn strip(&self, hide: f32, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let cover = ui::snapped(theme.metrics.row, window);
         let track = self.playback.read(cx).track().cloned();
@@ -903,7 +922,21 @@ impl Render for FullscreenView {
         let side = snapped(near, window);
         let raster_side = snapped(far, window);
         let cover_scale = presentation_scale(presented_side, raster_side);
+        let lift = (presented_side - side) / 2.;
         let staged = self.panel.is_none() || split;
+
+        let visualizer_on = self.panel.is_none() && self.settings.read(cx).visualizer();
+        match visualizer_on
+            .then(|| self.playback.read(cx).spectrum())
+            .flatten()
+        {
+            Some(spectrum) => self.visualizer.show(cx.entity_id(), spectrum, window),
+            None => self.visualizer.hide(),
+        }
+        let bottom = |bounds: Bounds<Pixels>| bounds.origin.y + bounds.size.height;
+        let visualizer_max = (bottom(self.root_bounds.get()) - bottom(self.artwork_bounds.get()))
+            .max(px(VISUALIZER_MIN));
+        let root_bounds = self.root_bounds.clone();
 
         div()
             .id("fullscreen")
@@ -922,6 +955,20 @@ impl Render for FullscreenView {
             .on_any_mouse_down(cx.listener(|this, _: &MouseDownEvent, _, cx| this.poke(cx)))
             .on_scroll_wheel(cx.listener(|this, _: &ScrollWheelEvent, _, cx| this.poke(cx)))
             .on_key_down(cx.listener(|this, _: &KeyDownEvent, _, cx| this.poke(cx)))
+            .child(
+                canvas(move |bounds, _, _| root_bounds.set(bounds), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
+            .when(visualizer_on, |this| {
+                this.child(
+                    Visualizer::new(self.visualizer.levels(), visualizer_max)
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom_0(),
+                )
+            })
             .child(
                 div()
                     .relative()
@@ -947,7 +994,7 @@ impl Render for FullscreenView {
                                     |this| this.w_full(),
                                 )
                                 .child(self.artwork(side, raster_side, cover_scale, cx))
-                                .child(self.meta(hide, cx))
+                                .child(self.meta(hide, lift, cx))
                                 .when(split, |this| {
                                     this.child(self.dock(theme.metrics.player_bar * DOCK, hide, cx))
                                 }),

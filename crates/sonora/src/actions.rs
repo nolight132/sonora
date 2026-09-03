@@ -4,14 +4,19 @@ use input::{Quit, RefreshLibrary, SignOut, SongNext, SongPrevious, TogglePlaybac
 use router::Destination;
 use state::Sonora;
 
-pub fn register(cx: &mut App) {
+pub fn register(lingers: bool, cx: &mut App) {
     cx.bind_keys(input::bindings());
 
     cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
 
-    cx.on_window_closed(|cx, _| {
-        if cx.windows().is_empty() {
-            cx.quit();
+    cx.on_window_closed(move |cx, _| {
+        if !cx.windows().is_empty() {
+            return;
+        }
+        let close_to_tray = Sonora::global(cx).settings.read(cx).close_to_tray();
+        match lingers && close_to_tray {
+            true => crate::dock::show(false),
+            false => cx.quit(),
         }
     })
     .detach();

@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, Window, div, px};
-use music::Pulse;
+use music::Spectrum;
 use state::{Playback, PlaybackState, Sonora};
 use ui::motion::animates;
 
@@ -70,6 +70,9 @@ const RIM_SCALE_CORNER: f32 = 2.;
 /// Minimum glow scale above 1.0 for small artwork, as a fraction of side length.
 const RIM_SCALE_FLOOR: f32 = 0.012;
 
+/// Soft knee applied to raw FFT band means, same curve the old pulse used.
+const SQUASH: f32 = 0.08;
+
 /// Colour of the glow wash.
 const GLOW_COLOUR: Hsla = Hsla {
     h: 0.,
@@ -78,7 +81,16 @@ const GLOW_COLOUR: Hsla = Hsla {
     a: GLOW_BASELINE_OPACITY,
 };
 
-/// Produces an artwork glow that follows the current audio pulse.
+#[derive(Clone, Copy, Default)]
+struct Pulse {
+    peak: f32,
+    rms: f32,
+    bass: f32,
+    mids: f32,
+    highs: f32,
+}
+
+/// Produces an artwork glow that follows the current audio spectrum.
 pub(crate) struct FrameGlow {
     /// Smoothed pulse carried between rendered frames.
     chased: Pulse,
@@ -101,9 +113,9 @@ impl FrameGlow {
     ///
     /// - `size`: Side length of the square artwork.
     /// - `corner`: Artwork corner radius.
-    /// - `playback`: Source of playback state and visualizer pulses.
+    /// - `playback`: Source of playback state and spectrum bands.
     /// - `window`: Window to schedule while the glow is active or fading.
-    /// - `cx`: Application context used to read visualization settings.
+    /// - `cx`: Application context used to read the visualizer setting.
     pub(crate) fn sync(
         &mut self,
         size: Pixels,
@@ -113,10 +125,13 @@ impl FrameGlow {
         cx: &App,
     ) -> impl IntoElement {
         let settings = Sonora::global(cx).settings.read(cx);
-        let allowed = settings.visualization() && animates(cx);
+        let allowed = settings.visualizer() && animates(cx);
         let playing = *playback.state() == PlaybackState::Playing;
         let target = match allowed && playing {
-            true => playback.pulse(),
+            true => playback
+                .spectrum()
+                .map(|spectrum| pulse(&spectrum))
+                .unwrap_or_default(),
             false => Pulse::default(),
         };
 
@@ -232,6 +247,20 @@ fn strength(pulse: &Pulse) -> f32 {
 /// - `pulse`: Shaped pulse containing the frequency-band levels.
 fn mids_highs(pulse: &Pulse) -> f32 {
     pulse.mids.max(pulse.highs) * MIDS_HIGHS_MULTIPLIER
+}
+
+fn pulse(spectrum: &Spectrum) -> Pulse {
+    Pulse {
+        peak: spectrum.peak(),
+        rms: spectrum.rms(),
+        bass: squash(spectrum.bass()),
+        mids: squash(spectrum.mids()),
+        highs: squash(spectrum.highs()),
+    }
+}
+
+fn squash(magnitude: f32) -> f32 {
+    (magnitude / (magnitude + SQUASH)).clamp(0., 1.)
 }
 
 /// Minimum geometry needed to reveal the glow beyond the artwork rim.

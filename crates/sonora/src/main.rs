@@ -2,20 +2,22 @@
 
 mod actions;
 mod assets;
+mod dock;
 mod http;
 mod logging;
 mod memory;
 mod single;
+mod tray;
 
 use std::sync::Arc;
 
 use gpui::{
-    App, AppContext as _, Bounds, Entity, Pixels, Size, TitlebarOptions,
+    App, AppContext as _, Bounds, Pixels, QuitMode, Size, TitlebarOptions,
     WindowBackgroundAppearance, WindowBounds, WindowOptions, point, px, size,
 };
 use music::LyricsProvider;
 use router::Screen;
-use state::{Library, Playback, Queue, Session, Sonora};
+use state::Sonora;
 use ui::ActiveTheme as _;
 use ui::ThemeKind;
 use views::Root;
@@ -49,6 +51,7 @@ fn main() {
             sender.send(link).ok();
         }
     });
+    app.on_reopen(show_window);
 
     app.run(move |cx: &mut App| {
         if let Err(error) = assets::Assets.load_fonts(cx) {
@@ -109,29 +112,15 @@ fn main() {
         }
         ui::Theme::init(look, &overrides, cx);
 
-        actions::register(cx);
+        let lingers = tray::install(show_window, cx);
+        if lingers {
+            cx.set_quit_mode(QuitMode::Explicit);
+        }
+        actions::register(lingers, cx);
         memory::watch(cx);
 
-        let Sonora {
-            session,
-            cover: _,
-            library,
-            history: _,
-            lyrics: _,
-            playback,
-            queue,
-            settings: _,
-            updates: _,
-            usage: _,
-        } = Sonora::global(cx);
-        let (session, library, playback, queue) = (
-            session.clone(),
-            library.clone(),
-            playback.clone(),
-            queue.clone(),
-        );
-
-        open_window(session.clone(), library, playback, queue, cx);
+        open_window(cx);
+        let session = Sonora::global(cx).session.clone();
         session.update(cx, |session, cx| session.restore(cx));
 
         cx.spawn(async move |cx| {
@@ -146,19 +135,46 @@ fn main() {
 }
 
 fn follow(link: &str, cx: &mut App) {
+    show_window(cx);
     if let Some(destination) = router::destination(link) {
         router::navigate(destination, cx);
+    }
+}
+
+fn show_window(cx: &mut App) {
+    match cx.windows().first() {
+        Some(window) => {
+            window
+                .update(cx, |_, window, _| window.activate_window())
+                .ok();
+        }
+        None => {
+            dock::show(true);
+            open_window(cx);
+        }
     }
     cx.activate(true);
 }
 
-fn open_window(
-    session: Entity<Session>,
-    library: Entity<Library>,
-    playback: Entity<Playback>,
-    queue: Entity<Queue>,
-    cx: &mut App,
-) {
+fn open_window(cx: &mut App) {
+    let Sonora {
+        session,
+        cover: _,
+        library,
+        history: _,
+        lyrics: _,
+        playback,
+        queue,
+        settings: _,
+        updates: _,
+        usage: _,
+    } = Sonora::global(cx);
+    let (session, library, playback, queue) = (
+        session.clone(),
+        library.clone(),
+        playback.clone(),
+        queue.clone(),
+    );
     let placement = state::window_placement(LEAST_SIZE, cx)
         .unwrap_or_else(|| WindowBounds::Windowed(Bounds::centered(None, FIRST_SIZE, cx)));
     let saver = Sonora::global(cx).settings.read(cx).saver();

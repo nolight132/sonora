@@ -6,7 +6,7 @@ use anyhow::Result;
 use gpui::{App, Context, Entity, EventEmitter, SharedString, Task};
 use music::{
     MusicApi, PlaybackConfig, PlaybackEvent as BackendEvent, PlaybackEvents, PlaybackFactory,
-    Player, Pulse, Track, Visualizer,
+    Player, Spectrum, Track,
 };
 use ui::{Pin, PinKind};
 
@@ -247,57 +247,6 @@ impl From<&Pin> for Origin {
     }
 }
 
-struct PlaybackVisualizer {
-    streaming: Visualizer,
-    local: Visualizer,
-    streaming_task: tokio::task::JoinHandle<()>,
-    local_task: tokio::task::JoinHandle<()>,
-}
-
-impl PlaybackVisualizer {
-    fn start(cx: &App) -> Self {
-        let streaming = Visualizer::new();
-        let local = Visualizer::new();
-        let io = Io::global(cx);
-        let streaming_run = streaming.clone();
-        let local_run = local.clone();
-        Self {
-            streaming,
-            local,
-            streaming_task: io.spawn(async move { streaming_run.listen().await }),
-            local_task: io.spawn(async move { local_run.listen().await }),
-        }
-    }
-
-    fn handle(&self, local: bool) -> Visualizer {
-        match local {
-            true => self.local.clone(),
-            false => self.streaming.clone(),
-        }
-    }
-
-    fn pulse(&self, local: bool) -> Pulse {
-        match local {
-            true => self.local.pulse(),
-            false => self.streaming.pulse(),
-        }
-    }
-
-    fn clear(&self, local: bool) {
-        match local {
-            true => self.local.clear(),
-            false => self.streaming.clear(),
-        }
-    }
-}
-
-impl Drop for PlaybackVisualizer {
-    fn drop(&mut self) {
-        self.streaming_task.abort();
-        self.local_task.abort();
-    }
-}
-
 pub struct Playback {
     state: PlaybackState,
     origin: Option<Origin>,
@@ -306,7 +255,6 @@ pub struct Playback {
     track: Option<Track>,
     engine: Option<Box<dyn Player>>,
     local_engine: Option<Box<dyn Player>>,
-    visualizer: Option<PlaybackVisualizer>,
     session: Entity<Session>,
     queue: Entity<Queue>,
     settings: Entity<AppSettings>,
@@ -372,10 +320,6 @@ impl Playback {
         let level = settings.read(cx).volume();
         let normalisation = settings.read(cx).normalisation();
         let gapless = settings.read(cx).gapless();
-        let visualizer = match settings.read(cx).visualization() {
-            true => Some(PlaybackVisualizer::start(cx)),
-            false => None,
-        };
         let repeat = settings.read(cx).repeat();
         let radio = settings.read(cx).radio();
 
@@ -387,7 +331,6 @@ impl Playback {
             track: None,
             engine: None,
             local_engine: None,
-            visualizer,
             session,
             queue,
             settings,
@@ -429,6 +372,10 @@ impl Playback {
     fn active_engine(&self) -> Option<&dyn Player> {
         let id = self.track.as_ref()?.id.as_deref()?;
         self.engine_for(id)
+    }
+
+    pub fn spectrum(&self) -> Option<Spectrum> {
+        self.active_engine()?.spectrum()
     }
 
     fn silence_other(&self, id: &str) {
@@ -987,7 +934,7 @@ impl Playback {
             Repeat::All if !self.queue.read(cx).has_next() => {
                 self.fetch = None;
                 if let Some(track) = self.queue.update(cx, |queue, cx| queue.rewind(cx)) {
-                    self.load_after(&track, Start::Segue, cx);
+                    self.follow_after(track, Start::Segue, cx);
                 }
             }
             _ if self.radio && !self.queue.read(cx).has_next() => {
@@ -1044,6 +991,16 @@ impl Playback {
         let Some(track) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
             return;
         };
+        self.follow_after(track, start, cx);
+    }
+
+    fn follow_after(&mut self, mut track: Track, start: Start, cx: &mut Context<Self>) {
+        while !track.playable {
+            let Some(next) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
+                return;
+            };
+            track = next;
+        }
         self.load_after(&track, start, cx);
     }
 
@@ -1284,13 +1241,6 @@ impl Playback {
         self.track.as_ref()
     }
 
-    pub fn pulse(&self) -> Pulse {
-        self.visualizer
-            .as_ref()
-            .map(|visualizer| visualizer.pulse(self.local_active()))
-            .unwrap_or_default()
-    }
-
     pub fn progress(&self) -> f32 {
         let Some(total) = self.track.as_ref().map(|track| track.duration) else {
             return 0.;
@@ -1339,23 +1289,6 @@ impl Playback {
         self.gapless
     }
 
-    pub fn visualization(&self) -> bool {
-        self.visualizer.is_some()
-    }
-
-    pub fn set_visualization(&mut self, on: bool, cx: &mut Context<Self>) {
-        if self.visualization() == on {
-            return;
-        }
-        self.settings
-            .update(cx, |settings, cx| settings.set_visualization(on, cx));
-        self.visualizer = match on {
-            true => Some(PlaybackVisualizer::start(cx)),
-            false => None,
-        };
-        self.restart_visualizers(cx);
-    }
-
     pub fn set_gapless(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.gapless == on {
             return;
@@ -1383,32 +1316,6 @@ impl Playback {
             .is_some_and(music::is_local_id)
     }
 
-    fn visualizer(&self, local: bool) -> Option<Visualizer> {
-        self.visualizer
-            .as_ref()
-            .map(|visualizer| visualizer.handle(local))
-    }
-
-    fn restart_visualizers(&mut self, cx: &mut Context<Self>) {
-        if self.engine.is_some()
-            && let Some(playback) = self.session.read(cx).playback()
-        {
-            match self.local_active() {
-                true => self.start_engine(playback, cx),
-                false => self.rebind(playback, cx),
-            }
-        }
-        if self.local_engine.is_some()
-            && let Some(playback) = self.session.read(cx).local_playback()
-        {
-            match self.local_active() {
-                true => self.rebind_local(playback, cx),
-                false => self.start_local_engine(playback, cx),
-            }
-        }
-        cx.notify();
-    }
-
     fn restart_engine(&mut self, cx: &mut Context<Self>) {
         let playback = match self.engine.is_some() {
             true => self.session.read(cx).playback(),
@@ -1422,6 +1329,40 @@ impl Playback {
             true => self.start_engine(playback, cx),
             false => self.rebind(playback, cx),
         }
+    }
+
+    fn restart_output(&mut self, cx: &mut Context<Self>) {
+        let Some(track) = self.track.clone() else {
+            return;
+        };
+        let Some(id) = track.id.as_deref() else {
+            return;
+        };
+        let at = self.live_position();
+        let local = music::is_local_id(id);
+        let playback = match local {
+            true => self.session.read(cx).local_playback(),
+            false => self.session.read(cx).playback(),
+        };
+        let Some(playback) = playback else {
+            return;
+        };
+
+        log::info!("playback: restarting after the audio output changed");
+        match local {
+            true => {
+                self.local_task = None;
+                self.local_engine = None;
+                self.start_local_engine(playback, cx);
+            }
+            false => {
+                self.task = None;
+                self.engine = None;
+                self.start_engine(playback, cx);
+            }
+        }
+        self.load_after(&track, Start::Pick, cx);
+        self.seek_on_play = Some(at);
     }
 
     fn ask_for_reconnect(&mut self, cx: &mut Context<Self>) -> bool {
@@ -1440,9 +1381,6 @@ impl Playback {
         let at = self.position;
         self.task = None;
         self.engine = None;
-        if let Some(visualizer) = &self.visualizer {
-            visualizer.clear(false);
-        }
         self.preloaded = None;
         self.blocked_until = None;
         if self.track.is_some() {
@@ -1454,30 +1392,12 @@ impl Playback {
         }
     }
 
-    fn rebind_local(&mut self, playback: Arc<dyn PlaybackFactory>, cx: &mut Context<Self>) {
-        let resume = self.state == PlaybackState::Playing;
-        let at = self.position;
-        self.local_task = None;
-        self.local_engine = None;
-        if let Some(visualizer) = &self.visualizer {
-            visualizer.clear(true);
-        }
-        if self.track.is_some() {
-            self.resume_at = Some(at);
-        }
-        self.start_local_engine(playback, cx);
-        if resume {
-            self.resume(cx);
-        }
-    }
-
     fn start_engine(&mut self, playback: Arc<dyn PlaybackFactory>, cx: &mut Context<Self>) {
         let config = PlaybackConfig {
             normalisation: self.normalisation,
             gapless: self.gapless,
             position_interval: POSITION_INTERVAL,
             gain: gain(self.level),
-            visualizer: self.visualizer(false),
         };
         let (engine, events) = playback.start(config);
 
@@ -1499,7 +1419,6 @@ impl Playback {
             gapless: self.gapless,
             position_interval: POSITION_INTERVAL,
             gain: gain(self.level),
-            visualizer: self.visualizer(true),
         };
         let (engine, events) = playback.start(config);
 
@@ -1530,6 +1449,7 @@ impl Playback {
             return;
         }
         match event {
+            BackendEvent::OutputChanged => self.restart_output(cx),
             BackendEvent::Unavailable | BackendEvent::Refused if self.resume_ready => {
                 self.resume_ready = false;
                 self.state = PlaybackState::Paused;
@@ -1557,9 +1477,6 @@ impl Playback {
                 self.position = position;
                 self.clock.reset(position, false);
                 self.remember(true, cx);
-                if let Some(visualizer) = &self.visualizer {
-                    visualizer.clear(self.local_active());
-                }
             }
             BackendEvent::Position(position) => {
                 self.position = position;
@@ -1583,9 +1500,6 @@ impl Playback {
                 self.state = PlaybackState::Idle;
                 self.position = Duration::ZERO;
                 self.clock.reset(Duration::ZERO, false);
-                if let Some(visualizer) = &self.visualizer {
-                    visualizer.clear(self.local_active());
-                }
                 cx.emit(PlaybackEvent::EndedPlayback);
                 self.advance(ended, cx);
             }
@@ -1623,9 +1537,6 @@ impl Playback {
     fn teardown(&mut self, cx: &mut Context<Self>) {
         self.task = None;
         self.engine = None;
-        if let Some(visualizer) = &self.visualizer {
-            visualizer.clear(false);
-        }
 
         if !self.local_active() {
             self.load = None;

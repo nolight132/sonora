@@ -9,8 +9,8 @@ pub mod lyrics;
 mod models;
 pub mod musixmatch;
 pub mod netease;
+mod spectrum;
 pub mod spotify;
-mod visualizer;
 pub mod youtube;
 
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ pub use models::{
     LyricsWord, Playlist, PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track, TrackKey,
     TrackTags, UserDetail, UserProfile, Voice, WritingSystem,
 };
-pub use visualizer::{Pulse, Visualizer};
+pub use spectrum::Spectrum;
 
 pub const LOCAL_TRACK_PREFIX: &str = "local:";
 pub const LOCAL_ALBUM_PREFIX: &str = "local-album:";
@@ -152,31 +152,12 @@ pub trait LyricsProvider: Send + Sync {
     async fn search(&self, query: &LyricsQuery) -> Result<Vec<LyricsHit>>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug)]
 pub struct PlaybackConfig {
     pub normalisation: bool,
     pub gapless: bool,
     pub position_interval: Duration,
     pub gain: f32,
-    pub visualizer: Option<Visualizer>,
-}
-
-impl std::fmt::Debug for PlaybackConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PlaybackConfig")
-            .field("normalisation", &self.normalisation)
-            .field("gapless", &self.gapless)
-            .field("position_interval", &self.position_interval)
-            .field("gain", &self.gain)
-            .field(
-                "visualizer",
-                match self.visualizer.is_some() {
-                    true => &"enabled",
-                    false => &"disabled",
-                },
-            )
-            .finish()
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -190,6 +171,7 @@ pub enum PlaybackEvent {
     Unavailable,
     Refused,
     Gated,
+    OutputChanged,
 }
 
 pub trait Player: Send + Sync {
@@ -207,6 +189,10 @@ pub trait Player: Send + Sync {
     fn pause(&self);
     fn seek(&self, position: Duration);
     fn set_gain(&self, gain: f32);
+
+    fn spectrum(&self) -> Option<Spectrum> {
+        None
+    }
 }
 
 #[async_trait]
