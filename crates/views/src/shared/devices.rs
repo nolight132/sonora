@@ -18,12 +18,18 @@ pub(crate) fn devices(
     let engaged = held.engaged().cloned();
     let listed: Vec<RemoteDevice> = held.devices().to_vec();
 
+    let hosting = held.hosting();
     let here = MenuItem::new("device-here", t!("device-this"))
         .icon("icons/monitor.svg")
-        .selected(engaged.is_none())
+        .selected(engaged.is_none() && !hosting)
         .on_click({
             let remotes = remotes.clone();
-            move |_, _, cx| remotes.update(cx, |remotes, cx| remotes.release(cx))
+            move |_, _, cx| {
+                remotes.update(cx, |remotes, cx| {
+                    remotes.stand_down(cx);
+                    remotes.release(cx);
+                })
+            }
         });
 
     let vacant = listed
@@ -51,7 +57,7 @@ pub(crate) fn devices(
     Picker::icon(DEVICES, group, "icons/cast.svg")
         .tooltip("device-title")
         .width(Picker::REGULAR)
-        .tint(match engaged.is_some() {
+        .tint(match engaged.is_some() || hosting {
             true => theme.primary,
             false => theme.muted_foreground,
         })
@@ -65,7 +71,14 @@ pub(crate) fn devices(
 /// transport is not driving this computer.
 pub(crate) fn playing_on(remotes: &Entity<Remotes>, cx: &App) -> Option<impl IntoElement> {
     let theme = *cx.theme();
-    let name = remotes.read(cx).engaged()?.name.clone();
+    let held = remotes.read(cx);
+    let label = match held.engaged() {
+        Some(device) => t!("device-playing-on", name = device.name.clone()),
+        None => match held.hosting() {
+            true => t!("device-hosting"),
+            false => return None,
+        },
+    };
     let size = theme.text(Text::Tiny);
 
     Some(
@@ -81,13 +94,13 @@ pub(crate) fn playing_on(remotes: &Entity<Remotes>, cx: &App) -> Option<impl Int
                     .size(size)
                     .text_color(theme.primary),
             )
-            .child(t!("device-playing-on", name = name)),
+            .child(label),
     )
 }
 
 pub(crate) fn available(remotes: &Entity<Remotes>, cx: &App) -> bool {
     let held = remotes.read(cx);
-    held.reachable() && (!held.devices().is_empty() || held.engaged().is_some())
+    held.reachable() && (!held.devices().is_empty() || held.engaged().is_some() || held.hosting())
 }
 
 fn glyph(kind: RemoteKind) -> &'static str {

@@ -222,6 +222,7 @@ impl SettingsView {
             SettingsTab::Playback => vec![
                 Row::Item(self.playback_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
+                Row::Item(self.hosting_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
                 Row::Item(self.fullscreen_lyrics_size_row(cx).into_any_element()),
@@ -1051,6 +1052,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_gapless(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn hosting_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).connect_hosting();
+
+        self.row(
+            t!("settings-connect-hosting"),
+            t!("settings-connect-hosting-detail"),
+            muted,
+            small,
+            Switch::new("connect-hosting", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_connect_hosting(!on, cx));
                 }))
                 .into_any_element(),
         )

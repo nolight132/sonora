@@ -213,6 +213,7 @@ device-this = This computer
 device-none = No other devices
 device-searching = Looking for devices…
 device-playing-on = Playing on { $name }
+device-hosting = Playing from Spotify Connect
 
 # filters
 filter-history = Filter listening history
@@ -486,6 +487,8 @@ settings-normalisation = Normalize loudness
 settings-normalisation-detail = Keeps tracks at a consistent volume
 settings-gapless = Gapless playback
 settings-gapless-detail = Runs one track into the next without a pause, the way an album was sequenced
+settings-connect-hosting = Play from other devices
+settings-connect-hosting-detail = Lets Sonora show up in Spotify Connect so a phone can send music to it
 settings-panel-lyrics-size = Lyrics size (panel)
 settings-panel-lyrics-size-detail = Size of the lyrics text in the side panel, on top of the base font size
 settings-fullscreen-lyrics-size = Lyrics size (fullscreen)

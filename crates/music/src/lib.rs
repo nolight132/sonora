@@ -249,6 +249,60 @@ impl RemoteState {
     }
 }
 
+/// What another device asked Sonora to do, once Sonora is the one playing.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HostCommand {
+    Take(Handover),
+    Play,
+    Pause,
+    Next,
+    Previous,
+    Seek(Duration),
+    Shuffle(bool),
+    Repeat(HostRepeat),
+    Volume(f32),
+    Enqueue(String),
+    Resign,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HostRepeat {
+    #[default]
+    Off,
+    Context,
+    Track,
+}
+
+/// A transfer: where the handing device was, so Sonora can pick the song up mid-play.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Handover {
+    pub track: Option<String>,
+    /// Where in the context to start when no track was named — a playlist handed over without a
+    /// chosen track arrives this way.
+    pub index: Option<usize>,
+    pub context: Option<String>,
+    pub position: Duration,
+    pub paused: bool,
+    pub shuffle: bool,
+}
+
+/// What Sonora publishes about itself while it holds playback. Every other device's UI is
+/// drawn from this, so it has to follow each transport change.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HostState {
+    pub track: Option<String>,
+    pub context: Option<String>,
+    pub position: Duration,
+    pub duration: Duration,
+    pub playing: bool,
+    pub buffering: bool,
+    pub shuffle: bool,
+    pub repeat: Option<HostRepeat>,
+    pub volume: f32,
+    pub past: Vec<String>,
+    pub upcoming: Vec<String>,
+}
+
 /// Controls playback happening on another device. Every method names the device it targets,
 /// so nothing here assumes an active one.
 #[async_trait]
@@ -264,6 +318,13 @@ pub trait RemoteTransport: Send + Sync {
     async fn play_track(&self, target: &str, track_id: &str, at: Duration) -> Result<()>;
     async fn transfer(&self, active: Option<&str>, target: &str) -> Result<()>;
     async fn release(&self) -> Result<()>;
+
+    /// Claims playback and publishes what Sonora is doing. Announcing an active device with a
+    /// stale state is what leaves a phone stuck on "Connecting", so this runs after every change.
+    async fn publish(&self, state: &HostState) -> Result<()>;
+
+    /// Hands playback back to Spotify without withdrawing the device.
+    async fn resign(&self) -> Result<()>;
 }
 
 #[async_trait]
@@ -271,11 +332,22 @@ pub trait RemoteUpdates: Send {
     async fn next(&mut self) -> Option<RemoteState>;
 }
 
-pub type Remote = (Arc<dyn RemoteTransport>, Box<dyn RemoteUpdates>);
+#[async_trait]
+pub trait HostCommands: Send {
+    async fn next(&mut self) -> Option<HostCommand>;
+}
+
+pub struct Remote {
+    pub transport: Arc<dyn RemoteTransport>,
+    pub updates: Box<dyn RemoteUpdates>,
+    pub commands: Box<dyn HostCommands>,
+}
 
 #[async_trait]
 pub trait RemoteFactory: Send + Sync {
-    async fn watch(&self) -> Result<Remote>;
+    /// `playable` decides whether Sonora offers itself as a playback target. A control-only
+    /// watch stays hidden from every other device's list.
+    async fn watch(&self, playable: bool) -> Result<Remote>;
 }
 
 pub struct ProviderSession {

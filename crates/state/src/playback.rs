@@ -69,6 +69,7 @@ const RESUME_STEP: Duration = Duration::from_secs(5);
 const TAPER_DB: f32 = 50.;
 const LOCAL_FAVORITES: &str = "favorites";
 const SIMILAR_LIMIT: usize = 20;
+const HOSTED_TRACKS: usize = 10;
 
 struct LiveClock {
     base: Duration,
@@ -261,6 +262,11 @@ pub struct Playback {
     queue: Entity<Queue>,
     settings: Entity<AppSettings>,
     remotes: Entity<Remotes>,
+    /// Mirrored from `Remotes` rather than read back on demand: a command arriving from
+    /// another device runs inside a `Remotes` update, and reading it there would panic.
+    engaged: bool,
+    remote_volume: Option<f32>,
+    reflect: Option<Task<()>>,
     level: f32,
     normalisation: bool,
     gapless: bool,
@@ -320,7 +326,10 @@ impl Playback {
         .detach();
         cx.observe(&queue, |this, _, cx| this.suggest_similar(cx))
             .detach();
-        cx.observe(&remotes, |this, _, cx| this.mirror(cx)).detach();
+        // deferred: a command from another device is handled inside a `Remotes` update, and
+        // mirroring reads it back
+        cx.observe(&remotes, |this, _, cx| this.schedule_mirror(cx))
+            .detach();
         cx.subscribe(&remotes, |this, _, event, cx| match event {
             RemoteEvent::Engaged => this.hand_over(cx),
             RemoteEvent::Released => this.take_back(cx),
@@ -345,6 +354,9 @@ impl Playback {
             queue,
             settings,
             remotes,
+            engaged: false,
+            remote_volume: None,
+            reflect: None,
             level,
             normalisation,
             gapless,
@@ -387,18 +399,36 @@ impl Playback {
 
     /// True while another device holds playback and Sonora is standing in for it. Every
     /// transport call then travels over Connect instead of reaching a local engine.
-    pub fn remote(&self, cx: &App) -> bool {
-        self.remotes.read(cx).engaged().is_some()
+    pub fn remote(&self, _cx: &App) -> bool {
+        self.engaged
+    }
+
+    fn schedule_mirror(&mut self, cx: &mut Context<Self>) {
+        if self.reflect.is_some() {
+            return;
+        }
+        self.reflect = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::ZERO)
+                .await;
+            this.update(cx, |this, cx| {
+                this.reflect = None;
+                this.mirror(cx);
+            })
+            .ok();
+        }));
     }
 
     /// Copies the remote device's state onto the fields the whole UI already reads, so a
     /// player bar or a table needs to know nothing about Connect.
     fn mirror(&mut self, cx: &mut Context<Self>) {
-        if !self.remote(cx) {
+        let remotes = self.remotes.read(cx);
+        self.engaged = remotes.engaged().is_some();
+        self.remote_volume = remotes.volume();
+        if !self.engaged {
             return cx.notify();
         }
 
-        let remotes = self.remotes.read(cx);
         let playing = remotes.playing();
         let position = remotes.position();
         let track = remotes.track().cloned();
@@ -427,6 +457,104 @@ impl Playback {
         cx.notify();
     }
 
+    /// Plays what another device handed over: its track at its position, with the context it
+    /// came from loaded behind it so next and previous keep working. A context handed over
+    /// without a named track — a playlist tapped on a phone — starts at the index it asked for.
+    pub fn adopt_handover(&mut self, handover: music::Handover, cx: &mut Context<Self>) {
+        let shelf = handover.context.as_deref().and_then(context_id);
+        let named = handover.track.clone();
+        let probe = named.clone().or_else(|| match &shelf {
+            Some(Shelf::Album(id) | Shelf::Playlist(id) | Shelf::Artist(id)) => Some(id.clone()),
+            None => None,
+        });
+        let Some(probe) = probe else {
+            log::warn!("playback: a handover named neither a track nor a context");
+            return;
+        };
+
+        let at = handover.position;
+        let paused = handover.paused;
+        let seat = handover.index.unwrap_or_default();
+
+        self.fetch = None;
+        self.origin = origin_of(handover.context.as_deref());
+
+        let Some(client) = self.client_for(&probe, cx) else {
+            return;
+        };
+        let io = Io::global(cx);
+        self.state = PlaybackState::Loading;
+        cx.notify();
+
+        self.load = Some(cx.spawn(async move |this, cx| {
+            let found = join(io.spawn(async move {
+                let listing = match shelf {
+                    Some(Shelf::Album(album)) => client.album_tracks(&album).await.ok(),
+                    Some(Shelf::Playlist(playlist)) => client.playlist_tracks(&playlist).await.ok(),
+                    Some(Shelf::Artist(artist)) => client
+                        .artist(&artist)
+                        .await
+                        .ok()
+                        .map(|found| found.top_tracks),
+                    None => None,
+                };
+                let seated = listing
+                    .as_ref()
+                    .zip(named.as_ref())
+                    .and_then(|(tracks, id)| {
+                        tracks
+                            .iter()
+                            .position(|held| held.id.as_deref() == Some(id.as_str()))
+                    });
+                // only worth a metadata call when the context did not already carry the track
+                let track = match (&named, seated) {
+                    (Some(id), None) => Some(client.track(id).await?),
+                    _ => None,
+                };
+                anyhow::Ok((track, listing, seated))
+            }))
+            .await;
+
+            this.update(cx, |this, cx| {
+                let Ok((track, listing, seated)) = found else {
+                    if let Err(error) = found {
+                        log::warn!("playback: cannot adopt the handover: {error:#}");
+                    }
+                    return;
+                };
+
+                let origin = this.origin.clone();
+                let started = match listing.filter(|tracks| !tracks.is_empty()) {
+                    Some(tracks) => {
+                        let index = seated.unwrap_or(seat).min(tracks.len() - 1);
+                        this.begin(tracks, index, origin, cx);
+                        true
+                    }
+                    None => match track {
+                        Some(track) => {
+                            this.begin(vec![track], 0, origin, cx);
+                            true
+                        }
+                        None => false,
+                    },
+                };
+                if !started {
+                    log::warn!("playback: a handover resolved to nothing playable");
+                    return;
+                }
+
+                if !at.is_zero() {
+                    this.seek_on_play = Some(at);
+                    this.seek(at, cx);
+                }
+                if paused {
+                    this.pause(cx);
+                }
+            })
+            .ok();
+        }));
+    }
+
     /// What to hand to a device the user just picked: the track Sonora is showing and where
     /// it is, so picking a device continues instead of starting over.
     pub fn handoff(&self, cx: &App) -> Option<(String, Duration)> {
@@ -440,6 +568,7 @@ impl Playback {
 
     /// A device took over: silence the local engines and let the cluster drive what is shown.
     fn hand_over(&mut self, cx: &mut Context<Self>) {
+        self.engaged = true;
         if let Some(engine) = self.engine.as_ref() {
             engine.pause();
         }
@@ -448,12 +577,15 @@ impl Playback {
         }
         self.preloaded = None;
         self.seek_on_play = None;
-        self.mirror(cx);
+        // no mirror here: this runs inside a `Remotes` update, which cannot be read back
+        cx.notify();
     }
 
     /// Sonora stopped standing in for a device. Whatever was shown stays, paused, and the
     /// engine reloads it at that position on the next play.
     fn take_back(&mut self, cx: &mut Context<Self>) {
+        self.engaged = false;
+        self.remote_volume = None;
         self.state = PlaybackState::Paused;
         self.clock.reset(self.position, false);
         self.resume_at = Some(self.position);
@@ -1005,6 +1137,49 @@ impl Playback {
         self.repeat
     }
 
+    pub fn set_repeat(&mut self, repeat: Repeat, cx: &mut Context<Self>) {
+        if self.repeat == repeat {
+            return;
+        }
+        self.repeat = repeat;
+        self.settings
+            .update(cx, |settings, cx| settings.set_repeat(repeat, cx));
+        cx.notify();
+    }
+
+    /// What Sonora publishes about itself while another device is driving it.
+    pub fn hosted(&self, cx: &App) -> music::HostState {
+        let queue = self.queue.read(cx);
+        let ids = |tracks: &mut dyn Iterator<Item = &Track>| -> Vec<String> {
+            tracks.filter_map(|track| track.id.clone()).collect()
+        };
+        // prev_tracks is newest-first on the wire
+        let mut past: Vec<&Track> = queue.past().collect();
+        past.reverse();
+
+        music::HostState {
+            track: self.track.as_ref().and_then(|track| track.id.clone()),
+            context: self.origin.as_ref().and_then(context_uri),
+            position: self.live_position(),
+            duration: self
+                .track
+                .as_ref()
+                .map(|track| track.duration)
+                .unwrap_or_default(),
+            playing: self.state == PlaybackState::Playing,
+            buffering: self.state == PlaybackState::Loading,
+            shuffle: queue.shuffle(),
+            repeat: Some(match self.repeat {
+                Repeat::Off => music::HostRepeat::Off,
+                Repeat::All => music::HostRepeat::Context,
+                Repeat::One => music::HostRepeat::Track,
+            }),
+            volume: self.level,
+            past: ids(&mut past.into_iter().take(HOSTED_TRACKS)),
+            upcoming: ids(&mut queue.upcoming().take(HOSTED_TRACKS)),
+        }
+    }
+
     pub fn cycle_repeat(&mut self, cx: &mut Context<Self>) {
         self.repeat = match self.repeat {
             Repeat::Off => Repeat::All,
@@ -1387,13 +1562,13 @@ impl Playback {
     /// Sonora's when it refuses remote volume.
     pub fn shown_volume(&self, cx: &App) -> f32 {
         match self.remote(cx) {
-            true => self.remotes.read(cx).volume().unwrap_or(self.level),
+            true => self.remote_volume.unwrap_or(self.level),
             false => self.level,
         }
     }
 
     pub fn volume_reachable(&self, cx: &App) -> bool {
-        !self.remote(cx) || self.remotes.read(cx).volume().is_some()
+        !self.remote(cx) || self.remote_volume.is_some()
     }
 
     pub fn set_volume(&mut self, level: f32, cx: &mut Context<Self>) {
@@ -1756,6 +1931,45 @@ fn song_target(track: &Track) -> Option<Target> {
         .id
         .as_deref()
         .map(|id| Target::Song(SharedString::from(id.to_owned())))
+}
+
+enum Shelf {
+    Album(String),
+    Playlist(String),
+    Artist(String),
+}
+
+/// A transfer names its context by uri. Only the three Sonora can list are resolved; anything
+/// else plays the single track it handed over.
+fn context_id(uri: &str) -> Option<Shelf> {
+    let rest = uri.strip_prefix("spotify:")?;
+    let (kind, id) = rest.split_once(':')?;
+    let id = id.split(':').next_back()?.to_owned();
+    match kind {
+        "album" => Some(Shelf::Album(id)),
+        "playlist" => Some(Shelf::Playlist(id)),
+        "artist" => Some(Shelf::Artist(id)),
+        _ => None,
+    }
+}
+
+/// The uri form of an origin, for the state Sonora publishes to other devices.
+fn context_uri(origin: &Origin) -> Option<String> {
+    let kind = match origin.whence {
+        Whence::Album => "album",
+        Whence::Playlist => "playlist",
+        Whence::Artist => "artist",
+        Whence::Radio | Whence::Saved | Whence::Local => return None,
+    };
+    Some(format!("spotify:{kind}:{}", origin.id))
+}
+
+fn origin_of(uri: Option<&str>) -> Option<Origin> {
+    match context_id(uri?)? {
+        Shelf::Album(id) => Some(Origin::album(id)),
+        Shelf::Playlist(id) => Some(Origin::playlist(id)),
+        Shelf::Artist(id) => Some(Origin::artist(id)),
+    }
 }
 
 #[cfg(test)]
