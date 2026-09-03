@@ -200,6 +200,7 @@ player-previous = Previous track
 player-next = Next track
 player-fullscreen = Fullscreen
 player-fullscreen-leave = Leave fullscreen
+player-connect = Connected via Spotify Connect
 fullscreen-artwork = Artwork
 
 # filters
@@ -465,6 +466,8 @@ settings-normalisation = Normalize loudness
 settings-normalisation-detail = Keeps tracks at a consistent volume
 settings-gapless = Gapless playback
 settings-gapless-detail = Runs one track into the next without a pause, the way an album was sequenced
+settings-spotify-connect = Spotify Connect
+settings-spotify-connect-detail = Let the Spotify app on your phone find Sonora on the network and play through it
 settings-karaoke-lyrics = Karaoke lyrics
 settings-karaoke-lyrics-detail = Highlight lyrics word by word when timing is available
 settings-romanized-lyrics = Romanized lyrics
@@ -570,6 +573,8 @@ toast-sign-in-to-play = { $name } only streams to a signed-in listener
 toast-track-unplayable = { $name } could not be played
 toast-library-add-failed = { $name } could not be added to your library
 toast-library-remove-failed = { $name } could not be removed from your library
+toast-connect-active = Playing from Spotify Connect
+toast-connect-unavailable = Sonora could not advertise itself on the network
 
 # lyrics
 lyrics-title = Lyrics

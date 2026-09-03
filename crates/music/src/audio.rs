@@ -21,7 +21,7 @@ impl Volume {
         self.0.store(gain.to_bits(), Ordering::Relaxed);
     }
 
-    fn get(&self) -> f32 {
+    pub fn get(&self) -> f32 {
         f32::from_bits(self.0.load(Ordering::Relaxed))
     }
 }

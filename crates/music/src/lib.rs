@@ -197,6 +197,22 @@ pub trait PlaybackFactory: Send + Sync {
     fn start(&self, config: PlaybackConfig) -> (Box<dyn Player>, Box<dyn PlaybackEvents>);
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConnectStatus {
+    Advertising,
+    Connected,
+    Playing,
+    Paused,
+    Disconnected,
+    Unavailable,
+}
+
+pub trait ConnectHandle: Send {
+    fn stop(&mut self);
+}
+
+pub type ConnectEvents = tokio::sync::mpsc::UnboundedReceiver<ConnectStatus>;
+
 pub struct ProviderSession {
     pub profile: UserProfile,
     pub api: Arc<dyn MusicApi>,
@@ -278,4 +294,15 @@ pub trait MusicProvider: Send + Sync {
     ) -> Result<ProviderSession>;
     fn abandon(&self) {}
     fn sign_out(&self);
+
+    /// Advertises this provider as a remote-controllable device, for providers that support
+    /// one (Spotify Connect). `handle` must belong to a running Tokio runtime.
+    fn connect(
+        &self,
+        _handle: tokio::runtime::Handle,
+        _name: String,
+        _config: PlaybackConfig,
+    ) -> Option<(Box<dyn ConnectHandle>, ConnectEvents)> {
+        None
+    }
 }
