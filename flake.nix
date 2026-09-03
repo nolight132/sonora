@@ -90,6 +90,7 @@
 
             nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
               pkgs.makeBinaryWrapper
+              pkgs.undmg
             ];
 
             dontUnpack = true;
