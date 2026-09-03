@@ -70,6 +70,7 @@ fn offered(method: &SignIn, stored: bool, guest: bool) -> bool {
     match method {
         SignIn::Default | SignIn::Anonymous => !stored,
         SignIn::Browser(_) | SignIn::Secret => !stored || guest,
+        SignIn::Credentials { .. } => !stored,
         SignIn::Path(_) => false,
     }
 }
@@ -128,6 +129,10 @@ pub struct SettingsView {
     popovers: Popovers,
     browsers: Option<(&'static str, Vec<SharedString>)>,
     secret: Entity<Input>,
+    server: Entity<Input>,
+    username: Entity<Input>,
+    password: Entity<Input>,
+    credentials_for: Option<&'static str>,
     languages: SearchPopup,
     typefaces: SearchPopup,
     typeface_faced: RefCell<HashSet<SharedString>>,
@@ -167,6 +172,10 @@ impl SettingsView {
             popovers: Popovers::default(),
             browsers: None,
             secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
+            server: cx.new(|cx| Input::new("login-server-hint", cx)),
+            username: cx.new(|cx| Input::new("login-username-hint", cx)),
+            password: cx.new(|cx| Input::new("login-password-hint", cx).masked()),
+            credentials_for: None,
             languages,
             typefaces,
             typeface_faced: RefCell::new(HashSet::new()),
@@ -1342,6 +1351,7 @@ impl SettingsView {
 
     fn abandon(&mut self, cx: &mut Context<Self>) {
         self.secret.update(cx, |input, cx| input.set_text("", cx));
+        self.clear_credentials(cx);
         self.session
             .update(cx, |session, cx| session.cancel_sign_in(cx));
     }
@@ -1354,6 +1364,47 @@ impl SettingsView {
         self.secret.update(cx, |input, cx| input.set_text("", cx));
         self.session
             .update(cx, |session, cx| session.submit_input(text, cx));
+    }
+
+    fn open_credentials(&mut self, slug: &'static str, cx: &mut Context<Self>) {
+        self.credentials_for = Some(slug);
+        cx.notify();
+    }
+
+    fn clear_credentials(&mut self, cx: &mut Context<Self>) {
+        self.credentials_for = None;
+        self.server.update(cx, |input, cx| input.set_text("", cx));
+        self.username.update(cx, |input, cx| input.set_text("", cx));
+        self.password.update(cx, |input, cx| input.set_text("", cx));
+    }
+
+    fn abandon_credentials(&mut self, cx: &mut Context<Self>) {
+        self.clear_credentials(cx);
+        cx.notify();
+    }
+
+    fn submit_credentials(&mut self, cx: &mut Context<Self>) {
+        let Some(slug) = self.credentials_for else {
+            return;
+        };
+        let server = self.server.read(cx).text().to_string();
+        let username = self.username.read(cx).text().to_string();
+        let password = self.password.read(cx).text().to_string();
+        if server.trim().is_empty() || username.trim().is_empty() || password.is_empty() {
+            return;
+        }
+        self.clear_credentials(cx);
+        self.session.update(cx, |session, cx| {
+            session.sign_in(
+                slug,
+                SignIn::Credentials {
+                    server,
+                    username,
+                    password,
+                },
+                cx,
+            )
+        });
     }
 
     fn secret_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1374,6 +1425,28 @@ impl SettingsView {
                     .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
             )
             .on_dismiss(cx.listener(|this, _, _, cx| this.abandon(cx)))
+    }
+
+    fn credentials_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Modal::new("settings-server-prompt", t!("login-server-title"))
+            .w(px(560.))
+            .detail(t!("login-server-detail"))
+            .child(self.server.clone())
+            .child(self.username.clone())
+            .child(self.password.clone())
+            .action(
+                Button::new("settings-cancel-server")
+                    .ghost()
+                    .label(t!("common-cancel"))
+                    .on_click(cx.listener(|this, _, _, cx| this.abandon_credentials(cx))),
+            )
+            .action(
+                Button::new("settings-submit-server")
+                    .label(t!("login-server-submit"))
+                    .primary()
+                    .on_click(cx.listener(|this, _, _, cx| this.submit_credentials(cx))),
+            )
+            .on_dismiss(cx.listener(|this, _, _, cx| this.abandon_credentials(cx)))
     }
 
     fn method(
@@ -1414,6 +1487,10 @@ impl SettingsView {
                 format!("connect-{slug}-path"),
                 t!("login-sign-in", provider = provider),
             ),
+            SignIn::Credentials { .. } => (
+                format!("connect-{slug}-server"),
+                t!("login-sign-in", provider = provider),
+            ),
         };
 
         Button::new(SharedString::from(id))
@@ -1423,6 +1500,7 @@ impl SettingsView {
             .disabled(pending)
             .on_click(cx.listener(move |this, _, _, cx| match &method {
                 SignIn::Browser(_) => this.open_browsers(slug, cx),
+                SignIn::Credentials { .. } => this.open_credentials(slug, cx),
                 method => {
                     let method = method.clone();
                     this.session
@@ -1758,6 +1836,9 @@ impl Render for SettingsView {
             })
             .when(secret, |this| {
                 this.child(self.secret_prompt(cx).into_any_element())
+            })
+            .when(self.credentials_for.is_some(), |this| {
+                this.child(self.credentials_prompt(cx).into_any_element())
             })
     }
 }
