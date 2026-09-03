@@ -16,7 +16,7 @@ const GLOW_BLUR_SIGNAL: f32 = 50.;
 const GLOW_RADIUS_MAX: f32 = 20.;
 
 /// Baseline opacity for the glow wash.
-/// 
+///
 /// This is the maximum opacity that the glow wash will reach when the strength is at its maximum.
 const GLOW_BASELINE_OPACITY: f32 = 0.8;
 
@@ -46,18 +46,6 @@ const GLOW_ALPHA_BASE: f32 = 0.08;
 /// Strength multiplier added to [`GLOW_ALPHA_BASE`] for glow wash opacity.
 const GLOW_ALPHA_SIGNAL: f32 = 2.5;
 
-/// Strength weight in glow wash saturation.
-const GLOW_SAT_SIGNAL: f32 = 0.65;
-
-/// RMS weight in glow wash saturation.
-const GLOW_SAT_RMS: f32 = 0.12;
-
-/// Strength weight in glow wash lightness.
-const GLOW_LIGHT_SIGNAL: f32 = 0.22;
-
-/// RMS weight in glow wash lightness.
-const GLOW_LIGHT_RMS: f32 = 0.06;
-
 /// RMS weight in glow blur radius, in pixels at full signal.
 const GLOW_BLUR_RMS: f32 = 10.;
 
@@ -82,11 +70,11 @@ const RIM_SCALE_CORNER: f32 = 2.;
 /// Minimum glow scale above 1.0 for small artwork, as a fraction of side length.
 const RIM_SCALE_FLOOR: f32 = 0.012;
 
-/// Colour of the glow wash - for now just white.
+/// Colour of the glow wash.
 const GLOW_COLOUR: Hsla = Hsla {
     h: 0.,
-    s: 0.,
-    l: 1.,
+    s: 0.18,
+    l: 0.78,
     a: GLOW_BASELINE_OPACITY,
 };
 
@@ -98,8 +86,7 @@ pub(crate) struct FrameGlow {
 
 struct Frame {
     show: bool,
-    rim: Rim,
-    strength: f32,
+    corner: Pixels,
     glow: Hsla,
     glow_blur: Pixels,
     glow_scale: f32,
@@ -138,23 +125,15 @@ impl FrameGlow {
         }
 
         let rim = rim(size, corner);
-        let glow = wash(
-            GLOW_COLOUR,
-            strength * GLOW_SAT_SIGNAL + shaped.rms * GLOW_SAT_RMS,
-            strength * GLOW_LIGHT_SIGNAL + shaped.rms * GLOW_LIGHT_RMS,
-            GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL,
-        );
-        let glow_blur = px(
-            (strength * GLOW_BLUR_SIGNAL + shaped.rms * GLOW_BLUR_RMS)
-                .min(GLOW_RADIUS_MAX)
-                .max(rim.min_blur.as_f32()),
-        );
+        let glow = wash(GLOW_COLOUR, GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL);
+        let glow_blur = px((strength * GLOW_BLUR_SIGNAL + shaped.rms * GLOW_BLUR_RMS)
+            .min(GLOW_RADIUS_MAX)
+            .max(rim.min_blur.as_f32()));
         let glow_scale = rim.min_scale.max(1. + strength * GLOW_SCALE_SIGNAL);
 
         self.frame = Some(Frame {
             show: allowed && strength > STRENGTH_MIN,
-            rim,
-            strength,
+            corner: rim.corner,
             glow,
             glow_blur,
             glow_scale,
@@ -170,21 +149,18 @@ impl FrameGlow {
             .top_0()
             .left_0()
             .size_full()
-            .when(frame.show && frame.strength > STRENGTH_MIN, |this| {
+            .when(frame.show, |this| {
                 this.child(
                     div()
                         .absolute()
                         .inset_0()
-                        .rounded(frame.rim.corner)
+                        .rounded(frame.corner)
                         .bg(frame.glow)
                         .blur(frame.glow_blur)
                         .layer_scale(frame.glow_scale),
                 )
             })
     }
-}
-
-impl FrameGlow {
     fn smooth(&mut self, target: Pulse) {
         let now = Instant::now();
         let step = match self.last.replace(now) {
@@ -251,11 +227,9 @@ fn rim(size: Pixels, corner: Pixels) -> Rim {
     }
 }
 
-fn wash(base: Hsla, sat: f32, light: f32, alpha: f32) -> Hsla {
+fn wash(base: Hsla, alpha: f32) -> Hsla {
     Hsla {
-        h: base.h,
-        s: (base.s * (0.72 + sat)).clamp(0.18, 1.),
-        l: (base.l + light).clamp(0.2, 0.78),
         a: (alpha * base.a).clamp(0., base.a),
+        ..base
     }
 }
