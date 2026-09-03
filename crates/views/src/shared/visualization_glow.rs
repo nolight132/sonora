@@ -32,12 +32,13 @@ const CHASE_STEP_MAX: f32 = 0.08;
 /// Minimum blended strength before the glow layer renders.
 const STRENGTH_MIN: f32 = 0.006;
 
-/// Bass weight in the blended glow strength (`STRENGTH_BASS * bass + (1 - STRENGTH_BASS) * upper`),
-/// where `upper` is the max of mids (`body`) and highs (`air`).
+/// Bass weight in the blended glow strength (`STRENGTH_BASS * bass + (1 - STRENGTH_BASS) * mids_highs`),
+/// where `mids_highs` is the max of `mids` and `highs`.
 /// Raise toward `1.0` to follow kick and sub; lower toward `0.0` to follow mids and highs; `0.5` splits evenly.
 const STRENGTH_BASS: f32 = 0.5;
 
-const UPPER_MULITPLIER: f32 = 3.0;
+/// Multiplier for the mids-and-highs signal before it is added to the bass signal.
+const MIDS_HIGHS_MULTIPLIER: f32 = 3.0;
 
 /// Glow wash opacity before strength contributes.
 const GLOW_ALPHA_BASE: f32 = 0.08;
@@ -196,8 +197,8 @@ impl VisualizationGlow {
             peak: follow(self.chased.peak, target.peak, attack, release),
             rms: follow(self.chased.rms, target.rms, attack, release),
             bass: follow(self.chased.bass, target.bass, attack, release),
-            body: follow(self.chased.body, target.body, attack, release),
-            air: follow(self.chased.air, target.air, attack, release),
+            mids: follow(self.chased.mids, target.mids, attack, release),
+            highs: follow(self.chased.highs, target.highs, attack, release),
         };
     }
 }
@@ -215,8 +216,8 @@ fn shaped(pulse: Pulse) -> Pulse {
         peak: curve(pulse.peak),
         rms: curve(pulse.rms),
         bass: curve(pulse.bass),
-        body: curve(pulse.body),
-        air: curve(pulse.air),
+        mids: curve(pulse.mids),
+        highs: curve(pulse.highs),
     }
 }
 
@@ -225,11 +226,11 @@ fn curve(value: f32) -> f32 {
 }
 
 fn strength(pulse: &Pulse) -> f32 {
-    STRENGTH_BASS * pulse.bass + (1. - STRENGTH_BASS) * upper(pulse)
+    STRENGTH_BASS * pulse.bass + (1. - STRENGTH_BASS) * mids_highs(pulse)
 }
 
-fn upper(pulse: &Pulse) -> f32 {
-    pulse.body.max(pulse.air) * UPPER_MULITPLIER
+fn mids_highs(pulse: &Pulse) -> f32 {
+    pulse.mids.max(pulse.highs) * MIDS_HIGHS_MULTIPLIER
 }
 
 struct Rim {

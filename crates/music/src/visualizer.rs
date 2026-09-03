@@ -9,17 +9,17 @@ use rodio_tap::{
     TOP_FREQUENCY_48K,
 };
 
-const LOW: (f32, f32) = (18., 140.);
-const MID: (f32, f32) = (140., 850.);
-const HIGH: (f32, f32) = (850., TOP_FREQUENCY_48K);
+const BASS: (f32, f32) = (18., 140.);
+const MIDS: (f32, f32) = (140., 850.);
+const HIGHS: (f32, f32) = (850., TOP_FREQUENCY_48K);
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Pulse {
     pub peak: f32,
     pub rms: f32,
     pub bass: f32,
-    pub body: f32,
-    pub air: f32,
+    pub mids: f32,
+    pub highs: f32,
 }
 
 #[derive(Clone)]
@@ -28,8 +28,8 @@ pub struct Visualizer {
     peak: Arc<AtomicU32>,
     rms: Arc<AtomicU32>,
     bass: Arc<AtomicU32>,
-    body: Arc<AtomicU32>,
-    air: Arc<AtomicU32>,
+    mids: Arc<AtomicU32>,
+    highs: Arc<AtomicU32>,
 }
 
 impl Visualizer {
@@ -39,8 +39,8 @@ impl Visualizer {
             peak: Arc::new(AtomicU32::new(0)),
             rms: Arc::new(AtomicU32::new(0)),
             bass: Arc::new(AtomicU32::new(0)),
-            body: Arc::new(AtomicU32::new(0)),
-            air: Arc::new(AtomicU32::new(0)),
+            mids: Arc::new(AtomicU32::new(0)),
+            highs: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -62,8 +62,8 @@ impl Visualizer {
             peak: load(&self.peak),
             rms: load(&self.rms),
             bass: load(&self.bass),
-            body: load(&self.body),
-            air: load(&self.air),
+            mids: load(&self.mids),
+            highs: load(&self.highs),
         }
     }
 
@@ -71,8 +71,8 @@ impl Visualizer {
         store(&self.peak, 0.);
         store(&self.rms, 0.);
         store(&self.bass, 0.);
-        store(&self.body, 0.);
-        store(&self.air, 0.);
+        store(&self.mids, 0.);
+        store(&self.highs, 0.);
     }
 
     pub async fn listen(&self) {
@@ -81,9 +81,9 @@ impl Visualizer {
         let config = AnalyzerConfig {
             period: Duration::from_millis(33),
             transform: Transform::FourierCustom(vec![
-                FrequencyBin::new(LOW.0, LOW.1),
-                FrequencyBin::new(MID.0, MID.1),
-                FrequencyBin::new(HIGH.0, HIGH.1),
+                FrequencyBin::new(BASS.0, BASS.1),
+                FrequencyBin::new(MIDS.0, MIDS.1),
+                FrequencyBin::new(HIGHS.0, HIGHS.1),
             ]),
             normalize_by_fft_size: true,
             emit_before_fft_window_full: true,
@@ -102,8 +102,8 @@ impl Visualizer {
         store(&self.peak, pulse.peak);
         store(&self.rms, pulse.rms);
         store(&self.bass, pulse.bass);
-        store(&self.body, pulse.body);
-        store(&self.air, pulse.air);
+        store(&self.mids, pulse.mids);
+        store(&self.highs, pulse.highs);
     }
 }
 
@@ -139,8 +139,8 @@ fn fold(channels: &[rodio_tap::ChannelSpectrum]) -> Pulse {
         peak: mean(channels.iter().map(|channel| channel.peak).sum::<f32>()).clamp(0., 1.),
         rms: mean(channels.iter().map(|channel| channel.rms).sum::<f32>()).clamp(0., 1.),
         bass: squash(band(0)),
-        body: squash(band(1)),
-        air: squash(band(2)),
+        mids: squash(band(1)),
+        highs: squash(band(2)),
     }
 }
 
