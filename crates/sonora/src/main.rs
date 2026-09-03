@@ -123,6 +123,7 @@ fn main() {
             settings: _,
             updates: _,
             usage: _,
+            scrobbler: _,
         } = Sonora::global(cx);
         let (session, library, playback, queue) = (
             session.clone(),

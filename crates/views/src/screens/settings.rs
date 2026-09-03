@@ -13,7 +13,10 @@ use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{
+    AppSettings, Failure, Playback, SYSTEM_FONT, ScrobbleState, Scrobbler, Session, SessionState,
+    Sonora,
+};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_TRANSPARENCY, MIN_FONT,
@@ -128,6 +131,10 @@ pub struct SettingsView {
     popovers: Popovers,
     browsers: Option<(&'static str, Vec<SharedString>)>,
     secret: Entity<Input>,
+    scrobbler: Entity<Scrobbler>,
+    lastfm_key: Entity<Input>,
+    lastfm_secret: Entity<Input>,
+    lastfm_prompt: bool,
     languages: SearchPopup,
     typefaces: SearchPopup,
     typeface_faced: RefCell<HashSet<SharedString>>,
@@ -141,7 +148,9 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let settings = Sonora::global(cx).settings.clone();
+        let scrobbler = Sonora::global(cx).scrobbler.clone();
         cx.observe(&session, |_, _, cx| cx.notify()).detach();
+        cx.observe(&scrobbler, |_, _, cx| cx.notify()).detach();
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
         cx.observe(&playback, |_, _, cx| cx.notify()).detach();
         let me = cx.entity_id();
@@ -167,6 +176,10 @@ impl SettingsView {
             popovers: Popovers::default(),
             browsers: None,
             secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
+            scrobbler,
+            lastfm_key: cx.new(|cx| Input::new("settings-lastfm-key", cx)),
+            lastfm_secret: cx.new(|cx| Input::new("settings-lastfm-secret", cx)),
+            lastfm_prompt: false,
             languages,
             typefaces,
             typeface_faced: RefCell::new(HashSet::new()),
@@ -188,6 +201,8 @@ impl SettingsView {
                 Row::Item(self.language_row(cx).into_any_element()),
                 self.title("settings-group-accounts", cx),
                 Row::Item(self.accounts_row(cx).into_any_element()),
+                self.title("settings-group-scrobbling", cx),
+                Row::Item(self.lastfm_row(cx).into_any_element()),
                 self.title("settings-group-library", cx),
                 Row::Item(self.local_folder_row(cx).into_any_element()),
             ],
@@ -1160,6 +1175,113 @@ impl SettingsView {
             .update(cx, |library, cx| library.forget_local(cx));
     }
 
+    fn lastfm_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let scrobbler = self.scrobbler.read(cx);
+        let scrobbling = scrobbler.enabled(cx);
+        let detail = match scrobbler.state() {
+            ScrobbleState::Off => t!("settings-lastfm-off"),
+            ScrobbleState::Linking => t!("settings-lastfm-waiting"),
+            ScrobbleState::On(name) => t!("settings-lastfm-as", name = name.as_ref()),
+            ScrobbleState::Failed(key) => i18n::lookup(key, None),
+        };
+        let linked = scrobbler.linked();
+        let linking = matches!(scrobbler.state(), ScrobbleState::Linking);
+
+        let action = match linked {
+            true => div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Switch::new("lastfm-scrobbling", scrobbling).on_click(cx.listener(
+                        move |this, _, _, cx| {
+                            this.scrobbler
+                                .update(cx, |scrobbler, cx| scrobbler.set_enabled(!scrobbling, cx));
+                        },
+                    )),
+                )
+                .child(
+                    Button::new("lastfm-disconnect")
+                        .label(t!("settings-lastfm-disconnect"))
+                        .small()
+                        .ghost()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.scrobbler
+                                .update(cx, |scrobbler, cx| scrobbler.unlink(cx));
+                        })),
+                )
+                .into_any_element(),
+            false => Button::new("lastfm-connect")
+                .label(t!("settings-lastfm-connect"))
+                .small()
+                .outline()
+                .disabled(linking)
+                .on_click(cx.listener(|this, _, _, cx| this.open_lastfm(cx)))
+                .into_any_element(),
+        };
+
+        self.row(t!("settings-lastfm"), detail, muted, small, action)
+    }
+
+    fn open_lastfm(&mut self, cx: &mut Context<Self>) {
+        let account = self.settings.read(cx).lastfm().clone();
+        self.lastfm_key
+            .update(cx, |input, cx| input.set_text(account.key, cx));
+        self.lastfm_secret
+            .update(cx, |input, cx| input.set_text(account.secret, cx));
+        self.lastfm_prompt = true;
+        cx.notify();
+    }
+
+    fn link_lastfm(&mut self, cx: &mut Context<Self>) {
+        let key = self.lastfm_key.read(cx).text().to_string();
+        let secret = self.lastfm_secret.read(cx).text().to_string();
+        self.lastfm_prompt = false;
+        self.scrobbler
+            .update(cx, |scrobbler, cx| scrobbler.link(key, secret, cx));
+    }
+
+    fn lastfm_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        Modal::new("settings-lastfm-prompt", t!("settings-lastfm-title"))
+            .w(px(560.))
+            .detail(t!("settings-lastfm-title-detail"))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(self.lastfm_key.clone())
+                    .child(self.lastfm_secret.clone()),
+            )
+            .action(
+                Button::new("settings-lastfm-request")
+                    .ghost()
+                    .label(t!("settings-lastfm-request"))
+                    .on_click(|_, _, cx| cx.open_url(music::lastfm::API_ACCOUNT_URL)),
+            )
+            .action(
+                Button::new("settings-lastfm-cancel")
+                    .ghost()
+                    .label(t!("common-cancel"))
+                    .on_click(cx.listener(|this, _, _, cx| this.close_lastfm(cx))),
+            )
+            .action(
+                Button::new("settings-lastfm-submit")
+                    .primary()
+                    .label(t!("settings-lastfm-connect"))
+                    .on_click(cx.listener(|this, _, _, cx| this.link_lastfm(cx))),
+            )
+            .on_dismiss(cx.listener(|this, _, _, cx| this.close_lastfm(cx)))
+    }
+
+    fn close_lastfm(&mut self, cx: &mut Context<Self>) {
+        self.lastfm_prompt = false;
+        cx.notify();
+    }
+
     fn accounts_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let session = self.session.read(cx);
@@ -1758,6 +1880,9 @@ impl Render for SettingsView {
             })
             .when(secret, |this| {
                 this.child(self.secret_prompt(cx).into_any_element())
+            })
+            .when(self.lastfm_prompt, |this| {
+                this.child(self.lastfm_modal(cx).into_any_element())
             })
     }
 }

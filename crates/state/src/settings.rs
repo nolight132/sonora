@@ -75,6 +75,22 @@ impl Default for RomanizationScripts {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Lastfm {
+    pub key: String,
+    pub secret: String,
+    pub session: String,
+    pub name: String,
+    pub enabled: bool,
+}
+
+impl Lastfm {
+    fn blank(&self) -> bool {
+        self.key.is_empty() && self.session.is_empty()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Frame {
@@ -183,6 +199,8 @@ struct Values {
     resume: Option<Resume>,
     #[serde(skip_serializing_if = "Option::is_none")]
     window: Option<Frame>,
+    #[serde(skip_serializing_if = "Lastfm::blank")]
+    lastfm: Lastfm,
     appearance: Appearance,
 }
 
@@ -238,6 +256,7 @@ impl Default for Values {
             pinned: Vec::new(),
             resume: None,
             window: None,
+            lastfm: Lastfm::default(),
             appearance: Appearance::default(),
         }
     }
@@ -353,6 +372,10 @@ impl AppSettings {
 
     pub fn check_updates(&self) -> bool {
         self.values.check_updates
+    }
+
+    pub fn lastfm(&self) -> &Lastfm {
+        &self.values.lastfm
     }
 
     pub fn sidebar_width(&self) -> f32 {
@@ -527,6 +550,16 @@ impl AppSettings {
 
     pub fn set_check_updates(&mut self, check_updates: bool, cx: &mut Context<Self>) {
         self.values.check_updates = check_updates;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_lastfm(&mut self, lastfm: Lastfm, cx: &mut Context<Self>) {
+        self.values.lastfm = lastfm;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_scrobbling(&mut self, scrobbling: bool, cx: &mut Context<Self>) {
+        self.values.lastfm.enabled = scrobbling;
         self.schedule_save(cx);
     }
 

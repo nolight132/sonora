@@ -1,6 +1,7 @@
 mod audio;
 pub mod binimum;
 pub mod kugou;
+pub mod lastfm;
 #[cfg(test)]
 mod live_tests;
 pub mod local;

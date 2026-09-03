@@ -197,6 +197,7 @@ construction, layout and scene assembly, never GPU fill.
 | Settings          | `$XDG_CONFIG_HOME/sonora/settings.json`                                                                                           |
 | Credentials cache | `$XDG_CACHE_HOME/sonora/credentials.json`                                                                                         |
 | OAuth redirect    | `http://127.0.0.1:8989/login`, override with `SONORA_REDIRECT_URI`                                                                |
+| Last.fm callback  | `http://127.0.0.1:8990/lastfm`                                                                                                    |
 | Instance socket   | `sonora.sock`, `sonora-dev.sock` in debug builds, so `cargo run` starts beside an installed Sonora rather than handing over to it |
 | Log file          | `$XDG_STATE_HOME/sonora/sonora.log`, rotated to `.1` past 8 MiB                                                                   |
 | Console logging   | `RUST_LOG`; default filter `warn,symphonia=error,lofty=error`                                                                     |
@@ -561,6 +562,7 @@ an `Unavailable` track.
 | `Library`                                  | saved tracks / playlists / albums / followed artists; `LibraryState` is `Empty \| Loading \| Ready{..,problems} \| Failed` — partial failure is normal, surface `problems` |
 | `Playback`                                 | engine ownership, transport, shuffle/repeat, volume, `Origin` tracking, `toggle_origin`                                                                                  |
 | `Queue`                                    | past / current / upcoming; `start`, `next`, `next_random`, `previous`, `rewind`                                                                         |
+| `Scrobbler`                                | Last.fm link and scrobbling; follows `Playback`, keys live in `settings.json` under `lastfm`                                                            |
 | `Home`, `Detail`, `ArtistDetail`, `Search` | per-screen loaders, each owning its `Task`                                                                                                              |
 | `AppSettings`                              | debounced JSON persistence                                                                                                                              |
 

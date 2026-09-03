@@ -9,6 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Sonora scrobbles to Last.fm. Connect your account under Settings › General with your own Last.fm
+  API key and secret, and Sonora reports what is playing and scrobbles a track once you are halfway
+  through it. A switch turns scrobbling off without disconnecting the account.
 - Sonora ships as a Flatpak. Every release attaches a bundle for x86_64 and aarch64, and adding
   the Sonora repository once (`flatpak install --user https://nolight132.github.io/sonora/sonora.flatpakref`)
   keeps it current through `flatpak update`.
