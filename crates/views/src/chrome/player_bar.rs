@@ -10,10 +10,10 @@ use gpui::{
 use gpui::{Window, div, px};
 use i18n::t;
 use input::{ToggleFullscreen, ToggleLyrics, ToggleQueue};
-use state::{AppSettings, Playback, Queue, SideTab, Sonora};
+use state::{AppSettings, Lyrics, Playback, Queue, SideTab, Sonora};
 use ui::{
     Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Popup, Room, Scrollbar, Scrubber,
-    ScrubberState, clock,
+    ScrubberState, Text, clock,
 };
 
 use crate::chrome::SidebarRight;
@@ -26,9 +26,30 @@ const VOLUME_TIGHT: f32 = 72.;
 const CLOCK_SHORT: f32 = 3.4;
 const CLOCK_LONG: f32 = 5.4;
 
+fn compact_lyrics_line(lyrics: &music::Lyrics, position: Duration) -> Option<SharedString> {
+    let music::Lyrics::Synced { lines } = lyrics else {
+        return None;
+    };
+    let line = lines
+        .get(music::lyrics::active(lines, position)?)?
+        .text
+        .trim();
+    (!line.is_empty()).then(|| SharedString::from(line.to_owned()))
+}
+
+fn compact_lyrics_available(
+    viewport_height: Pixels,
+    title_height: Pixels,
+    player_height: Pixels,
+    cover_size: Pixels,
+) -> bool {
+    viewport_height - title_height - player_height < cover_size * 2.
+}
+
 pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
     queue: Entity<Queue>,
+    lyrics: Entity<Lyrics>,
     settings: Entity<AppSettings>,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
@@ -44,10 +65,12 @@ pub(crate) struct PlayerBar {
 impl PlayerBar {
     pub fn new(playback: Entity<Playback>, queue: Entity<Queue>, cx: &mut Context<Self>) -> Self {
         let library = Sonora::global(cx).library.clone();
+        let lyrics = Sonora::global(cx).lyrics.clone();
         let settings = Sonora::global(cx).settings.clone();
         cx.observe(&playback, |_, _, cx| cx.notify()).detach();
         cx.observe(&queue, |_, _, cx| cx.notify()).detach();
         cx.observe(&library, |_, _, cx| cx.notify()).detach();
+        cx.observe(&lyrics, |_, _, cx| cx.notify()).detach();
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
 
         let me = cx.entity_id();
@@ -56,6 +79,7 @@ impl PlayerBar {
         Self {
             playback,
             queue,
+            lyrics,
             settings,
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
@@ -343,12 +367,35 @@ impl PlayerBar {
 }
 
 impl PlayerBar {
-    pub(crate) fn height(window: &Window, cx: &gpui::App) -> Pixels {
+    fn base_height(window: &Window, cx: &gpui::App) -> Pixels {
         let theme = *cx.theme();
         match !Room::of(window.viewport_size().width).fits(Room::Roomy) {
             true => ui::snapped(theme.metrics.player_bar + theme.metrics.pad * 3., window),
             false => ui::snapped(theme.metrics.player_bar, window),
         }
+    }
+
+    fn compact_line(&self, window: &Window, cx: &gpui::App) -> Option<SharedString> {
+        let theme = *cx.theme();
+        if !compact_lyrics_available(
+            window.viewport_size().height,
+            theme.metrics.title_bar,
+            Self::base_height(window, cx),
+            theme.metrics.cover,
+        ) {
+            return None;
+        }
+        let lyrics = self.lyrics.read(cx);
+        let position = self.playback.read(cx).live_position();
+        compact_lyrics_line(&lyrics.current()?.lyrics, position)
+    }
+
+    pub(crate) fn height(&self, window: &Window, cx: &gpui::App) -> Pixels {
+        let theme = *cx.theme();
+        Self::base_height(window, cx)
+            + self
+                .compact_line(window, cx)
+                .map_or(Pixels::ZERO, |_| theme.metrics.list_row)
     }
 }
 
@@ -359,7 +406,8 @@ impl Render for PlayerBar {
         let empty = muted.opacity(0.3);
         let span = Room::of(window.viewport_size().width);
         let stacked = !span.fits(Room::Roomy);
-        let height = Self::height(window, cx);
+        let height = self.height(window, cx);
+        let compact_line = self.compact_line(window, cx);
         let clock_text = theme.text(ui::Text::Tiny);
 
         let show_track = span.fits(Room::Snug);
@@ -425,13 +473,17 @@ impl Render for PlayerBar {
         let base = div()
             .flex()
             .w_full()
-            .h(height)
+            .h(height
+                - compact_line
+                    .as_ref()
+                    .map_or(Pixels::ZERO, |_| theme.metrics.list_row))
             .flex_none()
             .px_5()
             .when(stacked, |this| this.py_2())
             .when(!theme.transparent, |this| this.bg(theme.secondary))
-            .border_t_1()
-            .border_color(theme.border)
+            .when(compact_line.is_none(), |this| {
+                this.border_t_1().border_color(theme.border)
+            })
             .on_mouse_move(cx.listener(Self::hover));
 
         let context_menu = self.context_menu.clone().map(|(track, position)| {
@@ -498,6 +550,111 @@ impl Render for PlayerBar {
                 ),
         };
 
-        content.when_some(context_menu, |this, menu| this.child(menu))
+        div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .h(height)
+            .when_some(compact_line, |this, line| {
+                this.child(
+                    div()
+                        .id("compact-lyrics")
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .h(theme.metrics.list_row)
+                        .px_5()
+                        .border_t_1()
+                        .border_color(theme.border)
+                        .when(!theme.transparent, |this| this.bg(theme.secondary))
+                        .text_size(theme.text(Text::Body))
+                        .child(
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .truncate()
+                                .text_center()
+                                .child(line),
+                        ),
+                )
+            })
+            .child(content)
+            .when_some(context_menu, |this, menu| this.child(menu))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use music::{Lyrics, LyricsLine, Voice};
+
+    use super::*;
+
+    fn line(start: u64, text: &str) -> LyricsLine {
+        LyricsLine {
+            start: Duration::from_secs(start),
+            end: None,
+            text: text.to_owned(),
+            romanized: None,
+            words: None,
+            secondary: Vec::new(),
+            voice: Voice::Lead,
+        }
+    }
+
+    #[test]
+    fn compact_lyrics_follow_the_current_synced_line() {
+        let lyrics = Lyrics::Synced {
+            lines: Arc::from([line(2, "first"), line(5, "second")]),
+        };
+
+        assert_eq!(compact_lyrics_line(&lyrics, Duration::from_secs(1)), None);
+        assert_eq!(
+            compact_lyrics_line(&lyrics, Duration::from_secs(2)).as_deref(),
+            Some("first")
+        );
+        assert_eq!(
+            compact_lyrics_line(&lyrics, Duration::from_secs(5)).as_deref(),
+            Some("second")
+        );
+    }
+
+    #[test]
+    fn compact_lyrics_ignore_plain_and_empty_lines() {
+        assert_eq!(
+            compact_lyrics_line(&Lyrics::plain("plain"), Duration::ZERO),
+            None
+        );
+        assert_eq!(
+            compact_lyrics_line(
+                &Lyrics::Synced {
+                    lines: Arc::from([line(0, "  ")]),
+                },
+                Duration::ZERO,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn compact_lyrics_use_the_height_left_above_the_player() {
+        let title = px(36.);
+        let player = px(76.);
+        let cover = px(140.);
+
+        assert!(!compact_lyrics_available(
+            title + player + cover * 2.,
+            title,
+            player,
+            cover
+        ));
+        assert!(compact_lyrics_available(
+            title + player + cover * 2. - px(1.),
+            title,
+            player,
+            cover
+        ));
     }
 }

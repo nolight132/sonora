@@ -4,7 +4,7 @@ use gpui::prelude::*;
 use gpui::{AnyView, App, Context, Entity, FocusHandle, Render, StyleRefinement};
 use gpui::{Window, div};
 use input::WORKSPACE_CONTEXT;
-use state::{Playback, Queue, SideTab};
+use state::{Playback, Queue, SideTab, Sonora};
 use ui::{
     Activate, ActiveTheme as _, Deselect, Remove, SelectNext, SelectPrevious, ease_out_expo,
     entrance_span, shown_listing, veiled,
@@ -62,7 +62,10 @@ impl Workspace {
     ) -> Self {
         let sidebar = cx.new(SidebarLeft::new);
         let sidebar_right = cx.new(|cx| SidebarRight::new(queue.clone(), playback.clone(), cx));
-        let player_bar = cx.new(|cx| PlayerBar::new(playback, queue, cx));
+        let player_bar = cx.new(|cx| PlayerBar::new(playback.clone(), queue, cx));
+        let lyrics = Sonora::global(cx).lyrics.clone();
+        cx.observe(&playback, |_, _, cx| cx.notify()).detach();
+        cx.observe(&lyrics, |_, _, cx| cx.notify()).detach();
 
         Self {
             sidebar,
@@ -172,7 +175,7 @@ impl Render for Workspace {
         Chrome::publish(left, right, cx);
         let covered = self.sidebar_right.read(cx).covers_content(window);
         let overlay = self.sidebar.read(cx).overlays();
-        let bar_height = PlayerBar::height(window, cx);
+        let bar_height = self.player_bar.read(cx).height(window, cx);
         // A cached view is laid out from the style given here and its own root
         // style is never consulted, so it can only be cached while it is in the
         // flow at a width this knows: an overlaid sidebar places itself, and a
