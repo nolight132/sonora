@@ -165,6 +165,7 @@ fn open_window(cx: &mut App) {
         lyrics: _,
         playback,
         queue,
+        remotes: _,
         settings: _,
         updates: _,
         usage: _,

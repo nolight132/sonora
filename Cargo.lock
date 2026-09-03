@@ -4349,6 +4349,7 @@ dependencies = [
  "deunicode",
  "dirs",
  "flate2",
+ "futures",
  "http",
  "kakasi",
  "librespot-core",

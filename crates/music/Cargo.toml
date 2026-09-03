@@ -16,6 +16,7 @@ flate2.workspace = true
 cpal.workspace = true
 deunicode.workspace = true
 dirs.workspace = true
+futures.workspace = true
 http.workspace = true
 librespot-core.workspace = true
 librespot-oauth.workspace = true

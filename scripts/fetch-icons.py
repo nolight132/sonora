@@ -20,6 +20,8 @@ PACKS = {
 
 MAP = {
     "arrow-up-down": ("sort", "sort-linear", "arrow-up-down-line"),
+    "car": ("car", None, "car-line"),
+    "cast": ("chromecast", "screencast-2-linear", "cast-line"),
     "check": ("check", None, "check-line"),
     "chevron-down": ("nav-arrow-down", "alt-arrow-down-linear", "arrow-down-s-line"),
     "chevron-left": ("nav-arrow-left", "alt-arrow-left-linear", "arrow-left-s-line"),
@@ -53,6 +55,7 @@ MAP = {
     "maximize": ("expand", "maximize-square-3-linear", "fullscreen-line"),
     "mic-off": ("microphone-mute", None, "mic-off-line"),
     "mic-vocal": ("microphone", "microphone-linear", "mic-2-line"),
+    "monitor": ("computer", "monitor-linear", "computer-line"),
     "music": ("music-double-note", "music-note-linear", "music-2-line"),
     "music-2": ("music-note", "music-note-2-linear", "music-line"),
     "panel-left-close": ("sidebar-collapse", "sidebar-minimalistic-linear", "menu-fold-line"),
@@ -76,8 +79,11 @@ MAP = {
     "skip-back": ("skip-prev", "skip-previous-linear", "skip-back-line"),
     "skip-forward": ("skip-next", "skip-next-linear", "skip-forward-line"),
     "sliders-horizontal": ("control-slider", "slider-horizontal-linear", "equalizer-line"),
+    "smartphone": ("smartphone-device", "smartphone-2-linear", "smartphone-line"),
+    "speaker": (None, "speaker-linear", "speaker-line"),
     "text-select": (None, "text-selection-linear", None),
     "trash-2": ("trash", "trash-bin-minimalistic-linear", "delete-bin-line"),
+    "tv-minimal": ("tv", "tv-linear", "tv-line"),
     "undo-2": ("undo", "undo-left-round-linear", "arrow-go-back-line"),
     "user": ("user", "user-linear", "user-line"),
     "user-round": ("profile-circle", "user-rounded-linear", "user-3-line"),
