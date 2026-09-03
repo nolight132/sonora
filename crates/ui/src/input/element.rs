@@ -10,7 +10,7 @@ use i18n::t;
 use crate::button::Button;
 use crate::input::{
     CARET, CARET_LINES, Copy, Cut, INPUT_CONTEXT, Input, Paste, SelectAll, clamp_offset,
-    clamp_range,
+    clamp_range, masked_text,
 };
 use crate::menu::{Menu, MenuItem};
 use crate::popup::Popup;
@@ -73,25 +73,45 @@ impl Element for Text {
         let empty = input.content.is_empty();
         let style = window.text_style();
 
-        let (text, color) = match empty {
-            true => (input.placeholder(), theme.muted_foreground),
-            false => (input.content.clone(), style.color),
+        let secret = input.masked && !empty;
+        let mask = match secret {
+            true => Some(masked_text(&input.content)),
+            false => None,
+        };
+        let text = match secret {
+            true => mask
+                .as_ref()
+                .map(|(text, _)| text.clone())
+                .unwrap_or_default(),
+            false if empty => input.placeholder(),
+            false => input.content.clone(),
+        };
+        let color = match empty {
+            true => theme.muted_foreground,
+            false => style.color,
         };
 
+        let at = |offset: usize| match &mask {
+            Some((_, map)) => map[offset.min(input.content.len())],
+            None => offset,
+        };
         let selected = match empty {
             true => 0..0,
-            false => clamp_range(&text, &input.selected_range),
+            false => clamp_range(
+                &text,
+                &(at(input.selected_range.start)..at(input.selected_range.end)),
+            ),
         };
         let cursor = match empty {
             true => 0,
-            false => clamp_offset(&text, input.cursor()),
+            false => clamp_offset(&text, at(input.cursor())),
         };
         let marked = match empty {
             true => None,
             false => input
                 .marked_range
                 .as_ref()
-                .map(|range| clamp_range(&text, range)),
+                .map(|range| clamp_range(&text, &(at(range.start)..at(range.end)))),
         };
 
         let run = TextRun {

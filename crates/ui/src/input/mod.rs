@@ -59,6 +59,33 @@ fn clamp_range(text: &str, range: &Range<usize>) -> Range<usize> {
     start..clamp_offset(text, range.end).max(start)
 }
 
+const MASK: &str = "•";
+
+fn mask_map(content: &str) -> Vec<usize> {
+    let mut map = vec![0usize; content.len() + 1];
+    let mut display = 0usize;
+    for (start, grapheme) in content.grapheme_indices(true) {
+        map[start..start + grapheme.len()].fill(display);
+        display += MASK.len();
+    }
+    map[content.len()] = display;
+    map
+}
+
+pub(crate) fn masked_text(content: &str) -> (SharedString, Vec<usize>) {
+    let mut text = String::with_capacity(content.len());
+    for _ in content.graphemes(true) {
+        text.push_str(MASK);
+    }
+    (text.into(), mask_map(content))
+}
+
+fn content_at(content: &str, display: usize) -> usize {
+    let map = mask_map(content);
+    let at = map.partition_point(|&offset| offset < display);
+    at.min(content.len())
+}
+
 fn previous_boundary(text: &str, offset: usize) -> usize {
     let offset = clamp_offset(text, offset);
     text.grapheme_indices(true)
@@ -158,6 +185,7 @@ pub struct Input {
     compact: bool,
     tucked: bool,
     clearable: bool,
+    masked: bool,
     content: SharedString,
     selected_range: Range<usize>,
     selection_reversed: bool,
@@ -178,6 +206,7 @@ impl Input {
             compact: false,
             tucked: false,
             clearable: false,
+            masked: false,
             content: SharedString::default(),
             selected_range: 0..0,
             selection_reversed: false,
@@ -207,6 +236,11 @@ impl Input {
 
     pub fn clearable(mut self) -> Self {
         self.clearable = true;
+        self
+    }
+
+    pub fn masked(mut self) -> Self {
+        self.masked = true;
         self
     }
 
@@ -483,7 +517,10 @@ impl Input {
             return 0;
         }
         let offset = line.closest_index_for_x(position.x - bounds.left());
-        clamp_offset(&self.content, offset)
+        match self.masked && !self.content.is_empty() {
+            true => content_at(&self.content, offset),
+            false => clamp_offset(&self.content, offset),
+        }
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -621,9 +658,19 @@ impl EntityInputHandler for Input {
     ) -> Option<Bounds<Pixels>> {
         let line = self.last_layout.as_ref()?;
         let range = clamp_range(&self.content, &self.range_from_utf16(&range_utf16));
+        let at = |offset: usize| match self.masked && !self.content.is_empty() {
+            true => mask_map(&self.content)[offset],
+            false => offset,
+        };
         Some(Bounds::from_corners(
-            point(bounds.left() + line.x_for_index(range.start), bounds.top()),
-            point(bounds.left() + line.x_for_index(range.end), bounds.bottom()),
+            point(
+                bounds.left() + line.x_for_index(at(range.start)),
+                bounds.top(),
+            ),
+            point(
+                bounds.left() + line.x_for_index(at(range.end)),
+                bounds.bottom(),
+            ),
         ))
     }
 
@@ -636,10 +683,11 @@ impl EntityInputHandler for Input {
         let bounds = self.last_bounds?;
         let line = self.last_layout.as_ref()?;
         let index = line.index_for_x(position.x - bounds.left())?;
-        Some(offset_to_utf16(
-            &self.content,
-            clamp_offset(&self.content, index),
-        ))
+        let index = match self.masked && !self.content.is_empty() {
+            true => content_at(&self.content, index),
+            false => clamp_offset(&self.content, index),
+        };
+        Some(offset_to_utf16(&self.content, index))
     }
 }
 

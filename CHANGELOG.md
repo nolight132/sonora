@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Play from any Subsonic or OpenSubsonic server — Navidrome, Airsonic, Gonic and more. Sign in under
+  Settings > Accounts with the server address, a username and a password.
+- The Albums and Artists sections of Your Library show the whole server library when you play from a
+  Subsonic server, not just what you have starred.
 - Sonora speaks Spanish. Pick Español under Settings > General > Language, or leave the language on
   System and it follows a Spanish desktop on its own.
 
@@ -16,6 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Installing the standalone `.flatpak` bundle now registers the Sonora repository, so `flatpak update`
   keeps it current, and it can replace an install made from the repository.
+- Passwords typed into a server login form are hidden as you type them.
 
 ## [0.29.0] - 2026-09-03
 

@@ -193,6 +193,12 @@ login-cookie-submit = Weiter
 login-cookie-hint = Füge hier den Cookie-Request-Header ein
 login-cookie-detail = 1. Öffne music.youtube.com und stelle sicher, dass du angemeldet bist. 2. Drücke F12, öffne den Tab „Netzwerkanalyse“ und lade die Seite neu. 3. Wähle eine Anfrage namens „browse“ oder „next“. 4. Suche unter „Kopfzeilen“ bei den Anfrage-Headern den Eintrag „Cookie“, klicke ihn mit der rechten Maustaste an und kopiere seinen Wert. Füge den vollständigen Wert unten ein: die Cookie-Ansicht der Anfrage reicht nicht, weil der Wert SAPISID und __Secure-3PAPISID enthalten muss.
 login-cookie-title = Füge deine YouTube-Music-Cookies ein, um die Anmeldung abzuschließen
+login-server-title = Mit deinem Subsonic-Server verbinden
+login-server-detail = Gib die Adresse eines beliebigen Subsonic- oder OpenSubsonic-Servers ein (Navidrome, Airsonic, Gonic, …) und melde dich mit deinem Server-Benutzernamen und -Passwort an. Die Sitzung bleibt auf diesem Gerät.
+login-server-hint = https://music.example.com
+login-username-hint = Benutzername
+login-password-hint = Passwort
+login-server-submit = Verbinden
 login-account-title = Konto auswählen
 login-account-detail = Diese Sitzung ist bei mehreren Google-Konten angemeldet. Wähle das Konto, das Sonora verwenden soll.
 
