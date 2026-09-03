@@ -152,6 +152,7 @@ struct Values {
     normalisation: bool,
     gapless: bool,
     lyrics_for_local_files: bool,
+    connect_hosting: bool,
     karaoke_lyrics: bool,
     romanized_lyrics: bool,
     panel_lyrics_scale: f32,
@@ -219,6 +220,7 @@ impl Default for Values {
             normalisation: false,
             gapless: true,
             lyrics_for_local_files: true,
+            connect_hosting: false,
             karaoke_lyrics: true,
             romanized_lyrics: true,
             panel_lyrics_scale: DEFAULT_LYRICS_SCALE,
@@ -348,6 +350,11 @@ impl AppSettings {
 
     pub fn lyrics_for_local_files(&self) -> bool {
         self.values.lyrics_for_local_files
+    }
+
+    /// Whether Sonora offers itself as a Spotify Connect playback target.
+    pub fn connect_hosting(&self) -> bool {
+        self.values.connect_hosting
     }
 
     pub fn karaoke_lyrics(&self) -> bool {
@@ -535,6 +542,11 @@ impl AppSettings {
 
     pub fn set_lyrics_for_local_files(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.values.lyrics_for_local_files = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_connect_hosting(&mut self, hosting: bool, cx: &mut Context<Self>) {
+        self.values.connect_hosting = hosting;
         self.schedule_save(cx);
     }
 

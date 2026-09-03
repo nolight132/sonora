@@ -36,9 +36,13 @@ struct Remotes(librespot_core::Session);
 
 #[async_trait]
 impl RemoteFactory for Remotes {
-    async fn watch(&self) -> Result<Remote> {
-        let (watcher, updates) = Watcher::start(self.0.clone()).await?;
-        Ok((Arc::new(watcher), Box::new(updates)))
+    async fn watch(&self, playable: bool) -> Result<Remote> {
+        let (watcher, updates, orders) = Watcher::start(self.0.clone(), playable).await?;
+        Ok(Remote {
+            transport: Arc::new(watcher),
+            updates: Box::new(updates),
+            commands: Box::new(orders),
+        })
     }
 }
 

@@ -123,7 +123,7 @@ pub fn init(
         cx.new(|cx| Session::new(providers, local_provider, settings.clone(), io.clone(), cx));
     let library = cx.new(|cx| Library::new(session.clone(), io.clone(), cx));
     let queue = cx.new(|cx| Queue::new(session.clone(), settings.clone(), cx));
-    let remotes = cx.new(|cx| Remotes::new(session.clone(), io.clone(), cx));
+    let remotes = cx.new(|cx| Remotes::new(session.clone(), settings.clone(), io.clone(), cx));
     let playback = cx.new(|cx| {
         Playback::new(
             session.clone(),
@@ -133,6 +133,7 @@ pub fn init(
             cx,
         )
     });
+    remotes.update(cx, |remotes, cx| remotes.bind(playback.clone(), cx));
     let history = cx.new(|cx| History::new(session.clone(), playback.clone(), io.clone(), cx));
     let lyrics = cx.new(|cx| {
         Lyrics::new(
