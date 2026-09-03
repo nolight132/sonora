@@ -68,7 +68,7 @@ impl PlayerBar {
             over_volume: None,
             volume_held: false,
             muted: None,
-            artwork_visualization: FrameGlow::new(),
+            artwork_visualization: FrameGlow::new(0.9),
         }
     }
 
@@ -282,6 +282,7 @@ impl PlayerBar {
                     .child(self.artwork_visualization.sync(
                         artwork,
                         corner,
+                        1.,
                         self.playback.read(cx),
                         window,
                         cx,

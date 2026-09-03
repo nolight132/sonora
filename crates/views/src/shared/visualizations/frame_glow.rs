@@ -4,21 +4,17 @@ use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, Window, div, px};
 use music::Spectrum;
 use state::{Playback, PlaybackState, Sonora};
+use ui::ActiveTheme as _;
 use ui::motion::animates;
 
 /// Master intensity applied to blended strength. `1.0` is the designed response.
 const LEVEL: f32 = 1.;
 
-/// Strength weight in glow blur radius, in pixels at full signal.
-const GLOW_BLUR_SIGNAL: f32 = 40.;
+/// Upper bound on glow blur radius, as a fraction of the artwork side.
+const GLOW_BLUR_MAX: f32 = 0.08;
 
-/// Upper bound on glow blur radius, in pixels.
-const GLOW_RADIUS_MAX: f32 = 20.;
-
-/// Baseline opacity for the glow wash.
-///
-/// This is the maximum opacity that the glow wash will reach when the strength is at its maximum.
-const GLOW_BASELINE_OPACITY: f32 = 0.7;
+/// Maximum opacity the glow wash reaches at full strength.
+const GLOW_OPACITY: f32 = 0.5;
 
 /// Exponential rise rate for chased pulse values, per second.
 const ATTACK: f32 = 24.;
@@ -46,11 +42,11 @@ const GLOW_ALPHA_BASE: f32 = 0.08;
 /// Strength multiplier added to [`GLOW_ALPHA_BASE`] for glow wash opacity.
 const GLOW_ALPHA_SIGNAL: f32 = 2.5;
 
-/// RMS weight in glow blur radius, in pixels at full signal.
-const GLOW_BLUR_RMS: f32 = 10.;
+/// RMS weight in glow blur radius, as a fraction of the artwork side at full signal.
+const GLOW_BLUR_RMS: f32 = 0.03;
 
 /// Strength weight in glow layer scale above 1.0.
-const GLOW_SCALE_SIGNAL: f32 = 0.35;
+const GLOW_SCALE_SIGNAL: f32 = 0.12;
 
 /// Input gain in the `1 - e^(-x·k)` curve applied to each pulse band.
 const CURVE_GAIN: f32 = 0.5;
@@ -73,14 +69,6 @@ const RIM_SCALE_FLOOR: f32 = 0.012;
 /// Soft knee applied to raw FFT band means, same curve the old pulse used.
 const SQUASH: f32 = 0.08;
 
-/// Colour of the glow wash.
-const GLOW_COLOUR: Hsla = Hsla {
-    h: 0.,
-    s: 0.18,
-    l: 0.78,
-    a: GLOW_BASELINE_OPACITY,
-};
-
 #[derive(Clone, Copy, Default)]
 struct Pulse {
     peak: f32,
@@ -96,14 +84,17 @@ pub(crate) struct FrameGlow {
     chased: Pulse,
     /// Time when the pulse was last advanced.
     last: Option<Instant>,
+    /// Master intensity applied to the glow. `1.0` is the designed response.
+    level: f32,
 }
 
 impl FrameGlow {
     /// Creates an idle frame glow with no accumulated pulse.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(level: f32) -> Self {
         Self {
             chased: Pulse::default(),
             last: None,
+            level,
         }
     }
 
@@ -113,6 +104,7 @@ impl FrameGlow {
     ///
     /// - `size`: Side length of the square artwork.
     /// - `corner`: Artwork corner radius.
+    /// - `scale`: Presentation scale the artwork is drawn at, so the glow keeps pace with it.
     /// - `playback`: Source of playback state and spectrum bands.
     /// - `window`: Window to schedule while the glow is active or fading.
     /// - `cx`: Application context used to read the visualizer setting.
@@ -120,6 +112,7 @@ impl FrameGlow {
         &mut self,
         size: Pixels,
         corner: Pixels,
+        scale: f32,
         playback: &Playback,
         window: &mut Window,
         cx: &App,
@@ -137,21 +130,22 @@ impl FrameGlow {
 
         self.smooth(target);
         let shaped = shaped(self.chased);
-        let strength = strength(&shaped) * LEVEL;
+        let strength = strength(&shaped) * self.level;
         if allowed && (playing || strength > STRENGTH_MIN) {
             window.request_animation_frame();
         }
 
         let rim = rim(size, corner);
+        let side = size.as_f32().max(1.);
+        let opacity = GLOW_OPACITY * self.level;
         let glow = Hsla {
-            a: ((GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL) * GLOW_COLOUR.a)
-                .clamp(0., GLOW_COLOUR.a),
-            ..GLOW_COLOUR
+            a: ((GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL) * opacity).clamp(0., opacity),
+            ..cx.theme().primary
         };
-        let glow_blur = px((strength * GLOW_BLUR_SIGNAL + shaped.rms * GLOW_BLUR_RMS)
-            .min(GLOW_RADIUS_MAX)
+        let glow_blur = px(((strength * LEVEL + shaped.rms * GLOW_BLUR_RMS) * side)
+            .min(GLOW_BLUR_MAX * side)
             .max(rim.min_blur.as_f32()));
-        let glow_scale = rim.min_scale.max(1. + strength * GLOW_SCALE_SIGNAL);
+        let glow_scale = rim.min_scale.max(1. + strength * GLOW_SCALE_SIGNAL) * scale;
         div().absolute().top_0().left_0().size_full().when(
             allowed && strength > STRENGTH_MIN,
             |this| {
