@@ -7,6 +7,8 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::source::SeekError;
 use rodio::{OutputStream, OutputStreamBuilder, Source};
 
+use crate::Visualizer;
+
 pub const RAMP: Duration = Duration::from_millis(25);
 
 #[derive(Clone)]
@@ -33,7 +35,7 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn open(volume: Volume) -> Result<Self> {
+    pub fn open(volume: Volume, visualizer: Option<Visualizer>) -> Result<Self> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -63,9 +65,11 @@ impl Output {
 
         let applied = volume.get();
         let (sink, source) = rodio::Sink::new();
-        stream
-            .mixer()
-            .add(SmoothGain::new(source, volume.clone(), applied, RAMP));
+        let gain = SmoothGain::new(source, volume.clone(), applied, RAMP);
+        match visualizer {
+            Some(visualizer) => stream.mixer().add(visualizer.wrap(gain)),
+            None => stream.mixer().add(gain),
+        }
 
         Ok(Self {
             sink: Arc::new(sink),

@@ -9,6 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Playing artwork can pulse a theme-tinted glow with the music. Turn it off under Settings >
+  Appearance.
 - Sonora speaks Spanish. Pick Español under Settings > General > Language, or leave the language on
   System and it follows a Spanish desktop on its own.
 

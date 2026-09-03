@@ -7,6 +7,7 @@ use librespot_playback::convert::Converter;
 use librespot_playback::decoder::AudioPacket;
 use librespot_playback::{NUM_CHANNELS, SAMPLE_RATE};
 
+use crate::Visualizer;
 use crate::audio::{Output, Volume};
 
 const QUEUED_CHUNKS: usize = 26;
@@ -31,16 +32,20 @@ pub struct BlazingSink {
 }
 
 impl BlazingSink {
-    pub fn open(flush: Flush, volume: Volume) -> Result<Self, SinkError> {
-        let output = Output::open(volume)
+    pub fn open(
+        flush: Flush,
+        volume: Volume,
+        visualizer: Option<Visualizer>,
+    ) -> Result<Self, SinkError> {
+        let output = Output::open(volume, visualizer)
             .map_err(|error| SinkError::ConnectionRefused(error.to_string()))?;
         output.sink().pause();
 
         Ok(Self { output, flush })
     }
 
-    pub fn boxed(flush: Flush, volume: Volume) -> Box<dyn Sink> {
-        match Self::open(flush, volume) {
+    pub fn boxed(flush: Flush, volume: Volume, visualizer: Option<Visualizer>) -> Box<dyn Sink> {
+        match Self::open(flush, volume, visualizer) {
             Ok(sink) => Box::new(sink),
             Err(error) => {
                 log::error!("sink: cannot open an output device: {error}");

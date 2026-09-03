@@ -19,6 +19,7 @@ use ui::{
 use crate::chrome::SidebarRight;
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
+use crate::shared::visualization_glow::VisualizationGlow;
 
 const SEEK_MAX: f32 = 560.;
 const VOLUME_WIDTH: f32 = 110.;
@@ -39,6 +40,7 @@ pub(crate) struct PlayerBar {
     over_volume: Option<f32>,
     volume_held: bool,
     muted: Option<f32>,
+    visualization: VisualizationGlow,
 }
 
 impl PlayerBar {
@@ -66,6 +68,7 @@ impl PlayerBar {
             over_volume: None,
             volume_held: false,
             muted: None,
+            visualization: VisualizationGlow::new(),
         }
     }
 
@@ -236,10 +239,16 @@ impl PlayerBar {
             .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleFullscreen), cx))
     }
 
-    fn now_playing(&self, room: bool, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn now_playing(
+        &mut self,
+        room: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let artwork = ui::snapped(theme.metrics.row, window);
+        let corner = theme.radius.min(px(4.));
         let artists = theme.text(ui::Text::Small);
         let track = self.playback.read(cx).track().cloned();
         let cover = track.as_ref().and_then(|track| track.cover.clone());
@@ -267,6 +276,18 @@ impl PlayerBar {
                                 this.open_context_menu(context.clone(), event.position, cx);
                             }),
                         )
+                    })
+                    .relative()
+                    .size(artwork)
+                    .child({
+                        self.visualization.sync(
+                            artwork,
+                            corner,
+                            self.playback.read(cx),
+                            window,
+                            cx,
+                        );
+                        self.visualization.glow()
                     })
                     .child(Artwork::new(cover).size(artwork)),
             )

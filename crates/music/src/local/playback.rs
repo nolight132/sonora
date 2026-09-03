@@ -6,6 +6,7 @@ use rodio::Source as _;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::wire;
+use crate::audio::{Output, Volume};
 use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, PlaybackFactory, Player};
 
 const POLL: Duration = Duration::from_millis(20);
@@ -129,16 +130,15 @@ async fn engine_loop(
     mut commands: UnboundedReceiver<Command>,
     events: UnboundedSender<PlaybackEvent>,
 ) {
-    let stream = match rodio::OutputStreamBuilder::open_default_stream() {
-        Ok(stream) => stream,
+    let output = match Output::open(Volume::new(config.gain), config.visualizer.clone()) {
+        Ok(output) => output,
         Err(error) => {
-            log::error!("playback: cannot open audio output: {error}");
+            log::error!("playback: cannot open audio output: {error:#}");
             return;
         }
     };
-    let sink = rodio::Sink::connect_new(stream.mixer());
+    let sink = output.sink().clone();
     sink.pause();
-    sink.set_volume(config.gain);
 
     let mut ticker = tokio::time::interval(POLL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -234,7 +234,7 @@ async fn engine_loop(
                             events.send(PlaybackEvent::Position(sink.get_pos())).ok();
                         }
                     }
-                    Command::Gain(level) => sink.set_volume(level),
+                    Command::Gain(level) => output.set_volume(level),
                 }
             }
             _ = ticker.tick() => {

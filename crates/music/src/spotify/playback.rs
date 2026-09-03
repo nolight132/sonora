@@ -67,8 +67,13 @@ impl Engine {
 
         let sink_volume = volume.clone();
         let sink_flush = flush.clone();
+        let sink_visualizer = config.visualizer.clone();
         let player = Player::new(player_config, session, Box::new(NoOpVolume), move || {
-            BlazingSink::boxed(sink_flush, sink_volume)
+            BlazingSink::boxed(
+                sink_flush.clone(),
+                sink_volume.clone(),
+                sink_visualizer.clone(),
+            )
         });
 
         let events = Events(player.get_player_event_channel());

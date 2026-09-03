@@ -201,6 +201,7 @@ impl SettingsView {
                 Row::Item(self.font_row(cx).into_any_element()),
                 Row::Item(self.typeface_row(cx).into_any_element()),
                 self.title("settings-group-motion", cx),
+                Row::Item(self.visualization_row(cx).into_any_element()),
                 Row::Item(self.motion_row(cx).into_any_element()),
                 Row::Item(self.pace_row(cx).into_any_element()),
                 Row::Item(self.saver_row(cx).into_any_element()),
@@ -862,6 +863,26 @@ impl SettingsView {
                     if kind != look.kind {
                         Theme::fade(Look { kind, ..look }, &overrides, cx);
                     }
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn visualization_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.playback.read(cx).visualization();
+
+        self.row(
+            t!("settings-visualization"),
+            t!("settings-visualization-detail"),
+            muted,
+            small,
+            Switch::new("visualization", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.playback
+                        .update(cx, |playback, cx| playback.set_visualization(!on, cx));
                 }))
                 .into_any_element(),
         )

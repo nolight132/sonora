@@ -125,6 +125,10 @@ fn system_font() -> String {
     SYSTEM_FONT.to_owned()
 }
 
+fn visualization_on() -> bool {
+    true
+}
+
 const SAVE_DELAY: Duration = Duration::from_millis(300);
 const DEFAULT_VOLUME: f32 = 0.7;
 const DEFAULT_SIDEBAR_WIDTH: f32 = 195.;
@@ -201,6 +205,8 @@ struct Appearance {
     reduce_motion: String,
     motion_pace: String,
     battery_saver: String,
+    #[serde(default = "visualization_on")]
+    visualization: bool,
     system_theme: String,
     theme_overrides: ThemeOverrides,
 }
@@ -281,6 +287,7 @@ impl Default for Appearance {
             reduce_motion: Stillness::default().id().to_owned(),
             motion_pace: Pace::default().id().to_owned(),
             battery_saver: Saver::default().id().to_owned(),
+            visualization: true,
             system_theme: ThemeKind::Dark.id().to_owned(),
             theme_overrides: ThemeOverrides::default(),
         }
@@ -429,6 +436,10 @@ impl AppSettings {
 
     pub fn saver(&self) -> Saver {
         Saver::from_id(&self.values.appearance.battery_saver)
+    }
+
+    pub fn visualization(&self) -> bool {
+        self.values.appearance.visualization
     }
 
     pub fn system_theme(&self) -> ThemeKind {
@@ -776,6 +787,15 @@ impl AppSettings {
         }
         self.values.appearance.battery_saver = saver.id().to_owned();
         self.schedule_save(cx);
+    }
+
+    pub fn set_visualization(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.visualization() == on {
+            return;
+        }
+        self.values.appearance.visualization = on;
+        self.schedule_save(cx);
+        cx.notify();
     }
 
     pub fn set_window_controls(&mut self, shown: bool, cx: &mut Context<Self>) {
