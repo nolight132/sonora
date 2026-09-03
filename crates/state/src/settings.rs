@@ -205,7 +205,6 @@ struct Appearance {
     reduce_motion: String,
     motion_pace: String,
     battery_saver: String,
-    #[serde(default = "visualization_on")]
     visualization: bool,
     system_theme: String,
     theme_overrides: ThemeOverrides,

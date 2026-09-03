@@ -279,16 +279,13 @@ impl PlayerBar {
                     })
                     .relative()
                     .size(artwork)
-                    .child({
-                        self.artwork_visualization.sync(
-                            artwork,
-                            corner,
-                            self.playback.read(cx),
-                            window,
-                            cx,
-                        );
-                        self.artwork_visualization.glow()
-                    })
+                    .child(self.artwork_visualization.sync(
+                        artwork,
+                        corner,
+                        self.playback.read(cx),
+                        window,
+                        cx,
+                    ))
                     .child(Artwork::new(cover).size(artwork)),
             )
             .when(room, |this| {

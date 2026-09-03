@@ -59,7 +59,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 raw-window-handle = "0.6"
 roxmltree = "0.21"
 rodio = { version = "0.21", default-features = false, features = ["playback"] }
-rodio_tap = { path = "../rodio_tap", default-features = false, features = ["visualizer", "async"] }
+rodio_tap = { git = "https://github.com/phayes/rodio_tap", branch = "0.2.0-rodio-21", default-features = false, features = ["visualizer", "async"] } # Temporarily pointing to a fork of rodio tap until I publish a new version.
 rusqlite = { version = "0.32" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"

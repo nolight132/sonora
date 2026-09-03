@@ -78,29 +78,32 @@ const GLOW_COLOUR: Hsla = Hsla {
     a: GLOW_BASELINE_OPACITY,
 };
 
+/// Produces an artwork glow that follows the current audio pulse.
 pub(crate) struct FrameGlow {
+    /// Smoothed pulse carried between rendered frames.
     chased: Pulse,
+    /// Time when the pulse was last advanced.
     last: Option<Instant>,
-    frame: Option<Frame>,
-}
-
-struct Frame {
-    show: bool,
-    corner: Pixels,
-    glow: Hsla,
-    glow_blur: Pixels,
-    glow_scale: f32,
 }
 
 impl FrameGlow {
+    /// Creates an idle frame glow with no accumulated pulse.
     pub(crate) fn new() -> Self {
         Self {
             chased: Pulse::default(),
             last: None,
-            frame: None,
         }
     }
 
+    /// Advances the audio response and returns the current glow layer.
+    ///
+    /// # Arguments
+    ///
+    /// - `size`: Side length of the square artwork.
+    /// - `corner`: Artwork corner radius.
+    /// - `playback`: Source of playback state and visualizer pulses.
+    /// - `window`: Window to schedule while the glow is active or fading.
+    /// - `cx`: Application context used to read visualization settings.
     pub(crate) fn sync(
         &mut self,
         size: Pixels,
@@ -108,7 +111,7 @@ impl FrameGlow {
         playback: &Playback,
         window: &mut Window,
         cx: &App,
-    ) {
+    ) -> impl IntoElement {
         let settings = Sonora::global(cx).settings.read(cx);
         let allowed = settings.visualization() && animates(cx);
         let playing = *playback.state() == PlaybackState::Playing;
@@ -125,42 +128,36 @@ impl FrameGlow {
         }
 
         let rim = rim(size, corner);
-        let glow = wash(GLOW_COLOUR, GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL);
+        let glow = Hsla {
+            a: ((GLOW_ALPHA_BASE + strength * GLOW_ALPHA_SIGNAL) * GLOW_COLOUR.a)
+                .clamp(0., GLOW_COLOUR.a),
+            ..GLOW_COLOUR
+        };
         let glow_blur = px((strength * GLOW_BLUR_SIGNAL + shaped.rms * GLOW_BLUR_RMS)
             .min(GLOW_RADIUS_MAX)
             .max(rim.min_blur.as_f32()));
         let glow_scale = rim.min_scale.max(1. + strength * GLOW_SCALE_SIGNAL);
-
-        self.frame = Some(Frame {
-            show: allowed && strength > STRENGTH_MIN,
-            corner: rim.corner,
-            glow,
-            glow_blur,
-            glow_scale,
-        });
-    }
-
-    pub(crate) fn glow(&self) -> impl IntoElement {
-        let Some(frame) = &self.frame else {
-            return div();
-        };
-        div()
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-            .when(frame.show, |this| {
+        div().absolute().top_0().left_0().size_full().when(
+            allowed && strength > STRENGTH_MIN,
+            |this| {
                 this.child(
                     div()
                         .absolute()
                         .inset_0()
-                        .rounded(frame.corner)
-                        .bg(frame.glow)
-                        .blur(frame.glow_blur)
-                        .layer_scale(frame.glow_scale),
+                        .rounded(rim.corner)
+                        .bg(glow)
+                        .blur(glow_blur)
+                        .layer_scale(glow_scale),
                 )
-            })
+            },
+        )
     }
+
+    /// Moves the accumulated pulse toward a target using asymmetric response rates (Attack and Release).
+    ///
+    /// # Arguments
+    ///
+    /// - `target`: Latest pulse to chase, or a silent pulse while inactive.
     fn smooth(&mut self, target: Pulse) {
         let now = Instant::now();
         let step = match self.last.replace(now) {
@@ -179,6 +176,14 @@ impl FrameGlow {
     }
 }
 
+/// Moves one pulse value toward its target.
+///
+/// # Arguments
+///
+/// - `current`: Previously accumulated value.
+/// - `target`: Latest sampled value.
+/// - `attack`: Interpolation rate used while the value rises.
+/// - `release`: Interpolation rate used while the value falls.
 fn follow(current: f32, target: f32, attack: f32, release: f32) -> f32 {
     let rate = match target > current {
         true => attack,
@@ -187,6 +192,11 @@ fn follow(current: f32, target: f32, attack: f32, release: f32) -> f32 {
     current + (target - current) * rate
 }
 
+/// Applies the response curve to every component of a pulse.
+///
+/// # Arguments
+///
+/// - `pulse`: Smoothed pulse to shape.
 fn shaped(pulse: Pulse) -> Pulse {
     Pulse {
         peak: curve(pulse.peak),
@@ -197,24 +207,49 @@ fn shaped(pulse: Pulse) -> Pulse {
     }
 }
 
+/// Compresses an input value into the normalized visual response.
+///
+/// # Arguments
+///
+/// - `value`: Pulse component to shape.
 fn curve(value: f32) -> f32 {
     (1. - (-value * CURVE_GAIN).exp()).clamp(0., 1.)
 }
 
+/// Blends the shaped frequency bands into the glow strength.
+///
+/// # Arguments
+///
+/// - `pulse`: Shaped pulse containing the frequency-band levels.
 fn strength(pulse: &Pulse) -> f32 {
     STRENGTH_BASS * pulse.bass + (1. - STRENGTH_BASS) * mids_highs(pulse)
 }
 
+/// Returns the weighted larger value from the middle and high bands.
+///
+/// # Arguments
+///
+/// - `pulse`: Shaped pulse containing the frequency-band levels.
 fn mids_highs(pulse: &Pulse) -> f32 {
     pulse.mids.max(pulse.highs) * MIDS_HIGHS_MULTIPLIER
 }
 
+/// Minimum geometry needed to reveal the glow beyond the artwork rim.
 struct Rim {
+    /// Corner radius shared with the artwork.
     corner: Pixels,
+    /// Smallest blur that clears the rounded edge.
     min_blur: Pixels,
+    /// Smallest scale that clears the rounded edge.
     min_scale: f32,
 }
 
+/// Derives minimum glow geometry from the artwork dimensions.
+///
+/// # Arguments
+///
+/// - `size`: Side length of the square artwork.
+/// - `corner`: Artwork corner radius.
 fn rim(size: Pixels, corner: Pixels) -> Rim {
     let side = size.as_f32().max(1.);
     let corner = corner.as_f32().max(0.);
@@ -224,12 +259,5 @@ fn rim(size: Pixels, corner: Pixels) -> Rim {
         corner: px(corner),
         min_blur: px(min_blur),
         min_scale,
-    }
-}
-
-fn wash(base: Hsla, alpha: f32) -> Hsla {
-    Hsla {
-        a: (alpha * base.a).clamp(0., base.a),
-        ..base
     }
 }
