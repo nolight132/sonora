@@ -522,6 +522,7 @@ returning protobuf or JSON. Consequences:
 | `wire.rs`                      | protobuf → `models` conversion, `image_url` (file id → `i.scdn.co/image/<hex>`) |
 | `pb.rs`                        | minimal protobuf `Reader`/`Writer` for endpoints with no generated schema       |
 | `playback.rs`, `sink.rs`       | librespot playback engine + custom rodio sink (see [Audio](#audio))             |
+| `remotes.rs`                   | `/connect-state/v1` — device list, transport and transfer for other devices     |
 
 Working notes:
 
@@ -554,6 +555,24 @@ Never drive a player from a view. Go through `state::Playback`, which owns the e
 events into `PlaybackState`, and handles shuffle, repeat, skip debouncing, and the cooldown after
 an `Unavailable` track.
 
+### Spotify Connect
+
+`music::spotify::remotes` is control only — Sonora announces itself with `can_play: false` and
+`hidden: true`, so it never appears in anyone's device list and never receives playback. The wire
+is three endpoints under `/connect-state/v1`: a `PutStateRequest` to `devices/{id}` returns the
+`Cluster` (every device plus the remote `PlayerState`), `player/command/from/{me}/to/{target}`
+carries the JSON transport commands, and `connect/volume/from/{me}/to/{target}` carries a
+`SetVolumeCommand`. `hm://connect-state/v1/cluster` pushes the state after every change, which is
+why `session.dealer().start()` and `set_connection_id` must both run before the announce.
+
+- **A transfer's `from` is the device that holds playback**, read off `cluster.active_device_id`.
+  Passing Sonora's own id answers 500.
+- `state::Remotes` owns the watch and the cached cluster; `Playback::remote` is the one branch, and
+  `mirror` copies the remote state onto the fields the UI already reads, so no view knows about
+  Connect. A view asks `Playback` for `shown_volume` / `volume_reachable` rather than `volume`.
+- The cluster pushes roughly once a second, so `Remotes::position` carries the reported position
+  forward by hand between pushes.
+
 ### State entities
 
 `state::init` installs a `Sonora` global holding `session`, `library`, `playback`, `queue`,
@@ -564,6 +583,7 @@ an `Unavailable` track.
 | `Session`                                  | auth lifecycle; emits `SessionEvent::{SignedIn, SignedOut}`; hands out `Arc<dyn MusicApi>` and `Arc<dyn PlaybackFactory>`                               |
 | `Library`                                  | saved tracks / playlists / albums / followed artists; `LibraryState` is `Empty \| Loading \| Ready{..,problems} \| Failed` — partial failure is normal, surface `problems` |
 | `Playback`                                 | engine ownership, transport, shuffle/repeat, volume, `Origin` tracking, `toggle_origin`                                                                                  |
+| `Remotes`                                  | Spotify Connect: the cluster's device list and remote player state; `Playback` routes transport here while a device is engaged                                            |
 | `Queue`                                    | past / current / upcoming; `start`, `next`, `next_random`, `previous`, `rewind`                                                                         |
 | `Home`, `Detail`, `ArtistDetail`, `Search` | per-screen loaders, each owning its `Task`                                                                                                              |
 | `AppSettings`                              | debounced JSON persistence                                                                                                                              |

@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::Error;
 use gpui::{Context, Entity, EventEmitter, Task};
 use music::{
-    MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, SignIn, SignInFailure,
-    SignInProblem, SignInPrompt, UserProfile,
+    MusicApi, MusicProvider, PlaybackFactory, PromptSink, ProviderSession, RemoteFactory, SignIn,
+    SignInFailure, SignInProblem, SignInPrompt, UserProfile,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -85,6 +85,7 @@ pub struct Session {
     client: Option<Arc<dyn MusicApi>>,
     catalog: Option<Arc<CatalogSource>>,
     playback: Option<Arc<dyn PlaybackFactory>>,
+    remotes: Option<Arc<dyn RemoteFactory>>,
     authenticated: bool,
     playcounts: bool,
     io: Io,
@@ -127,6 +128,7 @@ impl Session {
             client: None,
             catalog: None,
             playback: None,
+            remotes: None,
             authenticated: false,
             playcounts: false,
             io,
@@ -157,6 +159,10 @@ impl Session {
 
     pub fn playback(&self) -> Option<Arc<dyn PlaybackFactory>> {
         self.playback.clone()
+    }
+
+    pub fn remotes(&self) -> Option<Arc<dyn RemoteFactory>> {
+        self.remotes.clone()
     }
 
     pub fn local_client(&self) -> Option<Arc<dyn MusicApi>> {
@@ -436,6 +442,7 @@ impl Session {
         self.client = None;
         self.catalog = None;
         self.playback = None;
+        self.remotes = None;
         self.authenticated = false;
         self.playcounts = false;
         self.state = SessionState::SignedOut;
@@ -461,6 +468,7 @@ impl Session {
         self.catalog = Some(Arc::new(CatalogSource::new(session.api.clone())));
         self.client = Some(session.api);
         self.playback = Some(session.playback);
+        self.remotes = session.remotes;
         self.authenticated = session.authenticated;
         self.playcounts = session.playcounts;
         self.state = SessionState::SignedIn(session.profile);
@@ -474,6 +482,7 @@ impl Session {
         self.client = None;
         self.catalog = None;
         self.playback = None;
+        self.remotes = None;
         self.authenticated = false;
         self.playcounts = false;
         self.watch = None;
@@ -545,6 +554,7 @@ impl Session {
         self.catalog = Some(Arc::new(CatalogSource::new(session.api.clone())));
         self.client = Some(session.api);
         self.playback = Some(session.playback);
+        self.remotes = session.remotes;
         self.authenticated = session.authenticated;
         self.playcounts = session.playcounts;
         log::debug!("session: reconnected");
@@ -567,6 +577,7 @@ impl Session {
         self.client = None;
         self.catalog = None;
         self.playback = None;
+        self.remotes = None;
         self.state = SessionState::Failed(failure);
         cx.notify();
         cx.emit(SessionEvent::SignedOut);

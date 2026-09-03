@@ -204,10 +204,85 @@ pub trait PlaybackFactory: Send + Sync {
     fn start(&self, config: PlaybackConfig) -> (Box<dyn Player>, Box<dyn PlaybackEvents>);
 }
 
+pub const REMOTE_NAME: &str = "Sonora";
+pub const TRACK_PREFIX: &str = "spotify:track:";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteKind {
+    Computer,
+    Phone,
+    Speaker,
+    Screen,
+    Car,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RemoteDevice {
+    pub id: String,
+    pub name: String,
+    pub kind: RemoteKind,
+    /// `None` when the device refuses remote volume changes.
+    pub volume: Option<f32>,
+    pub active: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RemoteState {
+    pub own_id: String,
+    pub devices: Vec<RemoteDevice>,
+    pub active: Option<String>,
+    pub track: Option<String>,
+    pub playing: bool,
+    pub buffering: bool,
+    pub position: Duration,
+    pub duration: Duration,
+    pub shuffle: bool,
+}
+
+impl RemoteState {
+    pub fn device(&self, id: &str) -> Option<&RemoteDevice> {
+        self.devices.iter().find(|device| device.id == id)
+    }
+
+    pub fn active_device(&self) -> Option<&RemoteDevice> {
+        self.active.as_deref().and_then(|id| self.device(id))
+    }
+}
+
+/// Controls playback happening on another device. Every method names the device it targets,
+/// so nothing here assumes an active one.
+#[async_trait]
+pub trait RemoteTransport: Send + Sync {
+    fn device_id(&self) -> String;
+    async fn refresh(&self) -> Result<RemoteState>;
+    async fn play(&self, target: &str) -> Result<()>;
+    async fn pause(&self, target: &str) -> Result<()>;
+    async fn next(&self, target: &str) -> Result<()>;
+    async fn previous(&self, target: &str) -> Result<()>;
+    async fn seek(&self, target: &str, position: Duration) -> Result<()>;
+    async fn set_volume(&self, target: &str, level: f32) -> Result<()>;
+    async fn play_track(&self, target: &str, track_id: &str, at: Duration) -> Result<()>;
+    async fn transfer(&self, active: Option<&str>, target: &str) -> Result<()>;
+    async fn release(&self) -> Result<()>;
+}
+
+#[async_trait]
+pub trait RemoteUpdates: Send {
+    async fn next(&mut self) -> Option<RemoteState>;
+}
+
+pub type Remote = (Arc<dyn RemoteTransport>, Box<dyn RemoteUpdates>);
+
+#[async_trait]
+pub trait RemoteFactory: Send + Sync {
+    async fn watch(&self) -> Result<Remote>;
+}
+
 pub struct ProviderSession {
     pub profile: UserProfile,
     pub api: Arc<dyn MusicApi>,
     pub playback: Arc<dyn PlaybackFactory>,
+    pub remotes: Option<Arc<dyn RemoteFactory>>,
     pub authenticated: bool,
     pub playcounts: bool,
 }

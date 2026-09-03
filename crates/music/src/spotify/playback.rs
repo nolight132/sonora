@@ -14,9 +14,8 @@ use crate::spectrum::Spectrum;
 use crate::spotify::sink::{BlazingSink, Flush};
 use crate::{
     PlaybackConfig, PlaybackEvent, PlaybackEvents, PlaybackFactory, Player as MusicPlayer,
+    TRACK_PREFIX,
 };
-
-const TRACK_PREFIX: &str = "spotify:track:";
 
 pub struct Events {
     player: UnboundedReceiver<PlayerEvent>,

@@ -207,6 +207,13 @@ player-fullscreen = Fullscreen
 player-fullscreen-leave = Leave fullscreen
 fullscreen-artwork = Artwork
 
+# connect devices
+device-title = Connect to a device
+device-this = This computer
+device-none = No other devices
+device-searching = Looking for devices…
+device-playing-on = Playing on { $name }
+
 # filters
 filter-history = Filter listening history
 history-empty = Tracks you play will appear here.
@@ -579,6 +586,8 @@ toast-track-removed = Removed from { $name }
 toast-playlist-failed = That change could not be saved
 toast-playlist-busy = Another change is still running
 toast-playlist-signed-out = Sign in to change playlists
+toast-remote-unavailable = Spotify Connect is not reachable
+toast-remote-failed = { $name } refused the connection
 toast-queued-track = { $name } added to the queue
 toast-next-track = { $name } plays next
 toast-queued-album = Album added to the queue

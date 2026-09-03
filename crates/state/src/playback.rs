@@ -55,7 +55,9 @@ impl QueuePlacement {
 use crate::queue::Queue;
 use serde::{Deserialize, Serialize};
 
-use crate::{AppSettings, Io, Outcome, Session, SessionEvent, Target, Toasts, join};
+use crate::{
+    AppSettings, Io, Outcome, RemoteEvent, Remotes, Session, SessionEvent, Target, Toasts, join,
+};
 
 const POSITION_INTERVAL: Duration = Duration::from_millis(500);
 const CLOCK_SETTLE: Duration = Duration::from_secs(1);
@@ -258,6 +260,7 @@ pub struct Playback {
     session: Entity<Session>,
     queue: Entity<Queue>,
     settings: Entity<AppSettings>,
+    remotes: Entity<Remotes>,
     level: f32,
     normalisation: bool,
     gapless: bool,
@@ -288,6 +291,7 @@ impl Playback {
         session: Entity<Session>,
         queue: Entity<Queue>,
         settings: Entity<AppSettings>,
+        remotes: Entity<Remotes>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.subscribe(&session, |this, session, event, cx| match event {
@@ -316,6 +320,12 @@ impl Playback {
         .detach();
         cx.observe(&queue, |this, _, cx| this.suggest_similar(cx))
             .detach();
+        cx.observe(&remotes, |this, _, cx| this.mirror(cx)).detach();
+        cx.subscribe(&remotes, |this, _, event, cx| match event {
+            RemoteEvent::Engaged => this.hand_over(cx),
+            RemoteEvent::Released => this.take_back(cx),
+        })
+        .detach();
 
         let level = settings.read(cx).volume();
         let normalisation = settings.read(cx).normalisation();
@@ -334,6 +344,7 @@ impl Playback {
             session,
             queue,
             settings,
+            remotes,
             level,
             normalisation,
             gapless,
@@ -372,6 +383,81 @@ impl Playback {
     fn active_engine(&self) -> Option<&dyn Player> {
         let id = self.track.as_ref()?.id.as_deref()?;
         self.engine_for(id)
+    }
+
+    /// True while another device holds playback and Sonora is standing in for it. Every
+    /// transport call then travels over Connect instead of reaching a local engine.
+    pub fn remote(&self, cx: &App) -> bool {
+        self.remotes.read(cx).engaged().is_some()
+    }
+
+    /// Copies the remote device's state onto the fields the whole UI already reads, so a
+    /// player bar or a table needs to know nothing about Connect.
+    fn mirror(&mut self, cx: &mut Context<Self>) {
+        if !self.remote(cx) {
+            return cx.notify();
+        }
+
+        let remotes = self.remotes.read(cx);
+        let playing = remotes.playing();
+        let position = remotes.position();
+        let track = remotes.track().cloned();
+        let duration = remotes.duration();
+        let state = match (playing, remotes.buffering()) {
+            (_, true) => PlaybackState::Loading,
+            (true, false) => PlaybackState::Playing,
+            (false, false) => match track.is_some() {
+                true => PlaybackState::Paused,
+                false => PlaybackState::Idle,
+            },
+        };
+
+        self.track = track.map(|mut track| {
+            if !duration.is_zero() {
+                track.duration = duration;
+            }
+            track
+        });
+        self.state = state;
+        self.position = position;
+        match playing {
+            true => self.clock.correct(position),
+            false => self.clock.reset(position, false),
+        }
+        cx.notify();
+    }
+
+    /// What to hand to a device the user just picked: the track Sonora is showing and where
+    /// it is, so picking a device continues instead of starting over.
+    pub fn handoff(&self, cx: &App) -> Option<(String, Duration)> {
+        if self.remote(cx) {
+            return None;
+        }
+        let track = self.track.as_ref()?;
+        let id = track.id.clone().filter(|id| !music::is_local_id(id))?;
+        Some((id, self.live_position()))
+    }
+
+    /// A device took over: silence the local engines and let the cluster drive what is shown.
+    fn hand_over(&mut self, cx: &mut Context<Self>) {
+        if let Some(engine) = self.engine.as_ref() {
+            engine.pause();
+        }
+        if let Some(engine) = self.local_engine.as_ref() {
+            engine.pause();
+        }
+        self.preloaded = None;
+        self.seek_on_play = None;
+        self.mirror(cx);
+    }
+
+    /// Sonora stopped standing in for a device. Whatever was shown stays, paused, and the
+    /// engine reloads it at that position on the next play.
+    fn take_back(&mut self, cx: &mut Context<Self>) {
+        self.state = PlaybackState::Paused;
+        self.clock.reset(self.position, false);
+        self.resume_at = Some(self.position);
+        self.prepare_resume(cx);
     }
 
     pub fn spectrum(&self) -> Option<Spectrum> {
@@ -789,6 +875,12 @@ impl Playback {
     }
 
     pub fn next(&mut self, cx: &mut Context<Self>) {
+        if self.remote(cx) {
+            return self
+                .remotes
+                .clone()
+                .update(cx, |remotes, cx| remotes.next(cx));
+        }
         self.fetch = None;
         let start = self.burst();
         self.follow_queue(start, cx);
@@ -1014,6 +1106,12 @@ impl Playback {
     }
 
     pub fn previous(&mut self, cx: &mut Context<Self>) {
+        if self.remote(cx) {
+            return self
+                .remotes
+                .clone()
+                .update(cx, |remotes, cx| remotes.previous(cx));
+        }
         if self.restarts(cx) {
             return self.seek(Duration::ZERO, cx);
         }
@@ -1048,6 +1146,12 @@ impl Playback {
     }
 
     pub fn resume(&mut self, cx: &mut Context<Self>) {
+        if self.remote(cx) {
+            return self
+                .remotes
+                .clone()
+                .update(cx, |remotes, cx| remotes.play(cx));
+        }
         if let Some(at) = self.resume_at {
             if !self.resume_ready {
                 return self.reload_and_seek(at, cx);
@@ -1145,6 +1249,12 @@ impl Playback {
     }
 
     pub fn pause(&mut self, cx: &mut Context<Self>) {
+        if self.remote(cx) {
+            return self
+                .remotes
+                .clone()
+                .update(cx, |remotes, cx| remotes.pause(cx));
+        }
         if let Some(engine) = self.active_engine() {
             engine.pause();
             cx.notify();
@@ -1179,6 +1289,12 @@ impl Playback {
     }
 
     pub fn seek(&mut self, position: Duration, cx: &mut Context<Self>) {
+        if self.remote(cx) {
+            return self
+                .remotes
+                .clone()
+                .update(cx, |remotes, cx| remotes.seek(position, cx));
+        }
         if self.state != PlaybackState::Playing {
             self.seek_on_play = Some(position);
         }
@@ -1267,7 +1383,26 @@ impl Playback {
         self.level
     }
 
+    /// The level the slider shows: a remote device reports its own, and only falls back to
+    /// Sonora's when it refuses remote volume.
+    pub fn shown_volume(&self, cx: &App) -> f32 {
+        match self.remote(cx) {
+            true => self.remotes.read(cx).volume().unwrap_or(self.level),
+            false => self.level,
+        }
+    }
+
+    pub fn volume_reachable(&self, cx: &App) -> bool {
+        !self.remote(cx) || self.remotes.read(cx).volume().is_some()
+    }
+
     pub fn set_volume(&mut self, level: f32, cx: &mut Context<Self>) {
+        if self.remote(cx) {
+            return self
+                .remotes
+                .clone()
+                .update(cx, |remotes, cx| remotes.set_volume(level, cx));
+        }
         self.level = level.clamp(0., 1.);
         self.settings
             .update(cx, |settings, cx| settings.set_volume(self.level, cx));

@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Sonora can drive Spotify Connect devices. The cast button in the player bar lists every phone,
+  speaker or computer signed in to your account; picking one hands the song over and the transport,
+  seek bar and volume then control that device instead of this computer. Pick This computer to take
+  playback back.
 - Closing the window no longer stops the music: Sonora stays in the system tray with play/pause,
   previous, next, show and quit at hand, and the Dock icon steps aside on macOS until the window
   is back. Turn it off under Settings → General → Window if you would rather it quit.

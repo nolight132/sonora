@@ -68,6 +68,7 @@ impl YouTubeProvider {
             profile,
             api: Arc::new(client),
             playback: Arc::new(Factory::new(api)),
+            remotes: None,
             authenticated: true,
             playcounts: false,
         }
@@ -81,6 +82,7 @@ impl YouTubeProvider {
             },
             api: Arc::new(YouTubeClient::new(api.clone())),
             playback: Arc::new(Factory::new(api)),
+            remotes: None,
             authenticated: false,
             playcounts: false,
         }
