@@ -320,30 +320,29 @@ impl FullscreenView {
                     .size(raster_side + pad * 2.)
                     .layer_scale(presentation_scale)
                     .child(
-                        div()
-                            .absolute()
-                            .top(pad)
-                            .left(pad)
-                            .size(raster_side)
-                            .child(
-                                Artwork::new(small)
-                                    .size(raster_side)
-                                    .corner_radius(radius)
-                                    .soft(waiting),
-                            )
-                            .when_some(large.clone(), |this, url| {
-                                this.child(
+                        div().absolute().top(pad).left(pad).child(
+                            Artwork::new(small)
+                                .size(raster_side)
+                                .corner_radius(radius)
+                                .soft(waiting),
+                        ),
+                    )
+                    .when_some(large, |this, url| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top(pad)
+                                .left(pad)
+                                .child(
                                     Artwork::new(Some(url))
                                         .size(raster_side)
-                                        .corner_radius(radius)
-                                        .motion(
-                                            ("cover-large", revision),
-                                            Motion::Slow,
-                                            |art, t| art.opacity(t),
-                                        ),
+                                        .corner_radius(radius),
                                 )
-                            }),
-                    ),
+                                .motion(("cover-large", revision), Motion::Slow, |art, t| {
+                                    art.opacity(t)
+                                }),
+                        )
+                    }),
             )
     }
 
@@ -444,7 +443,7 @@ impl FullscreenView {
             })
     }
 
-    fn strip(&self, hide: f32, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn strip(&self, hide: f32, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let cover = ui::snapped(theme.metrics.row, window);
         let track = self.playback.read(cx).track().cloned();
@@ -469,7 +468,6 @@ impl FullscreenView {
                         this.cursor_pointer()
                             .on_click(move |_, _, cx| open_album(&album, cx))
                     })
-                    .size(cover)
                     .child(Artwork::new(track.as_ref().and_then(|t| t.cover.clone())).size(cover)),
             )
             .child(

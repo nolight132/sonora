@@ -10,7 +10,7 @@ use ui::motion::animates;
 const LEVEL: f32 = 1.;
 
 /// Strength weight in glow blur radius, in pixels at full signal.
-const GLOW_BLUR_SIGNAL: f32 = 50.;
+const GLOW_BLUR_SIGNAL: f32 = 40.;
 
 /// Upper bound on glow blur radius, in pixels.
 const GLOW_RADIUS_MAX: f32 = 20.;
@@ -18,7 +18,7 @@ const GLOW_RADIUS_MAX: f32 = 20.;
 /// Baseline opacity for the glow wash.
 ///
 /// This is the maximum opacity that the glow wash will reach when the strength is at its maximum.
-const GLOW_BASELINE_OPACITY: f32 = 0.8;
+const GLOW_BASELINE_OPACITY: f32 = 0.7;
 
 /// Exponential rise rate for chased pulse values, per second.
 const ATTACK: f32 = 24.;
