@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use lofty::file::{AudioFile, TaggedFileExt};
-use lofty::picture::{MimeType, Picture};
+use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::Accessor;
 use lofty::probe::Probe;
 use lofty::tag::Tag;
@@ -199,23 +199,31 @@ fn extract_cover(
     album_dir: Option<&Path>,
     cache_dir: &Path,
 ) -> Option<String> {
-    if let Some(cover) = path
-        .parent()
-        .and_then(folder_cover)
-        .or_else(|| album_dir.and_then(folder_cover))
-    {
+    if let Some(cover) = album_dir.and_then(folder_cover) {
         return Some(cover);
     }
 
-    if let Some(picture) = tag.and_then(|tag| tag.pictures().first())
-        && let Some(cached) = cache_picture(picture, path, cache_dir)
+    let picture = tag.and_then(|tag| {
+        tag.pictures()
+            .iter()
+            .find(|picture| picture.pic_type() == PictureType::CoverFront)
+            .or_else(|| tag.pictures().first())
+    });
+
+    if let Some(picture) = picture
+        && let Some(cached) = cache_picture(picture, cache_dir)
     {
         return Some(cached);
     }
-    None
+
+    path.parent().and_then(folder_cover)
 }
 
-fn cache_picture(picture: &Picture, source: &Path, cache_dir: &Path) -> Option<String> {
+fn cache_picture(picture: &Picture, cache_dir: &Path) -> Option<String> {
+    if picture.data().is_empty() {
+        return None;
+    }
+
     let extension = match picture.mime_type() {
         Some(MimeType::Png) => "png",
         Some(MimeType::Gif) => "gif",
@@ -225,14 +233,91 @@ fn cache_picture(picture: &Picture, source: &Path, cache_dir: &Path) -> Option<S
     };
 
     let mut hasher = DefaultHasher::new();
-    source.parent()?.hash(&mut hasher);
+    picture.data().hash(&mut hasher);
     let hash = hasher.finish();
 
     let dir = cache_dir.join("local-covers");
     std::fs::create_dir_all(&dir).ok()?;
-    let dest = dir.join(format!("{hash:x}.{extension}"));
+    let dest = dir.join(format!("{hash:016x}.{extension}"));
     if !dest.exists() {
         std::fs::write(&dest, picture.data()).ok()?;
     }
     Some(format!("file://{}", dest.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lofty::picture::{MimeType, Picture, PictureType};
+    use lofty::tag::TagType;
+
+    fn test_dir() -> std::path::PathBuf {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("sonora-test-{now}"))
+    }
+
+    fn test_pic(data: Vec<u8>, pic_type: PictureType) -> Picture {
+        Picture::unchecked(data)
+            .pic_type(pic_type)
+            .mime_type(MimeType::Jpeg)
+            .build()
+    }
+
+    #[test]
+    fn cache_picture_deduplicates_identical_images() {
+        let temp = test_dir();
+        let data = vec![1, 2, 3, 4, 5];
+        let pic1 = test_pic(data.clone(), PictureType::CoverFront);
+        let pic2 = test_pic(data, PictureType::CoverFront);
+
+        let cached1 = cache_picture(&pic1, &temp).unwrap();
+        let cached2 = cache_picture(&pic2, &temp).unwrap();
+
+        assert_eq!(cached1, cached2);
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn cache_picture_distinguishes_different_images() {
+        let temp = test_dir();
+        let pic1 = test_pic(vec![1, 2, 3], PictureType::CoverFront);
+        let pic2 = test_pic(vec![4, 5, 6], PictureType::CoverFront);
+
+        let cached1 = cache_picture(&pic1, &temp).unwrap();
+        let cached2 = cache_picture(&pic2, &temp).unwrap();
+
+        assert_ne!(cached1, cached2);
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn cache_picture_rejects_empty_data() {
+        let temp = test_dir();
+        let pic = test_pic(Vec::new(), PictureType::CoverFront);
+
+        assert!(cache_picture(&pic, &temp).is_none());
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn extract_cover_prefers_front_cover() {
+        let temp = test_dir();
+        let mut tag = Tag::new(TagType::Id3v2);
+        let back = test_pic(vec![9, 9, 9], PictureType::CoverBack);
+        let front = test_pic(vec![1, 1, 1], PictureType::CoverFront);
+
+        tag.push_picture(back);
+        tag.push_picture(front);
+
+        let path = Path::new("test_track.mp3");
+        let result = extract_cover(Some(&tag), path, None, &temp).unwrap();
+        let front_pic = test_pic(vec![1, 1, 1], PictureType::CoverFront);
+        let expected = cache_picture(&front_pic, &temp).unwrap();
+
+        assert_eq!(result, expected);
+        let _ = std::fs::remove_dir_all(&temp);
+    }
 }
