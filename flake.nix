@@ -106,6 +106,24 @@
                   autoPatchelfHook
                   mold
                 ])
+                (lib.optionals stdenv.hostPlatform.isDarwin [
+                  (
+                    let
+                      inherit
+                        (import nixpkgs {
+                          inherit system;
+                          config.allowUnfree = true;
+                        })
+                        darwin
+                        ;
+                    in
+                    pkgs.runCommandLocal "metal-shader-compiler" { } ''
+                      mkdir -p "$out/bin"
+                      ln -s ${darwin.xcode}/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal "$out/bin/metal"
+                      ln -s ${darwin.xcode}/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metallib "$out/bin/metallib"
+                    ''
+                  )
+                ])
               ];
             buildInputs =
               with pkgs;
