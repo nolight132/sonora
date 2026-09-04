@@ -98,11 +98,13 @@ Every release also attaches a standalone `.flatpak` bundle for x86_64 and aarch6
 
 Just use the flake in the project root:
 
-```sh
+```text
 inputs.sonora.packages.${system}.default
+inputs.sonora.packages.${system}.sonora (build from source)
+inputs.sonora.packages.${system}.sonora-bin (prebuilt, if available)
 ```
 
-The flake installs the latest tagged release binary.
+The `default` package installs the latest tagged release binary or builds from source if unavailable for your platform.
 
 ### Windows
 
