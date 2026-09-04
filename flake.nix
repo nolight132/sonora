@@ -11,29 +11,13 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       rust-overlay,
       ...
     }:
     let
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-
-      forEachSystem =
-        fn:
-        nixpkgs.lib.genAttrs systems (
-          system:
-          let
-            pkgs = import nixpkgs {
-              inherit system;
-              overlays = [ (import rust-overlay) ];
-            };
-          in
-          fn pkgs
-        );
-
+      inherit (nixpkgs) lib;
       release = {
         version = "0.30.0";
         assets = {
@@ -49,9 +33,11 @@
       };
     in
     {
-      packages = forEachSystem (
-        pkgs:
+      packages = lib.genAttrs lib.systems.flakeExposed (
+        system:
         let
+          pkgs = import nixpkgs { inherit system; };
+
           runtimeLibraries = with pkgs; [
             vulkan-loader
             wayland
@@ -66,6 +52,116 @@
             dbus
             sqlite
           ];
+
+          postInstall = ''
+            install -Dm444 ${./assets/linux/sonora.desktop} \
+              "$out/share/applications/sonora.desktop"
+            install -Dm444 ${./assets/linux/sonora.svg} \
+              "$out/share/icons/hicolor/scalable/apps/sonora.svg"
+            for icon in ${./assets/linux/icons}/hicolor/*/apps/sonora.png; do
+              size="$(basename "$(dirname "$(dirname "$icon")")")"
+              install -Dm444 "$icon" \
+                "$out/share/icons/hicolor/$size/apps/sonora.png"
+            done
+            install -Dm444 ${./COPYING} "$out/share/licenses/sonora/LICENSE"
+            install -Dm444 ${./THIRD-PARTY.md} "$out/share/licenses/sonora/THIRD-PARTY.md"
+            install -Dm444 ${./assets/fonts/LICENSE.txt} \
+              "$out/share/licenses/sonora/LICENSE.Inter"
+            for licence in ${./assets/icons}/*/LICENSE; do
+              pack="$(basename "$(dirname "$licence")")"
+              install -Dm444 "$licence" \
+                "$out/share/licenses/sonora/icons/LICENSE.$pack"
+            done
+            install -Dm444 ${./assets/icons/LICENSE} \
+              "$out/share/licenses/sonora/icons/LICENSE"
+          '';
+
+          meta = {
+            description = "A native music streaming client, built with Rust and GPUI";
+            mainProgram = "sonora";
+            license = with lib.licenses; [
+              gpl3Plus
+              ofl
+              isc
+            ];
+            platforms = lib.platforms.linux;
+          };
+
+          sonora = pkgs.rustPlatform.buildRustPackage (final: {
+            name = "sonora";
+            version = (lib.importTOML (final.src + /Cargo.toml)).workspace.package.version;
+
+            src = ./.;
+            cargoLock = {
+              lockFile = final.src + /Cargo.lock;
+              allowBuiltinFetchGit = true;
+            };
+
+            nativeBuildInputs =
+              with pkgs;
+              lib.flatten [
+                cmake
+                pkg-config
+                (lib.optionals stdenv.hostPlatform.isLinux [
+                  autoPatchelfHook
+                  mold
+                ])
+                (lib.optionals stdenv.hostPlatform.isDarwin [
+                  (
+                    let
+                      inherit
+                        (import nixpkgs {
+                          inherit system;
+                          config.allowUnfree = true;
+                        })
+                        darwin
+                        ;
+                    in
+                    pkgs.runCommandLocal "metal-shader-compiler" { } ''
+                      mkdir -p "$out/bin"
+                      ln -s ${darwin.xcode}/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal "$out/bin/metal"
+                      ln -s ${darwin.xcode}/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metallib "$out/bin/metallib"
+                    ''
+                  )
+                ])
+              ];
+            buildInputs =
+              with pkgs;
+              lib.flatten [
+                sqlite
+                (lib.optionals stdenv.hostPlatform.isLinux [
+                  dbus
+                  fontconfig
+                  libxcb
+                  libxkbcommon
+                  libX11
+                  pipewire
+                  stdenv.cc.cc.lib
+                  (alsa-lib-with-plugins.override {
+                    plugins = [
+                      alsa-plugins
+                      pipewire
+                    ];
+                  })
+                ])
+                (lib.optionals stdenv.hostPlatform.isDarwin [
+                  apple-sdk_15
+                  (darwinMinVersionHook "10.15")
+                ])
+              ];
+            runtimeDependencies =
+              with pkgs;
+              lib.optionals stdenv.hostPlatform.isLinux [
+                vulkan-loader
+                wayland
+              ];
+
+            inherit postInstall;
+
+            meta = meta // {
+              platforms = lib.platforms.all;
+            };
+          });
 
           asset = release.assets.${pkgs.stdenv.hostPlatform.system};
 
@@ -84,97 +180,57 @@
             installPhase = ''
               runHook preInstall
               install -Dm755 "$src" "$out/bin/sonora"
-              install -Dm444 ${./assets/linux/sonora.desktop} \
-                "$out/share/applications/sonora.desktop"
-              install -Dm444 ${./assets/linux/sonora.svg} \
-                "$out/share/icons/hicolor/scalable/apps/sonora.svg"
-              for icon in ${./assets/linux/icons}/hicolor/*/apps/sonora.png; do
-                size="$(basename "$(dirname "$(dirname "$icon")")")"
-                install -Dm444 "$icon" \
-                  "$out/share/icons/hicolor/$size/apps/sonora.png"
-              done
-              install -Dm444 ${./COPYING} "$out/share/licenses/sonora/LICENSE"
-              install -Dm444 ${./THIRD-PARTY.md} "$out/share/licenses/sonora/THIRD-PARTY.md"
-              install -Dm444 ${./assets/fonts/LICENSE.txt} \
-                "$out/share/licenses/sonora/LICENSE.Inter"
-              for licence in ${./assets/icons}/*/LICENSE; do
-                pack="$(basename "$(dirname "$licence")")"
-                install -Dm444 "$licence" \
-                  "$out/share/licenses/sonora/icons/LICENSE.$pack"
-              done
-              install -Dm444 ${./assets/icons/LICENSE} \
-                "$out/share/licenses/sonora/icons/LICENSE"
               runHook postInstall
             '';
 
             postFixup = ''
               patchelf \
                 --set-interpreter "${pkgs.stdenv.cc.bintools.dynamicLinker}" \
-                --add-rpath "${pkgs.lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.stdenv.cc.cc.lib ])}" \
+                --add-rpath "${lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.stdenv.cc.cc.lib ])}" \
                 "$out/bin/sonora"
             '';
 
-            meta = {
-              description = "A native music streaming client, built with Rust and GPUI";
-              mainProgram = "sonora";
-              license = with pkgs.lib.licenses; [
-                gpl3Plus
-                ofl
-                isc
-              ];
-              platforms = pkgs.lib.platforms.linux;
-            };
+            inherit postInstall meta;
           };
         in
         {
+          inherit sonora;
+          default = sonora;
+        }
+        // lib.optionalAttrs (builtins.hasAttr system release.assets) {
           inherit sonora-bin;
-          sonora = sonora-bin;
           default = sonora-bin;
         }
       );
 
-      devShells = forEachSystem (
-        pkgs:
+      devShells = lib.genAttrs lib.systems.flakeExposed (
+        system:
         let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ (import rust-overlay) ];
+          };
           rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-          runtimeLibraries = with pkgs; [
-            vulkan-loader
-            wayland
-            libxkbcommon
-            libxcb
-            libx11
-            libxcursor
-            libxi
-            fontconfig
-            freetype
-            alsa-lib
-            dbus
-            sqlite
-          ];
         in
         {
           default = pkgs.mkShell {
-            nativeBuildInputs = with pkgs; [
-              mold
-              pkg-config
-              cmake
-              rustToolchain
-              sccache
-            ];
-
-            buildInputs = runtimeLibraries;
-
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibraries;
-
-            ALSA_PLUGIN_DIR = "${pkgs.symlinkJoin {
-              name = "alsa-plugins-combined";
-              paths = [
-                "${pkgs.alsa-plugins}/lib/alsa-lib"
-                "${pkgs.pipewire}/lib/alsa-lib"
+            nativeBuildInputs =
+              with pkgs;
+              [
+                pkg-config
+                cmake
+                rustToolchain
+                sccache
+              ]
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                mold
               ];
-            }}";
 
-            shellHook = ''
+            buildInputs = self.packages.${system}.sonora.buildInputs;
+
+            LD_LIBRARY_PATH = lib.makeLibraryPath self.packages.${system}.sonora.runtimeDependencies;
+
+            shellHook = lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
               if [ ! -d /run/opengl-driver ]; then
                 export VK_DRIVER_FILES="${pkgs.mesa}/share/vulkan/icd.d"
                 export VK_IMPLICIT_LAYER_PATH="${pkgs.mesa}/share/vulkan/implicit_layer.d"
