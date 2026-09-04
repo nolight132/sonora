@@ -72,6 +72,7 @@ serde_norway = "0.9"
 sha2 = "0.10"
 souvlaki = "0.8"
 sys-locale = "0.3"
+symphonia = { version = "0.5.5", default-features = false, features = ["mkv", "ogg", "isomp4"] }
 tray-icon = { version = "0.24", default-features = false }
 unic-langid = { version = "0.9", features = ["macros"] }
 unicode-segmentation = "1.12"
