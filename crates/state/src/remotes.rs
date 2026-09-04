@@ -28,6 +28,36 @@ pub enum RemoteEvent {
     Released,
 }
 
+/// The two Connect settings, read together. `Remotes` keeps the pair the watch was built from
+/// so it can tell an actual change from any other settings write: `AppSettings` notifies its
+/// observers on every save, volume and shuffle included.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Connect {
+    hosting: bool,
+    reporting: bool,
+}
+
+impl Connect {
+    fn read(settings: &AppSettings) -> Self {
+        Self {
+            hosting: settings.connect_hosting(),
+            reporting: settings.connect_reporting(),
+        }
+    }
+
+    /// Whether Sonora announces itself as a real, playable device. Broadcasting needs one: a
+    /// hidden observer's active state is not accepted by the cluster.
+    fn playable(self) -> bool {
+        self.hosting || self.reporting
+    }
+
+    /// Whether moving to `next` turned reporting off, which is the one settings change that
+    /// should give the account's active device back.
+    fn gave_up_reporting(self, next: Self) -> bool {
+        self.reporting && !next.reporting
+    }
+}
+
 /// What another device is playing, and the wire to command it. Sonora announces itself as an
 /// observer, so it appears to nobody's device list and only ever watches and commands.
 pub struct Remotes {
@@ -51,9 +81,9 @@ pub struct Remotes {
     settle: Option<Task<()>>,
     publish: Option<Task<()>>,
     hosting: bool,
-    /// The `playable` flag the current watch was announced with, so a settings
-    /// change that needs a different announcement can restart the watch.
-    announced_playable: Option<bool>,
+    /// The Connect settings the watch was last set up from, so a settings notify that moved
+    /// something else is not mistaken for one of these being turned off.
+    watched: Option<Connect>,
     reported: Option<HostState>,
     reported_at: Option<Instant>,
     hold: Option<Instant>,
@@ -107,7 +137,7 @@ impl Remotes {
             settle: None,
             publish: None,
             hosting: false,
-            announced_playable: None,
+            watched: None,
             reported: None,
             reported_at: None,
             hold: None,
@@ -199,11 +229,9 @@ impl Remotes {
         }
 
         let io = self.io.clone();
-        // Broadcasting needs Sonora announced as a real, playable Connect device;
-        // a hidden observer's active state would not be accepted by the cluster.
-        let playable =
-            self.settings.read(cx).connect_hosting() || self.settings.read(cx).connect_reporting();
-        self.announced_playable = Some(playable);
+        let connect = Connect::read(self.settings.read(cx));
+        let playable = connect.playable();
+        self.watched = Some(connect);
         self.watch = Some(cx.spawn(async move |this, cx| {
             loop {
                 let started = join(io.spawn({
@@ -249,35 +277,44 @@ impl Remotes {
         }));
     }
 
-    /// Reacts to Connect-related settings. A change that needs another announcement
-    /// (playable flag flipped) restarts the watch; turning reporting off withdraws
-    /// any active claim so Sonora stops occupying the account's device state.
+    /// Reacts to the Connect settings. `AppSettings` notifies on every save — volume, shuffle,
+    /// a sidebar drag — so this returns immediately unless one of the two Connect switches
+    /// actually moved. Acting on every notify would resign a live handover the moment the
+    /// user, or the phone driving Sonora, touched the volume.
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        let playable =
-            self.settings.read(cx).connect_hosting() || self.settings.read(cx).connect_reporting();
-        let reporting = self.settings.read(cx).connect_reporting();
-
-        if self.announced_playable != Some(playable) {
-            self.announced_playable = Some(playable);
-            if let Some(transport) = self.transport.clone() {
-                let io = self.io.clone();
-                self.command = Some(cx.spawn(async move |this, cx| {
-                    let result =
-                        join(io.spawn(async move { transport.reannounce(playable).await })).await;
-                    match result {
-                        Ok(state) => {
-                            this.update(cx, |this, cx| this.apply(state, cx)).ok();
-                        }
-                        Err(error) => {
-                            log::warn!("remotes: cannot reannounce: {error:#}");
-                        }
-                    }
-                }));
-            }
+        let connect = Connect::read(self.settings.read(cx));
+        let Some(was) = self.watched else {
+            // no watch has been set up yet; `watch` records the pair itself
+            return;
+        };
+        if was == connect {
             return;
         }
+        self.watched = Some(connect);
 
-        if !reporting && (self.hosting || self.reported.is_some()) {
+        if was.playable() != connect.playable()
+            && let Some(transport) = self.transport.clone()
+        {
+            let playable = connect.playable();
+            let io = self.io.clone();
+            self.command = Some(cx.spawn(async move |this, cx| {
+                let announced =
+                    join(io.spawn(async move { transport.reannounce(playable).await })).await;
+                match announced {
+                    Ok(state) => {
+                        this.update(cx, |this, cx| this.apply(state, cx)).ok();
+                    }
+                    Err(error) => {
+                        log::warn!("remotes: cannot announce the device again: {error:#}")
+                    }
+                }
+            }));
+        }
+
+        // Reporting off with no handover to keep means the account should stop seeing Sonora as
+        // the active device. A live handover is left alone — only the user picking This computer,
+        // or the driving device resigning, ends one.
+        if was.gave_up_reporting(connect) && !self.hosting && self.reported.is_some() {
             self.stand_down(cx);
         }
     }
@@ -774,4 +811,55 @@ async fn pump(
 
 async fn track(client: Arc<dyn MusicApi>, id: &str) -> anyhow::Result<Track> {
     client.track(id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Connect;
+
+    const OFF: Connect = Connect {
+        hosting: false,
+        reporting: false,
+    };
+    const HOSTING: Connect = Connect {
+        hosting: true,
+        reporting: false,
+    };
+    const REPORTING: Connect = Connect {
+        hosting: false,
+        reporting: true,
+    };
+    const BOTH: Connect = Connect {
+        hosting: true,
+        reporting: true,
+    };
+
+    #[test]
+    fn either_switch_makes_sonora_playable() {
+        assert!(!OFF.playable());
+        assert!(HOSTING.playable());
+        assert!(REPORTING.playable());
+        assert!(BOTH.playable());
+    }
+
+    /// The announcement only has to be redone when the playable flag itself moves, so turning
+    /// the second switch on while the first already made Sonora playable is not a change.
+    #[test]
+    fn the_second_switch_does_not_reannounce() {
+        assert_eq!(HOSTING.playable(), BOTH.playable());
+        assert_eq!(REPORTING.playable(), BOTH.playable());
+        assert_ne!(OFF.playable(), HOSTING.playable());
+    }
+
+    /// Only reporting being turned off gives the active device back. A settings write that left
+    /// both switches alone must not, or any volume change would resign a live handover.
+    #[test]
+    fn only_reporting_turning_off_stands_down() {
+        assert!(REPORTING.gave_up_reporting(OFF));
+        assert!(BOTH.gave_up_reporting(HOSTING));
+        assert!(!HOSTING.gave_up_reporting(HOSTING));
+        assert!(!BOTH.gave_up_reporting(BOTH));
+        assert!(!OFF.gave_up_reporting(REPORTING));
+        assert!(!HOSTING.gave_up_reporting(OFF));
+    }
 }
