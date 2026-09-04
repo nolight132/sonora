@@ -325,6 +325,10 @@ pub trait RemoteTransport: Send + Sync {
 
     /// Hands playback back to Spotify without withdrawing the device.
     async fn resign(&self) -> Result<()>;
+
+    /// Re-announces Sonora's device info with a new `playable` flag, without tearing
+    /// down the dealer handlers. Returns the updated cluster state.
+    async fn reannounce(&self, playable: bool) -> Result<RemoteState>;
 }
 
 #[async_trait]

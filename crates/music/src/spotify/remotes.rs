@@ -39,7 +39,7 @@ const DRIFT_LIMIT: i64 = 60_000;
 pub struct Watcher {
     session: Session,
     connection_id: String,
-    playable: bool,
+    playable: Mutex<bool>,
     /// The state last published, so a change can be layered onto it rather than rebuilt.
     published: Mutex<PlayerState>,
     hosting: Mutex<bool>,
@@ -100,7 +100,7 @@ impl Watcher {
         let watcher = Self {
             session,
             connection_id,
-            playable,
+            playable: Mutex::new(playable),
             published,
             hosting: Mutex::new(false),
             volume: Mutex::new(u16::MAX as u32),
@@ -126,6 +126,15 @@ impl Watcher {
         Ok(read(&cluster, self.session.device_id()))
     }
 
+    /// Re-announces Sonora with a different `playable` flag without restarting the dealer.
+    /// The handlers stay registered; only the device announcement changes.
+    pub async fn reannounce(&self, playable: bool) -> Result<RemoteState> {
+        if let Ok(mut held) = self.playable.lock() {
+            *held = playable;
+        }
+        self.announce().await
+    }
+
     /// The announce body. `active` is what tells Spotify that Sonora, not the handing device,
     /// is now playing — a transfer stays stuck on "Connecting" until an active state arrives.
     fn request(&self, active: bool) -> PutStateRequest {
@@ -134,6 +143,8 @@ impl Watcher {
             .lock()
             .map(|held| held.clone())
             .unwrap_or_default();
+        let volume = self.volume.lock().map(|held| *held).unwrap_or_default();
+        let playable = self.playable.lock().map(|held| *held).unwrap_or(true);
 
         PutStateRequest {
             member_type: EnumOrUnknown::new(MemberType::CONNECT_STATE),
@@ -147,11 +158,7 @@ impl Watcher {
                 false => 0,
             },
             device: MessageField::some(Device {
-                device_info: MessageField::some(info(
-                    &self.session,
-                    self.playable,
-                    self.volume.lock().map(|held| *held).unwrap_or_default(),
-                )),
+                device_info: MessageField::some(info(&self.session, playable, volume)),
                 player_state: MessageField::some(player),
                 ..Default::default()
             }),
@@ -327,6 +334,10 @@ impl RemoteTransport for Watcher {
             .await
             .context("cannot offer Sonora again after handing playback back")?;
         Ok(())
+    }
+
+    async fn reannounce(&self, playable: bool) -> Result<RemoteState> {
+        Watcher::reannounce(self, playable).await
     }
 }
 

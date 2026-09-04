@@ -223,6 +223,7 @@ impl SettingsView {
                 Row::Item(self.playback_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
                 Row::Item(self.hosting_row(cx).into_any_element()),
+                Row::Item(self.reporting_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
                 Row::Item(self.fullscreen_lyrics_size_row(cx).into_any_element()),
@@ -1075,6 +1076,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_connect_hosting(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn reporting_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).connect_reporting();
+
+        self.row(
+            t!("settings-connect-reporting"),
+            t!("settings-connect-reporting-detail"),
+            muted,
+            small,
+            Switch::new("connect-reporting", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_connect_reporting(!on, cx));
                 }))
                 .into_any_element(),
         )

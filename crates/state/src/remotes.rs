@@ -51,6 +51,9 @@ pub struct Remotes {
     settle: Option<Task<()>>,
     publish: Option<Task<()>>,
     hosting: bool,
+    /// The `playable` flag the current watch was announced with, so a settings
+    /// change that needs a different announcement can restart the watch.
+    announced_playable: Option<bool>,
     reported: Option<HostState>,
     reported_at: Option<Instant>,
     hold: Option<Instant>,
@@ -78,6 +81,11 @@ impl Remotes {
         })
         .detach();
 
+        // Connect-related settings changes restart the watch (playable announcement) and
+        // withdraw the active claim when reporting is turned back off.
+        cx.observe(&settings, |this, _, cx| this.refresh(cx))
+            .detach();
+
         let mut remotes = Self {
             session,
             settings,
@@ -99,6 +107,7 @@ impl Remotes {
             settle: None,
             publish: None,
             hosting: false,
+            announced_playable: None,
             reported: None,
             reported_at: None,
             hold: None,
@@ -190,7 +199,11 @@ impl Remotes {
         }
 
         let io = self.io.clone();
-        let playable = self.settings.read(cx).connect_hosting();
+        // Broadcasting needs Sonora announced as a real, playable Connect device;
+        // a hidden observer's active state would not be accepted by the cluster.
+        let playable =
+            self.settings.read(cx).connect_hosting() || self.settings.read(cx).connect_reporting();
+        self.announced_playable = Some(playable);
         self.watch = Some(cx.spawn(async move |this, cx| {
             loop {
                 let started = join(io.spawn({
@@ -236,6 +249,39 @@ impl Remotes {
         }));
     }
 
+    /// Reacts to Connect-related settings. A change that needs another announcement
+    /// (playable flag flipped) restarts the watch; turning reporting off withdraws
+    /// any active claim so Sonora stops occupying the account's device state.
+    fn refresh(&mut self, cx: &mut Context<Self>) {
+        let playable =
+            self.settings.read(cx).connect_hosting() || self.settings.read(cx).connect_reporting();
+        let reporting = self.settings.read(cx).connect_reporting();
+
+        if self.announced_playable != Some(playable) {
+            self.announced_playable = Some(playable);
+            if let Some(transport) = self.transport.clone() {
+                let io = self.io.clone();
+                self.command = Some(cx.spawn(async move |this, cx| {
+                    let result =
+                        join(io.spawn(async move { transport.reannounce(playable).await })).await;
+                    match result {
+                        Ok(state) => {
+                            this.update(cx, |this, cx| this.apply(state, cx)).ok();
+                        }
+                        Err(error) => {
+                            log::warn!("remotes: cannot reannounce: {error:#}");
+                        }
+                    }
+                }));
+            }
+            return;
+        }
+
+        if !reporting && (self.hosting || self.reported.is_some()) {
+            self.stand_down(cx);
+        }
+    }
+
     /// Acts on what another device asked. Sonora only obeys once it has been handed playback,
     /// so a stray command cannot hijack a local session.
     fn obey(&mut self, command: HostCommand, cx: &mut Context<Self>) {
@@ -246,7 +292,7 @@ impl Remotes {
             self.hosting = true;
             self.target = None;
             self.tick = None;
-        } else if !self.hosting {
+        } else if !self.hosting && !self.settings.read(cx).connect_reporting() {
             return;
         }
         cx.notify();
@@ -356,7 +402,7 @@ impl Remotes {
     /// Stops hosting and tells Spotify so, which is what moves the phone's "playing on" back
     /// off Sonora. Playback itself is left alone.
     pub fn stand_down(&mut self, cx: &mut Context<Self>) {
-        if !self.hosting {
+        if !self.hosting && self.reported.is_none() {
             return;
         }
         self.hosting = false;
@@ -380,7 +426,7 @@ impl Remotes {
     /// Publishes what Sonora is playing, so every other device's UI follows it. Skipped when
     /// nothing changed, because each call is a network round trip.
     fn schedule_report(&mut self, cx: &mut Context<Self>) {
-        if !self.hosting || self.settle.is_some() {
+        if !(self.hosting || self.settings.read(cx).connect_reporting()) || self.settle.is_some() {
             return;
         }
         // Always through a timer, never inline: this runs inside a `Playback` update, which
@@ -424,7 +470,7 @@ impl Remotes {
     }
 
     fn report(&mut self, cx: &mut Context<Self>) {
-        if !self.hosting {
+        if !(self.hosting || self.settings.read(cx).connect_reporting()) {
             return;
         }
         let Some(playback) = self.playback.clone() else {
@@ -435,6 +481,21 @@ impl Remotes {
         };
 
         let state = playback.read(cx).hosted(cx);
+        if !self.hosting {
+            // Broadcast mode: never claim the account while nothing is loaded,
+            // and never fight a device that is actually playing. A paused track still
+            // reports its state so Spotify knows Sonora is the active paused device.
+            let idle = (!state.playing && !state.buffering) && state.track.is_none();
+            let other_active = self
+                .state
+                .active
+                .as_deref()
+                .is_some_and(|active| active != self.state.own_id.as_str());
+            if idle || other_active {
+                self.reported = None;
+                return;
+            }
+        }
         if !self.worth_telling(&state) {
             return;
         }
