@@ -10,13 +10,14 @@ use gpui::{
 use gpui::{Window, div, px};
 use i18n::t;
 use input::{ToggleFullscreen, ToggleLyrics, ToggleQueue};
-use state::{AppSettings, Playback, Queue, SideTab, Sonora};
+use state::{AppSettings, Playback, Queue, Remotes, SideTab, Sonora};
 use ui::{
-    Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Popup, Room, Scrollbar, Scrubber,
-    ScrubberState, clock,
+    Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Popovers, Popup, Room, Scrollbar,
+    Scrubber, ScrubberState, clock,
 };
 
 use crate::chrome::SidebarRight;
+use crate::shared::devices;
 use crate::shared::menus::ItemMenu;
 use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
 
@@ -30,6 +31,8 @@ pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
     queue: Entity<Queue>,
     settings: Entity<AppSettings>,
+    remotes: Entity<Remotes>,
+    popovers: Popovers,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
     seek: ScrubberState,
@@ -45,10 +48,12 @@ impl PlayerBar {
     pub fn new(playback: Entity<Playback>, queue: Entity<Queue>, cx: &mut Context<Self>) -> Self {
         let library = Sonora::global(cx).library.clone();
         let settings = Sonora::global(cx).settings.clone();
+        let remotes = Sonora::global(cx).remotes.clone();
         cx.observe(&playback, |_, _, cx| cx.notify()).detach();
         cx.observe(&queue, |_, _, cx| cx.notify()).detach();
         cx.observe(&library, |_, _, cx| cx.notify()).detach();
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
+        cx.observe(&remotes, |_, _, cx| cx.notify()).detach();
 
         let me = cx.entity_id();
         let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(me));
@@ -57,6 +62,8 @@ impl PlayerBar {
             playback,
             queue,
             settings,
+            remotes,
+            popovers: Popovers::default(),
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
             seek: ScrubberState::new("seek"),
@@ -116,7 +123,7 @@ impl PlayerBar {
             true => NOTCH,
             false => -NOTCH,
         };
-        let level = (self.playback.read(cx).volume() + notch).clamp(0., 1.);
+        let level = (self.playback.read(cx).shown_volume(cx) + notch).clamp(0., 1.);
         self.muted = None;
         self.playback
             .update(cx, |playback, cx| playback.set_volume(level, cx));
@@ -125,7 +132,8 @@ impl PlayerBar {
     fn sound(&self, width: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let empty = theme.muted_foreground.opacity(0.3);
-        let level = self.playback.read(cx).volume();
+        let level = self.playback.read(cx).shown_volume(cx);
+        let reachable = self.playback.read(cx).volume_reachable(cx);
         let showing = self.over_volume.is_some() || self.volume_held;
         let bubble = showing.then(|| (level, percent(level)));
         let restore = self.muted.unwrap_or(0.7);
@@ -140,6 +148,7 @@ impl PlayerBar {
                 Button::new("volume")
                     .ghost()
                     .small()
+                    .disabled(!reachable)
                     .icon(volume_icon(level))
                     .tooltip_above(match level <= 0.001 {
                         true => "player-unmute",
@@ -163,6 +172,7 @@ impl PlayerBar {
                 div().w(width).flex_none().child(
                     Scrubber::new(&self.volume, level)
                         .colors(theme.progress_bar, empty, theme.foreground)
+                        .enabled(reachable)
                         .when_some(bubble, |this, (at, text)| this.bubble(at, text))
                         .on_move(cx.listener(|this, fraction: &f32, _, cx| {
                             let level = *fraction;
@@ -336,7 +346,8 @@ impl PlayerBar {
                                     navigate(Destination::Artist(id), cx);
                                 }),
                             )
-                        }),
+                        })
+                        .children(devices::playing_on(&self.remotes, cx)),
                 )
             })
     }
@@ -367,6 +378,8 @@ impl Render for PlayerBar {
             true => Some(self.side_buttons(cx)),
             false => None,
         };
+        let cast = devices::available(&self.remotes, cx)
+            .then(|| devices::devices(&self.remotes, &self.playback, &self.popovers, cx));
 
         let playback = self.playback.read(cx);
         let seekable = playback.track().is_some();
@@ -465,6 +478,7 @@ impl Render for PlayerBar {
                         .w_full()
                         .child(div().flex_1().min_w_0().child(seek))
                         .children(sides)
+                        .children(cast)
                         .child(self.sound(px(VOLUME_TIGHT), cx))
                         .child(self.fullscreen_button()),
                 ),
@@ -493,6 +507,7 @@ impl Render for PlayerBar {
                         .flex_1()
                         .min_w_0()
                         .children(sides)
+                        .children(cast)
                         .child(self.sound(px(VOLUME_WIDTH), cx))
                         .child(self.fullscreen_button()),
                 ),

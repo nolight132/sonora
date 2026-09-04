@@ -12,6 +12,7 @@ mod playback;
 mod profile;
 mod queue;
 mod remote;
+mod remotes;
 mod search;
 mod session;
 mod settings;
@@ -34,6 +35,7 @@ pub use playback::{Origin, Playback, PlaybackState, Repeat, Whence};
 pub use profile::Profile;
 pub use queue::{Named, Queue, Resume, Stub};
 pub use remote::{Remote, attach as attach_remote};
+pub use remotes::{RemoteEvent, Remotes};
 pub use search::{AlbumHit, ArtistHit, Hit, Kind, PlaylistHit, Search};
 pub use session::{Failure, ProviderInfo, Session, SessionEvent, SessionState};
 pub use settings::{
@@ -93,6 +95,7 @@ pub struct Sonora {
     pub lyrics: Entity<Lyrics>,
     pub playback: Entity<Playback>,
     pub queue: Entity<Queue>,
+    pub remotes: Entity<Remotes>,
     pub settings: Entity<AppSettings>,
     pub updates: Entity<Updates>,
     pub usage: Entity<Usage>,
@@ -120,7 +123,17 @@ pub fn init(
         cx.new(|cx| Session::new(providers, local_provider, settings.clone(), io.clone(), cx));
     let library = cx.new(|cx| Library::new(session.clone(), io.clone(), cx));
     let queue = cx.new(|cx| Queue::new(session.clone(), settings.clone(), cx));
-    let playback = cx.new(|cx| Playback::new(session.clone(), queue.clone(), settings.clone(), cx));
+    let remotes = cx.new(|cx| Remotes::new(session.clone(), settings.clone(), io.clone(), cx));
+    let playback = cx.new(|cx| {
+        Playback::new(
+            session.clone(),
+            queue.clone(),
+            settings.clone(),
+            remotes.clone(),
+            cx,
+        )
+    });
+    remotes.update(cx, |remotes, cx| remotes.bind(playback.clone(), cx));
     let history = cx.new(|cx| History::new(session.clone(), playback.clone(), io.clone(), cx));
     let lyrics = cx.new(|cx| {
         Lyrics::new(
@@ -145,6 +158,7 @@ pub fn init(
         lyrics,
         playback,
         queue,
+        remotes,
         settings,
         updates,
         usage,

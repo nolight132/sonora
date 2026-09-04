@@ -12,6 +12,7 @@ mod playback;
 mod playlists;
 mod profiles;
 mod radio;
+mod remotes;
 mod search;
 mod sink;
 mod wire;
@@ -22,10 +23,28 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::spotify::playback::Factory;
-use crate::{MusicApi as _, MusicProvider, ProviderSession, SignInFailure, SignInProblem};
+use crate::spotify::remotes::Watcher;
+use crate::{
+    MusicApi as _, MusicProvider, ProviderSession, Remote, RemoteFactory, SignInFailure,
+    SignInProblem,
+};
 
 pub use auth::AuthConfig;
 pub use client::LibrespotClient;
+
+struct Remotes(librespot_core::Session);
+
+#[async_trait]
+impl RemoteFactory for Remotes {
+    async fn watch(&self, playable: bool) -> Result<Remote> {
+        let (watcher, updates, orders) = Watcher::start(self.0.clone(), playable).await?;
+        Ok(Remote {
+            transport: Arc::new(watcher),
+            updates: Box::new(updates),
+            commands: Box::new(orders),
+        })
+    }
+}
 
 pub struct SpotifyProvider {
     config: AuthConfig,
@@ -53,10 +72,12 @@ impl SpotifyProvider {
     async fn session(&self, client: LibrespotClient) -> Result<ProviderSession> {
         let profile = client.profile().await?;
         let playback = Arc::new(Factory::new(client.session().clone()));
+        let remotes = Arc::new(Remotes(client.session().clone()));
         Ok(ProviderSession {
             profile,
             api: Arc::new(client),
             playback,
+            remotes: Some(remotes),
             authenticated: true,
             playcounts: true,
         })

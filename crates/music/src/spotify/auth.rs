@@ -186,12 +186,34 @@ fn session(config: &AuthConfig) -> Result<Session> {
     let cache = Cache::new(Some(config.cache_dir.as_path()), None, None, None)
         .with_context(|| format!("cannot open cache at {}", config.cache_dir.display()))?;
 
-    let session_config = SessionConfig {
+    let mut session_config = SessionConfig {
         client_id: config.client_id.clone(),
         ..Default::default()
     };
+    session_config.device_id = device_id(config, &session_config.device_id);
 
     Ok(Session::new(session_config, Some(cache)))
+}
+
+/// Sonora's identity in the Connect network, kept across launches. librespot invents a fresh one
+/// per session, which would leave a stale Sonora in every other device's picker after a restart
+/// and make one install look like a new speaker each time. `fresh` is librespot's own new id,
+/// stored on first use.
+fn device_id(config: &AuthConfig, fresh: &str) -> String {
+    let path = config.cache_dir.join("device_id");
+    if let Ok(held) = std::fs::read_to_string(&path) {
+        let held = held.trim();
+        if !held.is_empty() {
+            return held.to_owned();
+        }
+    }
+
+    if let Err(error) =
+        std::fs::create_dir_all(&config.cache_dir).and_then(|()| std::fs::write(&path, fresh))
+    {
+        log::warn!("auth: cannot store the device id, Sonora will look new next launch: {error}");
+    }
+    fresh.to_owned()
 }
 
 #[cfg(test)]

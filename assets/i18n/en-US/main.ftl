@@ -207,6 +207,14 @@ player-fullscreen = Fullscreen
 player-fullscreen-leave = Leave fullscreen
 fullscreen-artwork = Artwork
 
+# connect devices
+device-title = Connect to a device
+device-this = This computer
+device-none = No other devices
+device-searching = Looking for devices…
+device-playing-on = Playing on { $name }
+device-hosting = Playing from Spotify Connect
+
 # filters
 filter-history = Filter listening history
 history-empty = Tracks you play will appear here.
@@ -480,6 +488,10 @@ settings-normalisation = Normalize loudness
 settings-normalisation-detail = Keeps tracks at a consistent volume
 settings-gapless = Gapless playback
 settings-gapless-detail = Runs one track into the next without a pause, the way an album was sequenced
+settings-connect-hosting = Play from other devices
+settings-connect-hosting-detail = Lets Sonora show up in Spotify Connect so a phone can send music to it
+settings-connect-reporting = Report playback to Spotify
+settings-connect-reporting-detail = Publishes what Sonora is playing to Spotify Connect, so the account sees it as a real device and listening history can be read from it
 settings-panel-lyrics-size = Lyrics size (panel)
 settings-panel-lyrics-size-detail = Size of the lyrics text in the side panel, on top of the base font size
 settings-fullscreen-lyrics-size = Lyrics size (fullscreen)
@@ -579,6 +591,8 @@ toast-track-removed = Removed from { $name }
 toast-playlist-failed = That change could not be saved
 toast-playlist-busy = Another change is still running
 toast-playlist-signed-out = Sign in to change playlists
+toast-remote-unavailable = Spotify Connect is not reachable
+toast-remote-failed = { $name } refused the connection
 toast-queued-track = { $name } added to the queue
 toast-next-track = { $name } plays next
 toast-queued-album = Album added to the queue

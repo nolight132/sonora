@@ -67,6 +67,7 @@ impl LocalProvider {
             },
             api,
             playback,
+            remotes: None,
             authenticated: false,
             playcounts: false,
         })
