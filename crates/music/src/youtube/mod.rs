@@ -27,6 +27,7 @@ const GUEST_ID: &str = "youtube-guest";
 pub struct YouTubeProvider {
     cookies: PathBuf,
     authuser: PathBuf,
+    page_id: PathBuf,
     source: PathBuf,
     guest: PathBuf,
     resolved: PathBuf,
@@ -42,6 +43,7 @@ impl YouTubeProvider {
         Self {
             cookies: cache.join("cookies.txt"),
             authuser: cache.join("authuser.txt"),
+            page_id: cache.join("page-id.txt"),
             source: cache.join("browser.txt"),
             guest: cache.join("guest"),
             resolved: cache.join("resolved.json"),
@@ -49,11 +51,13 @@ impl YouTubeProvider {
         }
     }
 
-    fn cookie_client(&self, cookies: &str, authuser: usize) -> Arc<YtMusic> {
+    fn cookie_client(&self, cookies: &str, authuser: usize, page_id: Option<&str>) -> Arc<YtMusic> {
+        let mut api = YtMusic::with_cookies(cookies).as_user(authuser);
+        if let Some(page_id) = page_id {
+            api = api.as_brand_account(page_id);
+        }
         Arc::new(
-            YtMusic::with_cookies(cookies)
-                .as_user(authuser)
-                .cache_resolutions(self.resolved.clone())
+            api.cache_resolutions(self.resolved.clone())
                 .cache_player(self.player.clone()),
         )
     }
@@ -93,9 +97,20 @@ impl YouTubeProvider {
         prompt: &PromptSink,
         input: &mut InputSource,
     ) -> Result<ProviderSession> {
-        let cookies = auth::header(cookies)?;
+        let auth = auth::header(cookies)?;
 
-        let found = accounts::list(&cookies).await;
+        if let Some(page_id) = auth.page_id.as_deref() {
+            let authuser = auth.authuser.unwrap_or(0);
+            let api = self.cookie_client(&auth.cookies, authuser, Some(page_id));
+            let profile = api.profile().await.context(
+                "the Brand Account headers were accepted, but its YouTube Music profile could not be loaded",
+            )?;
+            self.store_cookies(&auth.cookies, authuser, Some(page_id), source)?;
+            log::debug!("youtube: Brand Account cookie sign-in succeeded for authuser {authuser}");
+            return Ok(self.authenticated_session(api, wire::profile(profile)));
+        }
+
+        let found = accounts::list(&auth.cookies).await;
         let account = match found.len() {
             0 => anyhow::bail!("cookies were not accepted; sign in to the browser first"),
             1 => &found[0],
@@ -103,8 +118,8 @@ impl YouTubeProvider {
         };
 
         let profile = wire::profile(account.profile.clone());
-        let api = self.cookie_client(&cookies, account.index);
-        self.store_cookies(&cookies, account.index, source)?;
+        let api = self.cookie_client(&auth.cookies, account.index, None);
+        self.store_cookies(&auth.cookies, account.index, None, source)?;
         log::debug!(
             "youtube: cookie sign-in succeeded for authuser {}",
             account.index
@@ -112,13 +127,26 @@ impl YouTubeProvider {
         Ok(self.authenticated_session(api, profile))
     }
 
-    fn store_cookies(&self, cookies: &str, authuser: usize, source: Option<&str>) -> Result<()> {
+    fn store_cookies(
+        &self,
+        cookies: &str,
+        authuser: usize,
+        page_id: Option<&str>,
+        source: Option<&str>,
+    ) -> Result<()> {
         if let Some(parent) = self.cookies.parent() {
             std::fs::create_dir_all(parent).context("cannot create youtube cache dir")?;
         }
         std::fs::write(&self.cookies, cookies).context("cannot store youtube cookies")?;
         std::fs::write(&self.authuser, authuser.to_string())
             .context("cannot store the youtube account")?;
+        match page_id {
+            Some(page_id) => std::fs::write(&self.page_id, page_id)
+                .context("cannot store the youtube Brand Account")?,
+            None => {
+                let _ = std::fs::remove_file(&self.page_id);
+            }
+        }
         match source {
             Some(name) => std::fs::write(&self.source, name).context("cannot store the browser")?,
             None => {
@@ -138,15 +166,21 @@ impl YouTubeProvider {
             .ok()
             .map(|cookies| cookies.trim().to_string());
         let authuser = self.stored_authuser();
+        let page_id = self.stored_page_id();
         for (fresh, cookies) in [(true, live), (false, cached)] {
             let Some(cookies) = cookies.filter(|cookies| !cookies.is_empty()) else {
                 continue;
             };
-            let api = self.cookie_client(&cookies, authuser);
+            let api = self.cookie_client(&cookies, authuser, page_id.as_deref());
             match api.profile().await {
                 Ok(profile) => {
                     if fresh {
-                        let _ = self.store_cookies(&cookies, authuser, remembered.as_deref());
+                        let _ = self.store_cookies(
+                            &cookies,
+                            authuser,
+                            page_id.as_deref(),
+                            remembered.as_deref(),
+                        );
                     }
                     log::debug!("youtube: restored the session for authuser {authuser}");
                     return Some(self.authenticated_session(api, wire::profile(profile)));
@@ -175,7 +209,7 @@ impl YouTubeProvider {
             .into_iter()
             .find(|browser| browser.name == name)?;
         match auth::cookies(&browser).and_then(|cookies| auth::header(&cookies)) {
-            Ok(cookies) => Some(cookies),
+            Ok(auth) => Some(auth.cookies),
             Err(error) => {
                 log::warn!("youtube: cannot read cookies from {name}: {error:#}");
                 None
@@ -188,6 +222,13 @@ impl YouTubeProvider {
             .ok()
             .and_then(|stored| stored.trim().parse().ok())
             .unwrap_or(0)
+    }
+
+    fn stored_page_id(&self) -> Option<String> {
+        std::fs::read_to_string(&self.page_id)
+            .ok()
+            .map(|stored| stored.trim().to_string())
+            .filter(|stored| !stored.is_empty())
     }
 
     fn store_guest(&self) {
@@ -338,7 +379,13 @@ impl MusicProvider for YouTubeProvider {
     }
 
     fn sign_out(&self) {
-        for path in [&self.cookies, &self.authuser, &self.source, &self.guest] {
+        for path in [
+            &self.cookies,
+            &self.authuser,
+            &self.page_id,
+            &self.source,
+            &self.guest,
+        ] {
             if let Err(error) = std::fs::remove_file(path)
                 && error.kind() != std::io::ErrorKind::NotFound
             {
