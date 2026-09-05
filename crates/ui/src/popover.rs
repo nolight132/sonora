@@ -43,6 +43,7 @@ pub struct Popover {
     group: Popovers,
     button: Option<Button>,
     menu: Option<Menu>,
+    selected: bool,
     commands: bool,
 }
 
@@ -54,6 +55,7 @@ impl Popover {
             group,
             button: None,
             menu: None,
+            selected: false,
             commands: false,
         }
     }
@@ -65,6 +67,11 @@ impl Popover {
 
     pub fn menu(mut self, menu: Menu) -> Self {
         self.menu = Some(menu);
+        self
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
         self
     }
 
@@ -88,6 +95,7 @@ impl RenderOnce for Popover {
             group,
             button,
             menu,
+            selected,
             commands,
         } = self;
         let overrides = std::mem::take(base.style());
@@ -98,14 +106,14 @@ impl RenderOnce for Popover {
             let group = group.clone();
             let observed = trigger.clone();
 
-            head(observed).child(button.selected(open).on_click(move |_, _, cx| {
+            head(observed).child(button.selected(selected || open).on_click(move |_, _, cx| {
                 group.toggle(key);
                 cx.refresh_windows();
             }))
         });
         let body = menu.filter(|_| open).map(|menu| {
             let outside = group.clone();
-            let selected = group.clone();
+            let chosen = group.clone();
 
             menu.trigger(trigger)
                 .on_dismiss(move |_, _, cx| {
@@ -114,7 +122,7 @@ impl RenderOnce for Popover {
                 })
                 .when(commands, |menu| {
                     menu.on_action(move |_, _, cx| {
-                        selected.close();
+                        chosen.close();
                         cx.refresh_windows();
                     })
                 })

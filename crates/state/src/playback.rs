@@ -155,6 +155,12 @@ pub enum PlaybackEvent {
     EndedPlayback,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sleep {
+    After(Duration),
+    EndOfTrack,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Repeat {
@@ -279,6 +285,8 @@ pub struct Playback {
     resume_ready: bool,
     awaiting_reconnect: bool,
     stored: Duration,
+    sleep: Option<Sleep>,
+    sleep_task: Option<Task<()>>,
 }
 
 impl EventEmitter<PlaybackEvent> for Playback {}
@@ -355,6 +363,8 @@ impl Playback {
             resume_ready: false,
             awaiting_reconnect: false,
             stored: Duration::ZERO,
+            sleep: None,
+            sleep_task: None,
         }
     }
 
@@ -1014,19 +1024,29 @@ impl Playback {
     }
 
     fn follow_queue(&mut self, start: Start, cx: &mut Context<Self>) {
-        let Some(track) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
+        let Some(track) = self.playable_next(cx) else {
             return;
         };
-        self.follow_after(track, start, cx);
+        self.load_after(&track, start, cx);
     }
 
-    fn follow_after(&mut self, mut track: Track, start: Start, cx: &mut Context<Self>) {
-        while !track.playable {
-            let Some(next) = self.queue.update(cx, |queue, cx| queue.next(cx)) else {
-                return;
-            };
-            track = next;
+    fn playable_next(&mut self, cx: &mut Context<Self>) -> Option<Track> {
+        loop {
+            let track = self.queue.update(cx, |queue, cx| queue.next(cx))?;
+            if track.playable {
+                return Some(track);
+            }
         }
+    }
+
+    fn follow_after(&mut self, track: Track, start: Start, cx: &mut Context<Self>) {
+        let track = match track.playable {
+            true => Some(track),
+            false => self.playable_next(cx),
+        };
+        let Some(track) = track else {
+            return;
+        };
         self.load_after(&track, start, cx);
     }
 
@@ -1183,6 +1203,40 @@ impl Playback {
         } else {
             self.resume(cx);
         }
+    }
+
+    pub fn sleep(&self) -> Option<Sleep> {
+        self.sleep
+    }
+
+    pub fn set_sleep(&mut self, sleep: Option<Sleep>, cx: &mut Context<Self>) {
+        self.sleep = sleep;
+        self.sleep_task = match sleep {
+            Some(Sleep::After(after)) => Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(after).await;
+                this.update(cx, |this, cx| {
+                    this.sleep = None;
+                    this.pause(cx);
+                    cx.notify();
+                })
+                .ok();
+            })),
+            _ => None,
+        };
+        cx.notify();
+    }
+
+    fn doze(&mut self, cx: &mut Context<Self>) {
+        self.sleep = None;
+        self.sleep_task = None;
+        self.fetch = None;
+        let Some(track) = self.playable_next(cx) else {
+            return;
+        };
+        self.track = Some(track);
+        self.resume_at = Some(Duration::ZERO);
+        self.remember(true, cx);
+        self.prepare_resume(cx);
     }
 
     pub fn play_origin(&mut self, origin: Origin, cx: &mut Context<Self>) {
@@ -1527,7 +1581,10 @@ impl Playback {
                 self.position = Duration::ZERO;
                 self.clock.reset(Duration::ZERO, false);
                 cx.emit(PlaybackEvent::EndedPlayback);
-                self.advance(ended, cx);
+                match self.sleep == Some(Sleep::EndOfTrack) {
+                    true => self.doze(cx),
+                    false => self.advance(ended, cx),
+                }
             }
             BackendEvent::Unavailable if self.ask_for_reconnect(cx) => {
                 self.state = PlaybackState::Loading;
@@ -1584,6 +1641,8 @@ impl Playback {
             self.resume_ready = false;
             self.awaiting_reconnect = false;
             self.stored = Duration::ZERO;
+            self.sleep = None;
+            self.sleep_task = None;
         }
         cx.notify();
     }

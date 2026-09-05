@@ -220,6 +220,7 @@ impl SettingsView {
             SettingsTab::Playback => vec![
                 Row::Item(self.playback_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
+                Row::Item(self.sleep_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
                 Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
@@ -1097,6 +1098,30 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_gapless(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn sleep_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).sleep_timer();
+
+        self.row(
+            t!("settings-sleep"),
+            t!("settings-sleep-detail"),
+            muted,
+            small,
+            Switch::new("sleep-timer", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_sleep_timer(!on, cx));
+                    if on {
+                        this.playback
+                            .update(cx, |playback, cx| playback.set_sleep(None, cx));
+                    }
                 }))
                 .into_any_element(),
         )

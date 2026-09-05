@@ -2,11 +2,9 @@ use gpui::prelude::*;
 use gpui::{App, Hsla, Pixels, SharedString, StyleRefinement, Window, px};
 
 use crate::button::Button;
-use crate::menu::{Menu, MenuItem};
+use crate::menu::{Menu, MenuItem, TRIGGER_GAP};
 use crate::popover::{Popover, Popovers};
 use crate::theme::ActiveTheme as _;
-
-const GAP: Pixels = px(4.);
 
 enum Face {
     Label(SharedString),
@@ -20,7 +18,9 @@ pub struct Picker {
     group: Popovers,
     face: Face,
     tooltip: Option<&'static str>,
+    above: bool,
     tint: Option<Hsla>,
+    selected: bool,
     small: bool,
     width: Pixels,
     left: bool,
@@ -41,7 +41,9 @@ impl Picker {
             group: group.clone(),
             face: Face::Label(current.into()),
             tooltip: None,
+            above: false,
             tint: None,
+            selected: false,
             small: true,
             width: Self::REGULAR,
             left: false,
@@ -63,8 +65,19 @@ impl Picker {
         self
     }
 
+    pub fn tooltip_above(mut self, key: &'static str) -> Self {
+        self.tooltip = Some(key);
+        self.above = true;
+        self
+    }
+
     pub fn tint(mut self, tint: Hsla) -> Self {
         self.tint = Some(tint);
+        self
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
         self
     }
 
@@ -118,7 +131,9 @@ impl RenderOnce for Picker {
             group,
             face,
             tooltip,
+            above,
             tint,
+            selected,
             small,
             width,
             left,
@@ -131,7 +146,7 @@ impl RenderOnce for Picker {
         let drop = match small {
             true => theme.metrics.control_small,
             false => theme.metrics.control,
-        } + GAP;
+        } + TRIGGER_GAP;
 
         let button = match face {
             Face::Label(current) => Button::new(SharedString::from(format!("{key}-picker")))
@@ -144,7 +159,10 @@ impl RenderOnce for Picker {
         };
         let button = button
             .when(small, Button::small)
-            .when_some(tooltip, Button::tooltip)
+            .when_some(tooltip, |button, key| match above {
+                true => button.tooltip_above(key),
+                false => button.tooltip(key),
+            })
             .when_some(tint, Button::tint);
 
         let menu = menu
@@ -155,6 +173,7 @@ impl RenderOnce for Picker {
 
         let mut popover = Popover::new(key, group)
             .button(button)
+            .selected(selected)
             .menu(menu)
             .when(!sticky, Popover::commands);
         *popover.style() = style;

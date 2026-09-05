@@ -54,6 +54,7 @@ MAP = {
     "maximize": ("expand", "maximize-square-3-linear", "fullscreen-line"),
     "mic-off": ("microphone-mute", None, "mic-off-line"),
     "mic-vocal": ("microphone", "microphone-linear", "mic-2-line"),
+    "moon": ("half-moon", "moon-linear", "moon-line"),
     "music": ("music-double-note", "music-note-linear", "music-2-line"),
     "music-2": ("music-note", "music-note-2-linear", "music-line"),
     "panel-left-close": ("sidebar-collapse", "sidebar-minimalistic-linear", "menu-fold-line"),

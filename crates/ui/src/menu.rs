@@ -25,6 +25,7 @@ const SUBMENU_CLOSE_DELAY: Duration = Duration::from_millis(160);
 const SUBMENU_FALLBACK_WIDTH: Pixels = px(236.);
 const SUBMENU_TOP: Pixels = px(-14.);
 const WINDOW_MARGIN: Pixels = px(8.);
+pub(crate) const TRIGGER_GAP: Pixels = px(4.);
 const PANEL_SLACK: Pixels = px(6.);
 const SAFE_X: Pixels = px(6.);
 const SAFE_Y: Pixels = px(12.);
@@ -46,6 +47,10 @@ impl Trigger {
     pub(crate) fn observe(&self, bounds: Vec<Bounds<Pixels>>) {
         self.0
             .set(bounds.into_iter().reduce(|one, other| one.union(&other)));
+    }
+
+    fn bounds(&self) -> Option<Bounds<Pixels>> {
+        self.0.get()
     }
 
     fn contains(&self, position: Point<Pixels>, slack: Pixels) -> bool {
@@ -666,13 +671,23 @@ impl RenderOnce for Menu {
         let mut overrides = overrides;
         let width = overrides.size.width.take();
         let ceiling = overrides.max_size.height.take();
-        let corner = match (
-            overrides.inset.left.is_some(),
-            overrides.inset.right.is_some(),
-        ) {
-            (false, true) => Anchor::TopRight,
-            _ => Anchor::TopLeft,
+        let right = overrides.inset.left.is_none() && overrides.inset.right.is_some();
+        let corner = match right {
+            true => Anchor::TopRight,
+            false => Anchor::TopLeft,
         };
+        let perch = trigger
+            .as_ref()
+            .and_then(|trigger| trigger.bounds())
+            .map(|bounds| {
+                let x = match right {
+                    true => bounds.right(),
+                    false => bounds.left(),
+                };
+                let position = point(x, bounds.top() - TRIGGER_GAP);
+                let offset = point(Pixels::ZERO, bounds.size.height + TRIGGER_GAP + TRIGGER_GAP);
+                (position, offset)
+            });
         let panel_looks = div()
             .on_children_prepainted({
                 let guard = hover_guard.clone();
@@ -715,11 +730,15 @@ impl RenderOnce for Menu {
 
         let rising = panel_looks.rising("menu-rise");
         let surface = match should_defer {
-            true => anchored()
-                .anchor(corner)
-                .snap_to_window_with_margin(WINDOW_MARGIN)
+            true => {
+                let anchored = anchored().anchor(corner);
+                match perch {
+                    Some((position, offset)) => anchored.position(position).offset(offset),
+                    None => anchored.snap_to_window_with_margin(WINDOW_MARGIN),
+                }
                 .child(rising)
-                .into_any_element(),
+                .into_any_element()
+            }
             false => rising.into_any_element(),
         };
 

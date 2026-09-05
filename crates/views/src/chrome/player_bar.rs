@@ -10,10 +10,10 @@ use gpui::{
 use gpui::{Window, div, px};
 use i18n::t;
 use input::{ToggleFullscreen, ToggleLyrics, ToggleQueue};
-use state::{AppSettings, Playback, Queue, SideTab, Sonora};
+use state::{AppSettings, Playback, Queue, SideTab, Sleep, Sonora};
 use ui::{
-    Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, Popup, Room, Scrollbar, Scrubber,
-    ScrubberState, clock,
+    Artwork, Button, ExplicitBadge, InlineLink, InlineLinks, MenuItem, Picker, Popovers, Popup,
+    Room, Scrollbar, Scrubber, ScrubberState, clock,
 };
 
 use crate::chrome::SidebarRight;
@@ -25,6 +25,9 @@ const VOLUME_WIDTH: f32 = 110.;
 const VOLUME_TIGHT: f32 = 72.;
 const CLOCK_SHORT: f32 = 3.4;
 const CLOCK_LONG: f32 = 5.4;
+const SLEEP: &str = "sleep";
+const SLEEP_STEPS: [u64; 4] = [15, 30, 45, 60];
+const SLEEP_LAST: usize = SLEEP_STEPS.len() + 1;
 
 pub(crate) struct PlayerBar {
     playback: Entity<Playback>,
@@ -32,6 +35,8 @@ pub(crate) struct PlayerBar {
     settings: Entity<AppSettings>,
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
+    sleep_group: Popovers,
+    sleep: ScrubberState,
     seek: ScrubberState,
     volume: ScrubberState,
     pending: Option<f32>,
@@ -59,6 +64,8 @@ impl PlayerBar {
             settings,
             track_menu: ItemMenu::new(playlist_scrollbar),
             context_menu: None,
+            sleep_group: Popovers::default(),
+            sleep: ScrubberState::new("sleep"),
             seek: ScrubberState::new("seek"),
             volume: ScrubberState::new("volume"),
             pending: None,
@@ -184,6 +191,7 @@ impl PlayerBar {
         let settings = self.settings.read(cx);
         let open = settings.sidebar_right_open();
         let tab = settings.sidebar_right_tab();
+        let sleep = settings.sleep_timer().then(|| self.sleep_button(cx));
 
         let button = move |id: &'static str, icon: &'static str, hint: &'static str, side| {
             let showing = open && tab == side;
@@ -224,7 +232,70 @@ impl PlayerBar {
                 "queue-title",
                 SideTab::Queue,
             ))
+            .children(sleep)
             .into_any_element()
+    }
+
+    fn sleep_button(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = *cx.theme();
+        let armed = self.playback.read(cx).sleep().is_some();
+
+        Picker::icon(SLEEP, &self.sleep_group, "icons/moon.svg")
+            .tooltip_above("player-sleep")
+            .selected(armed)
+            .tint(match armed {
+                true => theme.foreground,
+                false => theme.muted_foreground,
+            })
+            .items(match self.sleep_group.shows(SLEEP) {
+                true => self.sleep_items(cx),
+                false => Vec::new(),
+            })
+            .into_any_element()
+    }
+
+    fn sleep_items(&self, cx: &Context<Self>) -> Vec<MenuItem> {
+        let theme = *cx.theme();
+        let current = self.playback.read(cx).sleep();
+        let playback = self.playback.clone();
+
+        let dial = div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .gap_2()
+            .py_1()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .text_size(theme.text(ui::Text::Small))
+                    .child(
+                        div()
+                            .text_color(theme.muted_foreground)
+                            .child(t!("player-sleep")),
+                    )
+                    .child(sleep_label(current)),
+            )
+            .child(
+                Scrubber::new(&self.sleep, sleep_step(current) as f32 / SLEEP_LAST as f32)
+                    .colors(
+                        theme.progress_bar,
+                        theme.muted_foreground.opacity(0.3),
+                        theme.foreground,
+                    )
+                    .on_move(move |fraction, _, cx| {
+                        let pick = sleep_at((fraction * SLEEP_LAST as f32).round() as usize);
+                        if pick == current {
+                            return;
+                        }
+                        playback.update(cx, |playback, cx| playback.set_sleep(pick, cx));
+                    }),
+            );
+
+        vec![MenuItem::new("sleep-dial", "").content(dial)]
     }
 
     fn fullscreen_button(&self) -> Button {
@@ -499,5 +570,38 @@ impl Render for PlayerBar {
         };
 
         content.when_some(context_menu, |this, menu| this.child(menu))
+    }
+}
+
+fn sleep_step(sleep: Option<Sleep>) -> usize {
+    match sleep {
+        None => 0,
+        Some(Sleep::EndOfTrack) => SLEEP_LAST,
+        Some(Sleep::After(after)) => {
+            let minutes = after.as_secs() / 60;
+            SLEEP_STEPS
+                .iter()
+                .position(|step| *step == minutes)
+                .map(|at| at + 1)
+                .unwrap_or(0)
+        }
+    }
+}
+
+fn sleep_at(step: usize) -> Option<Sleep> {
+    match step {
+        0 => None,
+        SLEEP_LAST => Some(Sleep::EndOfTrack),
+        step => Some(Sleep::After(Duration::from_secs(
+            SLEEP_STEPS[step - 1] * 60,
+        ))),
+    }
+}
+
+fn sleep_label(sleep: Option<Sleep>) -> SharedString {
+    match sleep {
+        Some(Sleep::EndOfTrack) => t!("player-sleep-end-of-track"),
+        Some(Sleep::After(after)) => t!("player-sleep-minutes", count = after.as_secs() / 60),
+        None => t!("player-sleep-off"),
     }
 }
