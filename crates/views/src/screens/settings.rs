@@ -15,7 +15,7 @@ use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
@@ -38,7 +38,6 @@ const TYPEFACE_LEAD: usize = 2;
 const TYPEFACE_GUESS: usize = 24;
 // faces loaded per frame
 const TYPEFACE_BATCH: usize = 3;
-const FONT_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(25);
 const STARTUP: &str = "startup";
 const ENTRIES: &str = "entries";
 const MOTION: &str = "motion";
@@ -137,7 +136,6 @@ pub struct SettingsView {
     installed: Option<Vec<SharedString>>,
     loading_fonts: bool,
     font_task: Option<Task<()>>,
-    font_cache_task: Option<Task<()>>,
 }
 
 impl SettingsView {
@@ -163,6 +161,7 @@ impl SettingsView {
             cx.notify();
         })
         .detach();
+
         Self {
             session,
             playback,
@@ -179,13 +178,30 @@ impl SettingsView {
             installed: None,
             loading_fonts: false,
             font_task: None,
-            font_cache_task: None,
         }
     }
 
     pub(crate) fn select(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.popovers.close();
+        if tab == SettingsTab::Appearance && self.installed.is_none() && !self.loading_fonts {
+            self.loading_fonts = true;
+            let text_system = cx.text_system().clone();
+            let io = Io::global(cx);
+            self.font_task = Some(cx.spawn(async move |this, cx| {
+                let names = io
+                    .spawn_blocking(move || usable_fonts(text_system))
+                    .await
+                    .unwrap_or_default();
+                this.update(cx, |this, cx| {
+                    this.installed = Some(names);
+                    this.loading_fonts = false;
+                    this.font_task = None;
+                    cx.notify();
+                })
+                .ok();
+            }));
+        }
         cx.notify();
     }
 
@@ -474,6 +490,14 @@ impl SettingsView {
             let mut budget = TYPEFACE_BATCH;
             let mut faced = self.typeface_faced.borrow_mut();
 
+            // Drop faced fonts that are no longer visible in the scroll viewport to free RAM
+            faced.retain(|name| {
+                entries
+                    .iter()
+                    .enumerate()
+                    .any(|(place, (id, _))| id == name && previewed.contains(&place))
+            });
+
             items = entries
                 .into_iter()
                 .enumerate()
@@ -512,7 +536,13 @@ impl SettingsView {
         }
 
         if waiting {
-            cx.notify();
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(16))
+                    .await;
+                this.update(cx, |_, cx| cx.notify()).ok();
+            })
+            .detach();
         }
 
         let picker = Picker::new(TYPEFACES, &self.popovers, current)
@@ -1837,64 +1867,50 @@ fn open_settings_file(path: &Path) -> std::io::Result<()> {
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let in_appearance = self.tab == SettingsTab::Appearance;
         let picking_typefaces = self.popovers.shows(TYPEFACES);
-        if picking_typefaces {
-            if self.installed.is_none() && !self.loading_fonts {
-                self.loading_fonts = true;
-                let text_system = cx.text_system().clone();
-                self.font_task = Some(cx.spawn(async move |this, cx| {
-                    let names = cx
-                        .background_executor()
-                        .spawn(async move { usable_fonts(text_system) })
-                        .await;
-                    this.update(cx, |this, cx| {
-                        this.installed = Some(names);
-                        this.loading_fonts = false;
-                        this.font_task = None;
-                        cx.notify();
-                    })
-                    .ok();
-                }));
-            }
-        } else if self.installed.is_some() && self.font_cache_task.is_none() {
-            // Cache fonts in RAM for 25 seconds before clearing
-            self.font_cache_task = Some(cx.spawn(async move |this, cx| {
-                cx.background_executor().timer(FONT_CACHE_TTL).await;
+        if (in_appearance || picking_typefaces) && self.installed.is_none() && !self.loading_fonts {
+            self.loading_fonts = true;
+            let text_system = cx.text_system().clone();
+            let io = Io::global(cx);
+            self.font_task = Some(cx.spawn(async move |this, cx| {
+                let names = io
+                    .spawn_blocking(move || usable_fonts(text_system))
+                    .await
+                    .unwrap_or_default();
                 this.update(cx, |this, cx| {
-                    if !this.popovers.shows(TYPEFACES) {
-                        this.installed = None;
-                        this.font_cache_task = None;
-                        cx.notify();
-                    }
+                    this.installed = Some(names);
+                    this.loading_fonts = false;
+                    this.font_task = None;
+                    cx.notify();
                 })
                 .ok();
             }));
         }
 
-        let chosen_language = self.settings.read(cx).language();
-        let language_selected = Language::ALL
-            .into_iter()
-            .position(|language| language.id() == chosen_language)
-            .map(|place| place + 1)
-            .or(Some(0));
-        self.languages.sync(
-            self.popovers.shows(LANGUAGES),
-            language_selected,
-            window,
-            cx,
-        );
+        let picking_languages = self.popovers.shows(LANGUAGES);
+        if picking_languages {
+            let chosen_language = self.settings.read(cx).language();
+            let language_selected = Language::ALL
+                .into_iter()
+                .position(|language| language.id() == chosen_language)
+                .map(|place| place + 1)
+                .or(Some(0));
+            self.languages.sync(true, language_selected, window, cx);
+        } else {
+            self.languages.sync(false, None, window, cx);
+        }
 
-        let chosen_typeface = self.settings.read(cx).font();
-        let typeface_selected = self
-            .typeface_entries()
-            .iter()
-            .position(|name| name.as_ref() == chosen_typeface);
-        self.typefaces.sync(
-            self.popovers.shows(TYPEFACES),
-            typeface_selected,
-            window,
-            cx,
-        );
+        if picking_typefaces {
+            let chosen_typeface = self.settings.read(cx).font();
+            let typeface_selected = self
+                .typeface_entries()
+                .iter()
+                .position(|name| name.as_ref() == chosen_typeface);
+            self.typefaces.sync(true, typeface_selected, window, cx);
+        } else {
+            self.typefaces.sync(false, None, window, cx);
+        }
 
         let browsers = self.browsers.clone();
         let accounts = match self.session.read(cx).state() {
