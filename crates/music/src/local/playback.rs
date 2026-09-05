@@ -20,6 +20,7 @@ enum Command {
     },
     Preload {
         id: String,
+        segue: bool,
     },
     Play,
     Pause,
@@ -75,10 +76,11 @@ impl Player for Engine {
             .context("cannot reach local playback engine")
     }
 
-    fn preload(&self, track_id: &str) -> Result<()> {
+    fn preload(&self, track_id: &str, segue: bool) -> Result<()> {
         self.commands
             .send(Command::Preload {
                 id: track_id.to_owned(),
+                segue,
             })
             .context("cannot reach local playback engine")
     }
@@ -177,12 +179,21 @@ async fn engine_loop(
                             playing = true;
                             sink.play();
                             if let Some(length) = current.as_ref().and_then(|slot| slot.length) {
-                                events.send(PlaybackEvent::Length(length)).ok();
+                                events.send(PlaybackEvent::Length {
+                                    id: Some(id.clone()),
+                                    duration: length,
+                                }).ok();
                             }
-                            events.send(PlaybackEvent::Playing(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Playing {
+                                id: Some(id),
+                                at: sink.get_pos(),
+                            }).ok();
                             continue;
                         }
-                        events.send(PlaybackEvent::Loading(at.unwrap_or_default())).ok();
+                        events.send(PlaybackEvent::Loading {
+                            id: Some(id.clone()),
+                            at: at.unwrap_or_default(),
+                        }).ok();
                         sink.clear();
                         current = None;
                         queued = None;
@@ -195,7 +206,10 @@ async fn engine_loop(
                                     None => sink.play(),
                                 }
                                 if let Some(length) = slot.length {
-                                    events.send(PlaybackEvent::Length(length)).ok();
+                                    events.send(PlaybackEvent::Length {
+                                        id: Some(id.clone()),
+                                        duration: length,
+                                    }).ok();
                                 }
                                 prev_len = sink.len();
                                 current = Some(slot);
@@ -203,18 +217,27 @@ async fn engine_loop(
                                 let position = at.unwrap_or_default();
                                 events
                                     .send(match playing {
-                                        true => PlaybackEvent::Playing(position),
-                                        false => PlaybackEvent::Paused(position),
+                                        true => PlaybackEvent::Playing {
+                                            id: Some(id),
+                                            at: position,
+                                        },
+                                        false => PlaybackEvent::Paused {
+                                            id: Some(id),
+                                            at: position,
+                                        },
                                     })
                                     .ok();
                             }
                             Err(error) => {
                                 log::warn!("playback: cannot load {id}: {error:#}");
-                                events.send(PlaybackEvent::Unavailable).ok();
+                                events.send(PlaybackEvent::Unavailable { id: Some(id) }).ok();
                             }
                         }
                     }
-                    Command::Preload { id } => {
+                    Command::Preload { id, segue } => {
+                        if !segue {
+                            continue;
+                        }
                         let known = current.as_ref().is_some_and(|slot| slot.id == id);
                         if known || current.is_none() || queued.is_some() {
                             continue;
@@ -232,24 +255,35 @@ async fn engine_loop(
                             events.send(PlaybackEvent::OutputChanged).ok();
                             return;
                         }
-                        if current.is_some() {
+                        if let Some(slot) = &current {
                             sink.play();
                             playing = true;
-                            events.send(PlaybackEvent::Playing(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Playing {
+                                id: Some(slot.id.clone()),
+                                at: sink.get_pos(),
+                            }).ok();
                         }
                     }
                     Command::Pause => {
                         playing = false;
                         let position = sink.get_pos();
                         sink.pause();
-                        events.send(PlaybackEvent::Paused(position)).ok();
+                        if let Some(slot) = &current {
+                            events.send(PlaybackEvent::Paused {
+                                id: Some(slot.id.clone()),
+                                at: position,
+                            }).ok();
+                        }
                     }
                     Command::Seek(position) => {
-                        if current.is_some() {
+                        if let Some(slot) = &current {
                             if let Err(error) = sink.try_seek(position) {
                                 log::warn!("playback: cannot seek: {error}");
                             }
-                            events.send(PlaybackEvent::Position(sink.get_pos())).ok();
+                            events.send(PlaybackEvent::Position {
+                                id: Some(slot.id.clone()),
+                                at: sink.get_pos(),
+                            }).ok();
                         }
                     }
                     Command::Gain(level) => output.set_volume(level),
@@ -268,18 +302,31 @@ async fn engine_loop(
                 ticks += 1;
                 if current.is_some() && playing && len < prev_len {
                     ticks = 0;
-                    events.send(PlaybackEvent::Ended).ok();
+                    if let Some(slot) = &current {
+                        events.send(PlaybackEvent::Ended { id: Some(slot.id.clone()) }).ok();
+                    }
                     current = queued.take();
                     playing = current.is_some();
                     if let Some(slot) = &current {
                         if let Some(length) = slot.length {
-                            events.send(PlaybackEvent::Length(length)).ok();
+                            events.send(PlaybackEvent::Length {
+                                id: Some(slot.id.clone()),
+                                duration: length,
+                            }).ok();
                         }
-                        events.send(PlaybackEvent::Position(sink.get_pos())).ok();
+                        events.send(PlaybackEvent::Position {
+                            id: Some(slot.id.clone()),
+                            at: sink.get_pos(),
+                        }).ok();
                     }
                 } else if playing && ticks >= report_every {
                     ticks = 0;
-                    events.send(PlaybackEvent::Position(sink.get_pos())).ok();
+                    if let Some(slot) = &current {
+                        events.send(PlaybackEvent::Position {
+                            id: Some(slot.id.clone()),
+                            at: sink.get_pos(),
+                        }).ok();
+                    }
                 }
                 prev_len = len;
             }

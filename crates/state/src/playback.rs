@@ -389,6 +389,10 @@ impl Playback {
     }
 
     pub fn preload(&mut self, track: &Track) {
+        self.preload_internal(track, false);
+    }
+
+    fn preload_internal(&mut self, track: &Track, segue: bool) {
         let Some(id) = track.id.as_deref() else {
             return;
         };
@@ -406,7 +410,7 @@ impl Playback {
         let Some(engine) = self.engine_for(id) else {
             return;
         };
-        if let Err(error) = engine.preload(id) {
+        if let Err(error) = engine.preload(id, segue) {
             self.preloaded = None;
             log::warn!("playback: cannot preload {}: {error:#}", track.name);
         }
@@ -826,7 +830,7 @@ impl Playback {
             return;
         };
 
-        self.preload(&next);
+        self.preload_internal(&next, true);
     }
 
     pub fn radio(&self) -> bool {
@@ -1448,23 +1452,29 @@ impl Playback {
         if local != self.local_active() {
             return;
         }
+        let current_id = self.track.as_ref().and_then(|track| track.id.as_deref());
+        if let Some(event_id) = event.id()
+            && current_id != Some(event_id)
+        {
+            return;
+        }
         match event {
             BackendEvent::OutputChanged => self.restart_output(cx),
-            BackendEvent::Unavailable | BackendEvent::Refused if self.resume_ready => {
+            BackendEvent::Unavailable { .. } | BackendEvent::Refused if self.resume_ready => {
                 self.resume_ready = false;
                 self.state = PlaybackState::Paused;
                 log::warn!("playback: cannot hold the restored track, waiting for play");
             }
-            BackendEvent::Loading(position) => {
+            BackendEvent::Loading { at, .. } => {
                 self.state = PlaybackState::Loading;
-                self.position = position;
-                self.clock.reset(position, false);
+                self.position = at;
+                self.clock.reset(at, false);
             }
-            BackendEvent::Playing(position) => {
+            BackendEvent::Playing { at, .. } => {
                 let started = self.state != PlaybackState::Playing;
                 self.state = PlaybackState::Playing;
-                self.position = position;
-                self.clock.reset(position, true);
+                self.position = at;
+                self.clock.reset(at, true);
                 if let Some(at) = self.seek_on_play.take() {
                     self.seek(at, cx);
                 }
@@ -1472,22 +1482,22 @@ impl Playback {
                     cx.emit(PlaybackEvent::StartedPlayback);
                 }
             }
-            BackendEvent::Paused(position) => {
+            BackendEvent::Paused { at, .. } => {
                 self.state = PlaybackState::Paused;
-                self.position = position;
-                self.clock.reset(position, false);
+                self.position = at;
+                self.clock.reset(at, false);
                 self.remember(true, cx);
             }
-            BackendEvent::Position(position) => {
-                self.position = position;
+            BackendEvent::Position { at, .. } => {
+                self.position = at;
                 match self.state == PlaybackState::Playing {
-                    true => self.clock.correct(position),
-                    false => self.clock.reset(position, false),
+                    true => self.clock.correct(at),
+                    false => self.clock.reset(at, false),
                 }
                 self.remember(false, cx);
-                self.preload_next(position, cx);
+                self.preload_next(at, cx);
             }
-            BackendEvent::Length(duration) => {
+            BackendEvent::Length { duration, .. } => {
                 if let Some(track) = self.track.as_mut()
                     && !duration.is_zero()
                     && track.duration != duration
@@ -1495,7 +1505,7 @@ impl Playback {
                     track.duration = duration;
                 }
             }
-            BackendEvent::Ended => {
+            BackendEvent::Ended { .. } => {
                 let ended = self.track.take();
                 self.state = PlaybackState::Idle;
                 self.position = Duration::ZERO;
@@ -1503,11 +1513,11 @@ impl Playback {
                 cx.emit(PlaybackEvent::EndedPlayback);
                 self.advance(ended, cx);
             }
-            BackendEvent::Unavailable if self.ask_for_reconnect(cx) => {
+            BackendEvent::Unavailable { .. } if self.ask_for_reconnect(cx) => {
                 self.state = PlaybackState::Loading;
                 log::warn!("playback: the provider went stale, waiting for a reconnect");
             }
-            BackendEvent::Unavailable => {
+            BackendEvent::Unavailable { .. } => {
                 let failed = self.track.take();
                 let target = failed.as_ref().and_then(song_target);
                 let name = failed.map_or_else(|| "?".to_owned(), |track| track.name);
