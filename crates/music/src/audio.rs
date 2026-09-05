@@ -111,7 +111,7 @@ impl Output {
         cpal::default_host()
             .default_output_device()
             .map(|device| ident(&device))
-            .is_none_or(|device| device != self.device)
+            .is_some_and(|device| device != "unknown" && device != self.device)
     }
 }
 

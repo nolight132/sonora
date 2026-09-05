@@ -155,7 +155,7 @@ impl MusicPlayer for Engine {
         self.load_paused_at(track_id, at)
     }
 
-    fn preload(&self, track_id: &str) -> Result<()> {
+    fn preload(&self, track_id: &str, _segue: bool) -> Result<()> {
         self.preload(track_id)
     }
 
@@ -187,22 +187,54 @@ fn track_uri(track_id: &str) -> Result<SpotifyUri> {
 
 fn translate(event: PlayerEvent) -> Option<PlaybackEvent> {
     let millis = |position_ms: u32| Duration::from_millis(position_ms as u64);
+    let track_id = |uri: SpotifyUri| uri.to_id().ok();
 
     match event {
-        PlayerEvent::Loading { position_ms, .. } => {
-            Some(PlaybackEvent::Loading(millis(position_ms)))
+        PlayerEvent::Loading {
+            track_id: uri,
+            position_ms,
+            ..
+        } => Some(PlaybackEvent::Loading {
+            id: track_id(uri),
+            at: millis(position_ms),
+        }),
+        PlayerEvent::Playing {
+            track_id: uri,
+            position_ms,
+            ..
+        } => Some(PlaybackEvent::Playing {
+            id: track_id(uri),
+            at: millis(position_ms),
+        }),
+        PlayerEvent::Paused {
+            track_id: uri,
+            position_ms,
+            ..
+        } => Some(PlaybackEvent::Paused {
+            id: track_id(uri),
+            at: millis(position_ms),
+        }),
+        PlayerEvent::PositionChanged {
+            track_id: uri,
+            position_ms,
+            ..
         }
-        PlayerEvent::Playing { position_ms, .. } => {
-            Some(PlaybackEvent::Playing(millis(position_ms)))
+        | PlayerEvent::PositionCorrection {
+            track_id: uri,
+            position_ms,
+            ..
+        } => Some(PlaybackEvent::Position {
+            id: track_id(uri),
+            at: millis(position_ms),
+        }),
+        PlayerEvent::Stopped { track_id: uri, .. }
+        | PlayerEvent::EndOfTrack { track_id: uri, .. } => {
+            Some(PlaybackEvent::Ended { id: track_id(uri) })
         }
-        PlayerEvent::Paused { position_ms, .. } => Some(PlaybackEvent::Paused(millis(position_ms))),
-        PlayerEvent::PositionChanged { position_ms, .. }
-        | PlayerEvent::PositionCorrection { position_ms, .. } => {
-            Some(PlaybackEvent::Position(millis(position_ms)))
-        }
-        PlayerEvent::Stopped { .. } | PlayerEvent::EndOfTrack { .. } => Some(PlaybackEvent::Ended),
         PlayerEvent::Unavailable { denied: true, .. } => Some(PlaybackEvent::Refused),
-        PlayerEvent::Unavailable { .. } => Some(PlaybackEvent::Unavailable),
+        PlayerEvent::Unavailable { track_id: uri, .. } => {
+            Some(PlaybackEvent::Unavailable { id: track_id(uri) })
+        }
         _ => None,
     }
 }
