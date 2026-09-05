@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior};
 
-use crate::{AppSettings, Io, Playback, PlaybackState, Session};
+use crate::{AppSettings, DiscordLabel, Io, Playback, PlaybackState, Session};
 
 // Public YouTube Music application ID used by pear-devs/pear-desktop
 pub(crate) const CLIENT_ID: &str = "1177081335727267940";
@@ -59,15 +59,22 @@ impl Discord {
         let playback = self.playback.read(cx);
         let playing = client_id.is_some() && *playback.state() == PlaybackState::Playing;
         let presence = playback.track().filter(|_| playing).map(|track| {
+            let session = self.session.read(cx);
+            let name = application_name(settings.discord_label(), session.provider_name());
             let url = track.id.as_deref().and_then(|id| {
-                let session = self.session.read(cx);
                 let client = match music::is_local_id(id) {
                     true => session.local_client(),
                     false => session.client(),
                 }?;
                 client.share_url(MediaKind::Track, id)
             });
-            Presence::new(track.clone(), url, playback.position(), SystemTime::now())
+            Presence::new(
+                name,
+                track.clone(),
+                url,
+                playback.position(),
+                SystemTime::now(),
+            )
         });
         self.updates.send_replace(Update {
             client_id,
@@ -90,13 +97,20 @@ struct Update {
 
 #[derive(Clone)]
 struct Presence {
+    name: &'static str,
     track: Track,
     url: Option<String>,
     start: u64,
 }
 
 impl Presence {
-    fn new(track: Track, url: Option<String>, position: Duration, now: SystemTime) -> Self {
+    fn new(
+        name: &'static str,
+        track: Track,
+        url: Option<String>,
+        position: Duration,
+        now: SystemTime,
+    ) -> Self {
         let elapsed = if track.duration.is_zero() {
             position
         } else {
@@ -107,16 +121,25 @@ impl Presence {
             .unwrap_or_default()
             .saturating_sub(elapsed)
             .as_secs();
-        Self { track, url, start }
+        Self {
+            name,
+            track,
+            url,
+            start,
+        }
     }
 
     fn unchanged(&self, other: &Self) -> bool {
-        self.track == other.track && self.url == other.url && self.start.abs_diff(other.start) <= 2
+        self.name == other.name
+            && self.track == other.track
+            && self.url == other.url
+            && self.start.abs_diff(other.start) <= 2
     }
 
     fn activity(&self) -> Value {
         let mut activity = json!({
             "type": 2,
+            "name": self.name,
             "details": activity_text(&self.track.name),
             "state": activity_text(&self.track.artists),
         });
@@ -136,6 +159,13 @@ impl Presence {
             activity["buttons"] = json!([{ "label": "Listen", "url": url }]);
         }
         activity
+    }
+}
+
+fn application_name(label: DiscordLabel, provider: Option<&'static str>) -> &'static str {
+    match label {
+        DiscordLabel::Sonora => "Sonora",
+        DiscordLabel::AutoDetect => provider.unwrap_or("Sonora"),
     }
 }
 
@@ -265,6 +295,7 @@ mod tests {
     #[test]
     fn activity_has_listening_metadata_and_seconds_based_timestamps() {
         let presence = Presence::new(
+            "Sonora",
             track(),
             Some("https://music.youtube.com/watch?v=song".into()),
             Duration::from_secs(30),
@@ -272,6 +303,7 @@ mod tests {
         );
         let activity = presence.activity();
         assert_eq!(activity["type"], 2);
+        assert_eq!(activity["name"], "Sonora");
         assert_eq!(activity["details"], "Title");
         assert_eq!(activity["state"], "Artist");
         assert_eq!(activity["timestamps"], json!({"start":970,"end":1150}));
@@ -288,6 +320,7 @@ mod tests {
         track.cover = Some("file:///C:/Music/private.jpg".into());
         track.duration = Duration::ZERO;
         let presence = Presence::new(
+            "Sonora",
             track,
             Some("file:///C:/Music/song.flac".into()),
             Duration::ZERO,
@@ -302,20 +335,41 @@ mod tests {
     #[test]
     fn seek_changes_timestamps_but_normal_progress_does_not() {
         let now = UNIX_EPOCH + Duration::from_secs(1000);
-        let first = Presence::new(track(), None, Duration::from_secs(30), now);
+        let first = Presence::new("Sonora", track(), None, Duration::from_secs(30), now);
         let tick = Presence::new(
+            "Sonora",
             track(),
             None,
             Duration::from_secs(31),
             now + Duration::from_secs(1),
         );
         assert!(first.unchanged(&tick));
-        let seek = Presence::new(track(), None, Duration::from_secs(60), now);
+        let seek = Presence::new("Sonora", track(), None, Duration::from_secs(60), now);
         assert!(!first.unchanged(&seek));
-        let past_end = Presence::new(track(), None, Duration::MAX, now);
+        let past_end = Presence::new("Sonora", track(), None, Duration::MAX, now);
         assert_eq!(past_end.activity()["timestamps"]["end"], 1000);
-        let before_epoch = Presence::new(track(), None, Duration::from_secs(60), UNIX_EPOCH);
+        let before_epoch =
+            Presence::new("Sonora", track(), None, Duration::from_secs(60), UNIX_EPOCH);
         assert_eq!(before_epoch.start, 0);
+    }
+
+    #[test]
+    fn application_labels_follow_the_setting_and_connected_provider() {
+        for provider in [Some("Spotify"), Some("YouTube Music"), None] {
+            assert_eq!(application_name(DiscordLabel::Sonora, provider), "Sonora");
+        }
+        for (provider, expected) in [
+            (Some("Spotify"), "Spotify"),
+            (Some("YouTube Music"), "YouTube Music"),
+            (None, "Sonora"),
+        ] {
+            let name = application_name(DiscordLabel::AutoDetect, provider);
+            let presence = Presence::new(name, track(), None, Duration::ZERO, UNIX_EPOCH);
+            assert_eq!(presence.activity()["name"], expected);
+        }
+        let sonora = Presence::new("Sonora", track(), None, Duration::ZERO, UNIX_EPOCH);
+        let youtube = Presence::new("YouTube Music", track(), None, Duration::ZERO, UNIX_EPOCH);
+        assert!(!sonora.unchanged(&youtube));
     }
 
     #[test]

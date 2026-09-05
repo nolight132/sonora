@@ -38,7 +38,8 @@ pub use remote::{Remote, attach as attach_remote};
 pub use search::{AlbumHit, ArtistHit, Hit, Kind, PlaylistHit, Search};
 pub use session::{Failure, ProviderInfo, Session, SessionEvent, SessionState};
 pub use settings::{
-    AppSettings, RomanizationScripts, SYSTEM_FONT, SideTab, remember_window, window_placement,
+    AppSettings, DiscordLabel, RomanizationScripts, SYSTEM_FONT, SideTab, remember_window,
+    window_placement,
 };
 pub use song::SongDetail;
 pub use tags::{TagState, Tags};

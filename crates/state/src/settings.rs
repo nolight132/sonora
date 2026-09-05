@@ -36,6 +36,14 @@ pub enum SideTab {
     Lyrics,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscordLabel {
+    Sonora,
+    #[default]
+    AutoDetect,
+}
+
 /// The writing systems lyrics romanization applies to. Only CJK are enabled by default.
 /// A partial object in `settings.json` keeps the defaults for the scripts it leaves out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,6 +197,7 @@ struct Values {
     close_to_tray: bool,
     discord_rpc: bool,
     discord_client_id: String,
+    discord_label: DiscordLabel,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -239,6 +248,7 @@ impl Default for Values {
             close_to_tray: true,
             discord_rpc: false,
             discord_client_id: crate::discord::CLIENT_ID.to_owned(),
+            discord_label: DiscordLabel::default(),
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
@@ -576,6 +586,10 @@ impl AppSettings {
         &self.values.discord_client_id
     }
 
+    pub fn discord_label(&self) -> DiscordLabel {
+        self.values.discord_label
+    }
+
     pub fn sidebar_width(&self) -> f32 {
         self.state.sidebar_width
     }
@@ -796,6 +810,11 @@ impl AppSettings {
 
     pub fn set_discord_rpc(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.values.discord_rpc = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_label(&mut self, label: DiscordLabel, cx: &mut Context<Self>) {
+        self.values.discord_label = label;
         self.schedule_save(cx);
     }
 

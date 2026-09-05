@@ -10,7 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Discord Rich Presence can be enabled in Settings → Playback to share the current song, artist,
-  artwork and playback progress. It reconnects automatically and clears when playback pauses.
+  artwork and playback progress. Choose Sonora or Auto-Detect for the application label; Auto-Detect
+  follows the connected music platform. It reconnects automatically and clears when playback pauses.
 
 ### Changed
 

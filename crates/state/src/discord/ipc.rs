@@ -228,12 +228,29 @@ mod tests {
     #[ignore = "requires the Discord desktop app; briefly publishes a test activity"]
     async fn live_discord_accepts_and_clears_activity() {
         let mut client = Client::connect(super::super::CLIENT_ID).await.unwrap();
-        client
-            .set_activity(
-                json!({"type": 2, "details": "Sonora RPC test", "state": "Local verification"}),
+        for name in ["Sonora", "Spotify", "YouTube Music"] {
+            let payload = json!({
+                "cmd": "SET_ACTIVITY",
+                "args": {"pid": std::process::id(), "activity": {
+                    "type": 2, "name": name, "details": "Sonora RPC test", "state": "Local verification",
+                }},
+                "nonce": "label-test",
+            });
+            write_frame(
+                &mut client.stream,
+                1,
+                &serde_json::to_vec(&payload).unwrap(),
             )
             .await
             .unwrap();
+            let reply = timeout(TIMEOUT, response(&mut client.stream))
+                .await
+                .unwrap()
+                .unwrap();
+            let accepted = reply["data"]["name"].as_str().map(str::to_owned);
+            client.set_activity(Value::Null).await.unwrap();
+            assert_eq!(accepted.as_deref(), Some(name));
+        }
         client.set_activity(Value::Null).await.unwrap();
     }
 }
