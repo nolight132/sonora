@@ -161,15 +161,10 @@ fn show_window(cx: &mut App) {
 fn open_window(cx: &mut App) {
     let Sonora {
         session,
-        cover: _,
         library,
-        history: _,
-        lyrics: _,
         playback,
         queue,
-        settings: _,
-        updates: _,
-        usage: _,
+        ..
     } = Sonora::global(cx);
     let (session, library, playback, queue) = (
         session.clone(),

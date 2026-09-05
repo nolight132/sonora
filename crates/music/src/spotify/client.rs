@@ -60,6 +60,7 @@ impl MusicApi for LibrespotClient {
         Ok(UserProfile {
             display_name: profile.label().unwrap_or(&username).to_owned(),
             id: username,
+            avatar: None,
         })
     }
 

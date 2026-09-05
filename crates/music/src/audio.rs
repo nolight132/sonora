@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::source::SeekError;
+use rodio::source::{SeekError, UniformSourceIterator};
 use rodio::{DeviceSinkBuilder, MixerDeviceSink, Source};
 
 use crate::spectrum::{Spectrum, Tap};
@@ -82,9 +82,16 @@ impl Output {
         let applied = volume.get();
         let tap = spectrum.attach(default.sample_rate(), default.channels());
         let (sink, source) = rodio::Player::new();
-        stream
-            .mixer()
-            .add(SmoothGain::new(source, volume.clone(), applied, RAMP).with_tap(tap));
+        stream.mixer().add(
+            output_source(
+                source,
+                volume.clone(),
+                applied,
+                default.channels(),
+                default.sample_rate(),
+            )
+            .with_tap(tap),
+        );
 
         Ok(Self {
             sink: Arc::new(sink),
@@ -113,6 +120,21 @@ impl Output {
             .map(|device| ident(&device))
             .is_none_or(|device| device != self.device)
     }
+}
+
+fn output_source<I: Source>(
+    input: I,
+    volume: Volume,
+    initial: f32,
+    channels: u16,
+    rate: u32,
+) -> SmoothGain<UniformSourceIterator<I>> {
+    let source = UniformSourceIterator::new(
+        input,
+        NonZero::new(channels).unwrap(),
+        NonZero::new(rate).unwrap(),
+    );
+    SmoothGain::new(source, volume, initial, RAMP)
 }
 
 pub struct SmoothGain<I> {
@@ -239,12 +261,15 @@ pub struct Trimmed<I> {
     emitted: u64,
     primed: bool,
     lane: u64,
+    channels: u64,
 }
 
 impl<I: Source> Trimmed<I> {
     pub fn new(input: I, skip: Duration, take: Option<Duration>) -> Self {
-        let lane = (input.sample_rate().get() as u64) * (input.channels().get() as u64);
-        let samples = |span: Duration| (span.as_secs_f64() * lane as f64).round() as u64;
+        let rate = input.sample_rate().get() as u64;
+        let channels = input.channels().get() as u64;
+        let lane = rate * channels;
+        let samples = |span: Duration| frame_samples(span, rate, channels);
 
         Self {
             head: samples(skip),
@@ -252,6 +277,7 @@ impl<I: Source> Trimmed<I> {
             emitted: 0,
             primed: false,
             lane,
+            channels,
             input,
         }
     }
@@ -305,11 +331,18 @@ impl<I: Source> Source for Trimmed<I> {
     }
 
     fn try_seek(&mut self, position: Duration) -> Result<(), SeekError> {
-        self.input.try_seek(position + self.offset())?;
+        let emitted = frame_samples(position, self.lane / self.channels, self.channels);
+        let target = Duration::from_secs_f64(emitted as f64 / self.lane as f64);
+        self.input.try_seek(target.saturating_add(self.offset()))?;
         self.primed = true;
-        self.emitted = (position.as_secs_f64() * self.lane as f64).round() as u64;
+        self.emitted = emitted;
         Ok(())
     }
+}
+
+fn frame_samples(span: Duration, rate: u64, channels: u64) -> u64 {
+    let frames = (span.as_nanos() * u128::from(rate) + 500_000_000) / 1_000_000_000;
+    frames.min(u128::from(u64::MAX / channels)) as u64 * channels
 }
 
 fn ident(device: &cpal::Device) -> String {
@@ -317,4 +350,80 @@ fn ident(device: &cpal::Device) -> String {
         .id()
         .map(|id| id.to_string())
         .unwrap_or_else(|_| "unknown".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rodio::buffer::SamplesBuffer;
+
+    fn buffer(channels: u16, rate: u32, data: Vec<f32>) -> SamplesBuffer {
+        SamplesBuffer::new(
+            NonZero::new(channels).unwrap(),
+            NonZero::new(rate).unwrap(),
+            data,
+        )
+    }
+
+    #[test]
+    fn fractional_trim_preserves_channel_frames() {
+        for channels in [2u16, 6] {
+            let data = (0..1000)
+                .flat_map(|_| (0..channels).map(f32::from))
+                .collect();
+            let input = buffer(channels, 44_100, data);
+            let mut trimmed = Trimmed::new(
+                input,
+                Duration::from_millis(5),
+                Some(Duration::from_millis(5)),
+            );
+            assert_eq!(trimmed.head, 221 * u64::from(channels));
+            let samples: Vec<_> = trimmed.by_ref().collect();
+            assert_eq!(samples.len(), 221 * usize::from(channels));
+            for frame in samples.chunks_exact(usize::from(channels)) {
+                assert_eq!(frame, (0..channels).map(f32::from).collect::<Vec<_>>());
+            }
+            trimmed.try_seek(Duration::from_millis(1)).unwrap();
+            assert_eq!(trimmed.emitted, 44 * u64::from(channels));
+            assert_eq!(trimmed.count(), (221 - 44) * usize::from(channels));
+        }
+    }
+
+    #[test]
+    fn trim_handles_zero_and_extreme_durations_without_partial_frames() {
+        assert_eq!(frame_samples(Duration::ZERO, 44_100, 2), 0);
+        assert_eq!(frame_samples(Duration::MAX, 192_000, 6) % 6, 0);
+    }
+
+    #[test]
+    fn output_preserves_pitch_across_sample_rates_and_channel_counts() {
+        for (rate, channels) in [(48_000, 1), (44_100, 2)] {
+            let data = (0..rate / 10)
+                .flat_map(|frame| {
+                    let sample = (std::f32::consts::TAU * 3000. * frame as f32 / rate as f32).sin();
+                    std::iter::repeat_n(sample, channels as usize)
+                })
+                .collect();
+            let output =
+                output_source(buffer(channels, rate, data), Volume::new(1.), 1., 2, 48_000);
+            assert_eq!(output.channels().get(), 2);
+            assert_eq!(output.sample_rate().get(), 48_000);
+            let stereo: Vec<_> = output.take(4096).collect();
+            assert_eq!(stereo.len(), 4096);
+            let mut bins: Vec<_> = stereo
+                .chunks_exact(2)
+                .map(|frame| {
+                    assert!((frame[0] - frame[1]).abs() < 0.0001);
+                    rustfft::num_complex::Complex32::new((frame[0] + frame[1]) / 2., 0.)
+                })
+                .collect();
+            rustfft::FftPlanner::new()
+                .plan_fft_forward(bins.len())
+                .process(&mut bins);
+            let peak = (1..bins.len() / 2)
+                .max_by(|&a, &b| bins[a].norm_sqr().total_cmp(&bins[b].norm_sqr()))
+                .unwrap();
+            assert_eq!(peak, 128, "3 kHz must remain 3 kHz at 48 kHz");
+        }
+    }
 }

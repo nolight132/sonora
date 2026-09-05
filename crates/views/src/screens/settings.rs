@@ -225,6 +225,7 @@ impl SettingsView {
             .collect(),
             SettingsTab::Playback => vec![
                 Row::Item(self.playback_row(cx).into_any_element()),
+                Row::Item(self.discord_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
@@ -667,9 +668,10 @@ impl SettingsView {
             .items_center()
             .gap_4()
             .child(match self.session.read(cx).state() {
-                SessionState::SignedIn(profile) => {
-                    Initials::new(profile.display_name.clone(), px(64.)).into_any_element()
-                }
+                SessionState::SignedIn(profile) => match profile.avatar.clone() {
+                    Some(url) => Avatar::new(Some(url)).size(px(64.)).into_any_element(),
+                    None => Initials::new(profile.display_name.clone(), px(64.)).into_any_element(),
+                },
                 _ => Skeleton::new().size(px(64.)).circle().into_any_element(),
             })
             .child(
@@ -996,6 +998,23 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_normalisation(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let on = self.settings.read(cx).discord_rpc();
+        self.row(
+            t!("settings-discord"),
+            t!("settings-discord-detail"),
+            theme.muted_foreground,
+            theme.text(Text::Small),
+            Switch::new("discord-rpc", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_rpc(!on, cx));
                 }))
                 .into_any_element(),
         )

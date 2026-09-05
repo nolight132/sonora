@@ -2,6 +2,7 @@ mod artist;
 mod catalog;
 mod cover;
 mod detail;
+mod discord;
 mod genre;
 mod history;
 mod home;
@@ -96,6 +97,7 @@ pub struct Sonora {
     pub settings: Entity<AppSettings>,
     pub updates: Entity<Updates>,
     pub usage: Entity<Usage>,
+    _discord: Entity<discord::Discord>,
 }
 
 impl Global for Sonora {}
@@ -145,6 +147,15 @@ pub fn init(
     });
     let cover = cx.new(|cx| Cover::new(session.clone(), playback.clone(), io.clone(), cx));
     let updates = cx.new(|cx| Updates::new(settings.clone(), io.clone(), cx));
+    let discord = cx.new(|cx| {
+        discord::Discord::new(
+            playback.clone(),
+            session.clone(),
+            settings.clone(),
+            io.clone(),
+            cx,
+        )
+    });
     let usage = cx.new(|cx| Usage::new(session.clone(), database, io, cx));
 
     cx.set_global(Sonora {
@@ -158,5 +169,6 @@ pub fn init(
         settings,
         updates,
         usage,
+        _discord: discord,
     });
 }

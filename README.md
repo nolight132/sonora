@@ -114,6 +114,22 @@ Download and run the [installer](https://github.com/nolight132/sonora/releases/l
 
 Download the latest `windows-msvc.exe` for your architecture from [Releases](https://github.com/nolight132/sonora/releases/latest).
 
+## Discord Rich Presence
+
+Enable **Settings → Playback → Discord Rich Presence** to share the playing track with the Discord
+desktop app. Presence includes the title, artist, album artwork, progress and a listening link when
+the provider supplies one. Pausing, stopping, signing out or quitting clears it. Discord can be
+started after Sonora; the connection retries automatically. Local artwork and file paths are omitted.
+
+This is off by default and uses the public YouTube Music application ID also used by
+[Pear Desktop](https://github.com/pear-devs/pear-desktop/tree/main/src/plugins/discord), so Discord's
+application label is **YouTube Music**, including when playing from other providers. To use your own
+Discord application name, set `discord_client_id` in `settings.json` to its numeric application ID.
+No Discord token or account login is required by Sonora.
+
+On Linux, the Discord IPC socket must be accessible to Sonora. Sandboxed installations may need an
+explicit socket permission or socket forwarding; Windows uses Discord's local named pipe.
+
 ## Community
 
 Feel free to join our [Discord](https://discord.gg/a8N8Tx23rV) server and [Matrix](https://matrix.to/#/#sonora:nolight.dev) space.
