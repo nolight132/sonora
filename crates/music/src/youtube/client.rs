@@ -55,6 +55,10 @@ impl YouTubeClient {
 
 #[async_trait]
 impl MusicApi for YouTubeClient {
+    fn has_premium_audio(&self) -> bool {
+        self.api.has_premium_audio()
+    }
+
     fn share_url(&self, kind: MediaKind, id: &str) -> Option<String> {
         let url = match kind {
             MediaKind::Track => format!("https://music.youtube.com/watch?v={id}"),

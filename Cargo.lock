@@ -7365,6 +7365,7 @@ dependencies = [
  "symphonia-codec-vorbis",
  "symphonia-core",
  "symphonia-format-isomp4",
+ "symphonia-format-mkv",
  "symphonia-format-ogg",
  "symphonia-format-riff",
  "symphonia-metadata",
@@ -7467,6 +7468,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "243739585d11f81daf8dac8d9f3d18cc7898f6c09a259675fc364b382c30e0a5"
 dependencies = [
  "encoding_rs",
+ "log",
+ "symphonia-core",
+ "symphonia-metadata",
+ "symphonia-utils-xiph",
+]
+
+[[package]]
+name = "symphonia-format-mkv"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "122d786d2c43a49beb6f397551b4a050d8229eaa54c7ddf9ee4b98899b8742d0"
+dependencies = [
+ "lazy_static",
  "log",
  "symphonia-core",
  "symphonia-metadata",
@@ -9717,7 +9731,7 @@ dependencies = [
 [[package]]
 name = "ytmusic"
 version = "0.1.0"
-source = "git+https://github.com/nolight132/ytmusic-rs?rev=0b2b13a32c16e4245b6c9001f8088a75c83a638c#0b2b13a32c16e4245b6c9001f8088a75c83a638c"
+source = "git+https://github.com/BESINAPERICULOASA/ytmusic-rs?rev=08c8f2e3fbebcccb5816bca7555a7aacc366f90a#08c8f2e3fbebcccb5816bca7555a7aacc366f90a"
 dependencies = [
  "aes",
  "anyhow",
