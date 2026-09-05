@@ -58,6 +58,7 @@ fn main() {
             log::error!("sonora: cannot load bundled fonts: {error:#}");
         }
 
+        let database = storage::Database::standard();
         let providers: Vec<Arc<dyn music::MusicProvider>> = vec![
             Arc::new(music::spotify::SpotifyProvider::from_env()),
             Arc::new(music::youtube::YouTubeProvider::new()),
@@ -67,6 +68,7 @@ fn main() {
                 dirs::config_dir()
                     .unwrap_or_else(std::env::temp_dir)
                     .join("sonora"),
+                database.clone(),
             ));
         let lyrics: Vec<Arc<dyn LyricsProvider>> = vec![
             Arc::new(music::binimum::Binimum::new()),
@@ -75,7 +77,7 @@ fn main() {
             Arc::new(music::kugou::Kugou::new()),
             Arc::new(music::netease::NetEase::new()),
         ];
-        state::init(cx, io, providers, local_provider, lyrics);
+        state::init(cx, io, database, providers, local_provider, lyrics);
         let start = opened_start.unwrap_or_else(|| {
             let startup = Sonora::global(cx).settings.read(cx).startup().to_owned();
             Screen::from_id(&startup)

@@ -257,7 +257,15 @@ impl Render for TitleBar {
                 },
             )
             .when(decorated && !leading, |this| {
-                this.child(div().flex_none().pr_2().child(WindowControls::new(false)))
+                this.child(
+                    div()
+                        .flex_none()
+                        .when(cfg!(target_os = "windows"), |this| {
+                            this.h_full().self_stretch()
+                        })
+                        .when(!cfg!(target_os = "windows"), |this| this.pr_2())
+                        .child(WindowControls::new(false)),
+                )
             })
     }
 }

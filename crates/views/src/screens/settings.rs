@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::shared::local;
-use crate::shared::popups::{
-    AccountPicker, BrowserPicker, CookiePrompt, SearchPopup, matches_query,
-};
+use crate::shared::popups::{AccountPicker, CookiePrompt, SearchPopup, matches_query};
 use gpui::{
     AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, Task, Window, div,
     font, px,
@@ -71,7 +69,7 @@ struct Account {
 fn offered(method: &SignIn, stored: bool, guest: bool) -> bool {
     match method {
         SignIn::Default | SignIn::Anonymous => !stored,
-        SignIn::Browser(_) | SignIn::Secret => !stored || guest,
+        SignIn::Secret => !stored || guest,
         SignIn::Path(_) => false,
     }
 }
@@ -128,7 +126,6 @@ pub struct SettingsView {
     scrollbar: Entity<Scrollbar>,
     opacity: ScrubberState,
     popovers: Popovers,
-    browsers: Option<(&'static str, Vec<SharedString>)>,
     secret: Entity<Input>,
     languages: SearchPopup,
     typefaces: SearchPopup,
@@ -170,7 +167,6 @@ impl SettingsView {
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me)),
             opacity: ScrubberState::new("opacity"),
             popovers: Popovers::default(),
-            browsers: None,
             secret: cx.new(|cx| Input::new("login-cookie-hint", cx)),
             languages,
             typefaces,
@@ -225,6 +221,10 @@ impl SettingsView {
                 Row::Item(self.icons_row(cx).into_any_element()),
                 Row::Item(self.opacity_row(cx).into_any_element()),
                 Row::Item(self.corners_row(cx).into_any_element()),
+                self.title("settings-group-lyrics", cx),
+                Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
+                Row::Item(self.fullscreen_lyrics_size_row(cx).into_any_element()),
+                Row::Item(self.blur_lyrics_row(cx).into_any_element()),
                 self.title("settings-group-text", cx),
                 Row::Item(self.font_row(cx).into_any_element()),
                 Row::Item(self.typeface_row(cx).into_any_element()),
@@ -246,8 +246,6 @@ impl SettingsView {
                 Row::Item(self.playback_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
-                Row::Item(self.panel_lyrics_size_row(cx).into_any_element()),
-                Row::Item(self.fullscreen_lyrics_size_row(cx).into_any_element()),
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
                 Row::Item(self.romanized_lyrics_row(cx).into_any_element()),
             ],
@@ -1247,6 +1245,26 @@ impl SettingsView {
         )
     }
 
+    fn blur_lyrics_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).blur_lyrics();
+
+        self.row(
+            t!("settings-blur-lyrics"),
+            t!("settings-blur-lyrics-detail"),
+            muted,
+            small,
+            Switch::new("blur-lyrics", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_blur_lyrics(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
     fn romanized_lyrics_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -1433,14 +1451,9 @@ impl SettingsView {
             (false, _, true) => t!("settings-provider-connected"),
             (false, _, false) => t!("settings-provider-none"),
         };
-        let mut seen_browser = false;
         let methods: Vec<SignIn> = options
             .into_iter()
             .filter(|option| offered(option, stored, guest))
-            .filter(|option| match option {
-                SignIn::Browser(_) => !std::mem::replace(&mut seen_browser, true),
-                _ => true,
-            })
             .collect();
 
         div()
@@ -1586,10 +1599,6 @@ impl SettingsView {
                 t!("login-sign-in", provider = provider),
             ),
             SignIn::Anonymous => (format!("connect-{slug}-guest"), t!("login-guest-use")),
-            SignIn::Browser(_) => (
-                format!("connect-{slug}-browser"),
-                t!("login-import-browser-plain"),
-            ),
             SignIn::Secret => (
                 format!("connect-{slug}-cookies"),
                 t!("login-connect-cookies"),
@@ -1605,55 +1614,10 @@ impl SettingsView {
             .small()
             .outline()
             .disabled(pending)
-            .on_click(cx.listener(move |this, _, _, cx| match &method {
-                SignIn::Browser(_) => this.open_browsers(slug, cx),
-                method => {
-                    let method = method.clone();
-                    this.session
-                        .update(cx, |session, cx| session.sign_in(slug, method, cx));
-                }
-            }))
-    }
-
-    fn open_browsers(&mut self, slug: &'static str, cx: &mut Context<Self>) {
-        let names: Vec<SharedString> = self
-            .session
-            .read(cx)
-            .providers()
-            .find(|info| info.slug == slug)
-            .map(|info| {
-                info.options
-                    .iter()
-                    .filter_map(|option| match option {
-                        SignIn::Browser(name) => Some(SharedString::from(name.clone())),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        if names.is_empty() {
-            return;
-        }
-        self.browsers = Some((slug, names));
-        cx.notify();
-    }
-
-    fn browser_modal(
-        &self,
-        slug: &'static str,
-        names: Vec<SharedString>,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        BrowserPicker::new(names)
-            .on_pick(cx.listener(move |this, name: &SharedString, _, cx| {
-                this.browsers = None;
-                let method = SignIn::Browser(name.to_string());
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let method = method.clone();
                 this.session
                     .update(cx, |session, cx| session.sign_in(slug, method, cx));
-            }))
-            .on_cancel(cx.listener(|this, _, _, cx| {
-                this.browsers = None;
-                cx.notify();
             }))
     }
 
@@ -1912,7 +1876,6 @@ impl Render for SettingsView {
             self.typefaces.sync(false, None, window, cx);
         }
 
-        let browsers = self.browsers.clone();
         let accounts = match self.session.read(cx).state() {
             SessionState::Authorizing(Some(SignInPrompt::Accounts(accounts))) => {
                 Some(accounts.clone())
@@ -1950,9 +1913,6 @@ impl Render for SettingsView {
                             }),
                     ),
             )
-            .when_some(browsers, |this, (slug, names)| {
-                this.child(self.browser_modal(slug, names, cx).into_any_element())
-            })
             .when_some(accounts, |this, accounts| {
                 this.child(self.account_modal(accounts, cx).into_any_element())
             })

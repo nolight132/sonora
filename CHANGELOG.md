@@ -7,6 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Window position, sidebar sizes, playback mode, table layouts, pins, listening history and local
+  playlists now live in one `state.sqlite` file in the data directory, and `settings.json` keeps
+  only preferences. Existing files are migrated on the first start.
+- YouTube Music sign-in now opens your default browser from the cookie instructions dialog.
+  Browser cookie extraction and automatic refresh from browser profiles have been removed.
+- Each provider keeps its sign-in in its own `credentials.json` under the cache folder, readable
+  only by you. Existing Spotify and YouTube Music sign-ins move over on the first launch.
+
+### Fixed
+
+- Playback no longer falls silent on PipeWire systems with a large graph quantum, such as a
+  default Arch Linux install. The audio stream now keeps 50 ms of buffer regardless of the
+  quantum, and a recovered underrun no longer restarts the player.
+- Pressing play on an album, playlist or artist with shuffle on now opens with a random track
+  instead of always the first one.
+
 ## [0.30.0] - 2026-09-04
 
 ### Added
