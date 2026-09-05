@@ -143,7 +143,7 @@ us quickly locate the relevant parts of the code.
 **However**, using AI cannot act as an excuse for failing to
 understand, review, and test the changes proposed. Furthermore, we expect communication
 with a real person, not a computer. This includes but is not limited to PR/issue text
-generation, comments in discussions, etc. A short summary of minor changes can be 
+generation, comments in discussions, etc. A short summary of minor changes can be
 generated and does not need to be disclosed explicitly, but the reasoning and motivation
 behind a change must come from the contributor and reflect their own understanding.
 
@@ -155,18 +155,19 @@ AI-assisted proofreading and translation of human-written text are permitted.
 
 <!-- i18n:start -->
 
-| Language                     | Translated | Coverage |
-| ---------------------------- | ---------- | -------- |
-| English (`en-US`)            | 514/514    | 100%     |
-| Deutsch (`de`)               | 485/514    | 94%      |
-| Español (`es`)               | 500/514    | 97%      |
-| Français (`fr`)              | 479/514    | 93%      |
-| Italiano (`it`)              | 479/514    | 93%      |
-| 日本語 (`ja`)                | 500/514    | 97%      |
-| Русский (`ru`)               | 486/514    | 95%      |
-| Українська (`uk`)            | 486/514    | 95%      |
-| Polski (`pl`)                | 487/514    | 95%      |
-| Português (Brasil) (`pt-BR`) | 500/514    | 97%      |
+| Language | Translated | Coverage |
+| --- | --- | --- |
+| English (`en-US`) | 518/518 | 100% |
+| Deutsch (`de`) | 483/518 | 93% |
+| Español (`es`) | 495/518 | 96% |
+| Français (`fr`) | 477/518 | 92% |
+| Italiano (`it`) | 474/518 | 92% |
+| Bahasa Indonesia (`id`) | 512/518 | 99% |
+| 日本語 (`ja`) | 495/518 | 96% |
+| Русский (`ru`) | 485/518 | 94% |
+| Українська (`uk`) | 485/518 | 94% |
+| Polski (`pl`) | 516/518 | 100% |
+| Português (Brasil) (`pt-BR`) | 495/518 | 96% |
 
 <!-- i18n:end -->
 

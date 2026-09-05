@@ -48,6 +48,8 @@ pub use card::CARD_GROUP;
 pub use card::Card;
 pub use checkbox::Checkbox;
 pub use controls::WindowControls;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+pub use controls::WindowFrame;
 pub use deck::Deck;
 pub use drag::{Edge, drop_gap, drop_marker};
 pub use explicit::ExplicitBadge;
