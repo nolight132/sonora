@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Discord Rich Presence can be enabled in Settings → Playback to share the current song, artist,
+  artwork and playback progress. Choose Sonora or Auto-Detect for the application label; Auto-Detect
+  follows the connected music platform. It reconnects automatically and clears when playback pauses.
+
 ### Changed
 
 - Window position, sidebar sizes, playback mode, table layouts, pins, listening history and local
@@ -15,6 +21,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- YouTube Music account photos now appear in Settings instead of always showing initials.
+- YouTube audio trimming preserves complete channel frames, avoiding swapped stereo channels.
+- The visualizer now uses the output sample rate and channel layout, so mono tracks and tracks
+  with a different sample rate display the correct frequencies.
 - Playback no longer falls silent on PipeWire systems with a large graph quantum, such as a
   default Arch Linux install. The audio stream now keeps 50 ms of buffer regardless of the
   quantum, and a recovered underrun no longer restarts the player.

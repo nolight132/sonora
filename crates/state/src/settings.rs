@@ -36,6 +36,14 @@ pub enum SideTab {
     Lyrics,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscordLabel {
+    Sonora,
+    #[default]
+    AutoDetect,
+}
+
 /// The writing systems lyrics romanization applies to. Only CJK are enabled by default.
 /// A partial object in `settings.json` keeps the defaults for the scripts it leaves out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,6 +195,9 @@ struct Values {
     adaptive_menu: bool,
     check_updates: bool,
     close_to_tray: bool,
+    discord_rpc: bool,
+    discord_client_id: String,
+    discord_label: DiscordLabel,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -235,6 +246,9 @@ impl Default for Values {
             adaptive_menu: false,
             check_updates: cfg!(target_os = "windows"),
             close_to_tray: true,
+            discord_rpc: false,
+            discord_client_id: crate::discord::CLIENT_ID.to_owned(),
+            discord_label: DiscordLabel::default(),
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
@@ -564,6 +578,18 @@ impl AppSettings {
         self.values.close_to_tray
     }
 
+    pub fn discord_rpc(&self) -> bool {
+        self.values.discord_rpc
+    }
+
+    pub(crate) fn discord_client_id(&self) -> &str {
+        &self.values.discord_client_id
+    }
+
+    pub fn discord_label(&self) -> DiscordLabel {
+        self.values.discord_label
+    }
+
     pub fn sidebar_width(&self) -> f32 {
         self.state.sidebar_width
     }
@@ -779,6 +805,16 @@ impl AppSettings {
 
     pub fn set_close_to_tray(&mut self, close_to_tray: bool, cx: &mut Context<Self>) {
         self.values.close_to_tray = close_to_tray;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_rpc(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.discord_rpc = enabled;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_discord_label(&mut self, label: DiscordLabel, cx: &mut Context<Self>) {
+        self.values.discord_label = label;
         self.schedule_save(cx);
     }
 

@@ -15,7 +15,9 @@ use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{
+    AppSettings, DiscordLabel, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora,
+};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
@@ -225,6 +227,8 @@ impl SettingsView {
             .collect(),
             SettingsTab::Playback => vec![
                 Row::Item(self.playback_row(cx).into_any_element()),
+                Row::Item(self.discord_row(cx).into_any_element()),
+                Row::Item(self.discord_label_row(cx).into_any_element()),
                 Row::Item(self.gapless_row(cx).into_any_element()),
                 self.title("settings-group-lyrics", cx),
                 Row::Item(self.karaoke_lyrics_row(cx).into_any_element()),
@@ -667,9 +671,10 @@ impl SettingsView {
             .items_center()
             .gap_4()
             .child(match self.session.read(cx).state() {
-                SessionState::SignedIn(profile) => {
-                    Initials::new(profile.display_name.clone(), px(64.)).into_any_element()
-                }
+                SessionState::SignedIn(profile) => match profile.avatar.clone() {
+                    Some(url) => Avatar::new(Some(url)).size(px(64.)).into_any_element(),
+                    None => Initials::new(profile.display_name.clone(), px(64.)).into_any_element(),
+                },
                 _ => Skeleton::new().size(px(64.)).circle().into_any_element(),
             })
             .child(
@@ -998,6 +1003,64 @@ impl SettingsView {
                         .update(cx, |playback, cx| playback.set_normalisation(!on, cx));
                 }))
                 .into_any_element(),
+        )
+    }
+
+    fn discord_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let on = self.settings.read(cx).discord_rpc();
+        self.row(
+            t!("settings-discord"),
+            t!("settings-discord-detail"),
+            theme.muted_foreground,
+            theme.text(Text::Small),
+            Switch::new("discord-rpc", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_discord_rpc(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn discord_label_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        let selected = self.settings.read(cx).discord_label();
+        let labels = [
+            (
+                DiscordLabel::Sonora,
+                "sonora",
+                t!("settings-discord-label-sonora"),
+            ),
+            (
+                DiscordLabel::AutoDetect,
+                "auto",
+                t!("settings-discord-label-auto"),
+            ),
+        ];
+        let caption = labels
+            .iter()
+            .find(|(label, _, _)| *label == selected)
+            .unwrap()
+            .2
+            .clone();
+        let picker = Picker::new("discord-label", &self.popovers, caption)
+            .width(Picker::NARROW)
+            .items(labels.into_iter().map(|(label, id, caption)| {
+                MenuItem::new(id, caption)
+                    .selected(label == selected)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.popovers.close();
+                        this.settings
+                            .update(cx, |settings, cx| settings.set_discord_label(label, cx));
+                    }))
+            }));
+        self.row(
+            t!("settings-discord-label"),
+            t!("settings-discord-label-detail"),
+            theme.muted_foreground,
+            theme.text(Text::Small),
+            picker.into_any_element(),
         )
     }
 

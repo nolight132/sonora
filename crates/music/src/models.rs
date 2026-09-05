@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct UserProfile {
     pub id: String,
     pub display_name: String,
+    pub avatar: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

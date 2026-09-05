@@ -155,6 +155,7 @@ pub fn artist_profile(source: &ytmusic::Artist) -> ArtistProfile {
 
 pub fn profile(source: ytmusic::Profile) -> UserProfile {
     UserProfile {
+        avatar: ytmusic::best_thumbnail(&source.thumbnails).map(|image| image.url.clone()),
         id: source.email.unwrap_or_else(|| source.name.clone()),
         display_name: source.name,
     }
@@ -175,4 +176,37 @@ pub fn cover(thumbnails: &[ytmusic::Thumbnail]) -> Option<String> {
 
 pub fn cover_large(thumbnails: &[ytmusic::Thumbnail]) -> Option<String> {
     thumbnails.last().map(|thumb| thumb.url.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn account_avatar_uses_largest_thumbnail_and_handles_missing_images() {
+        let mut account = ytmusic::Profile {
+            name: "Listener".into(),
+            email: Some("@listener".into()),
+            thumbnails: [256, 48, 96]
+                .into_iter()
+                .map(|size| ytmusic::Thumbnail {
+                    url: format!("https://example.com/{size}.jpg"),
+                    width: size,
+                    height: size,
+                })
+                .collect(),
+        };
+        let mapped = profile(account.clone());
+        assert_eq!(
+            mapped.avatar.as_deref(),
+            Some("https://example.com/256.jpg")
+        );
+        assert_eq!(mapped.id, "@listener");
+        assert_eq!(mapped.display_name, "Listener");
+        account.thumbnails.clear();
+        account.email = None;
+        let mapped = profile(account);
+        assert_eq!(mapped.avatar, None);
+        assert_eq!(mapped.id, "Listener");
+    }
 }
