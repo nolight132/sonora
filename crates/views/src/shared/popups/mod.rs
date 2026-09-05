@@ -82,10 +82,12 @@ impl SearchPopup {
         self.cursor.get().min(count.saturating_sub(1))
     }
 
+    #[allow(dead_code)]
     pub(crate) fn scroll(&self, cx: &App) -> ScrollHandle {
         self.scrollbar.read(cx).scroll().clone()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn height(&self) -> Pixels {
         SEARCH_HEIGHT
     }
