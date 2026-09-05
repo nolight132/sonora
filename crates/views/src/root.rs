@@ -3,7 +3,7 @@ use gpui::{App, Font, FontFallbacks, SharedString, font, prelude::*};
 use gpui::{Window, div};
 use input::{
     NavigateBack, NavigateForward, OpenFilter, OpenSearch, OpenSettings, ToggleFullscreen,
-    ToggleLyrics, ToggleQueue,
+    ToggleLyrics, TogglePowerbar, ToggleQueue,
 };
 use router::{Destination, NavigationEvent, SettingsTab, back, forward, navigate};
 use state::{
@@ -14,6 +14,7 @@ use ui::{ActiveTheme as _, Dismiss, Look, Theme, ThemeKind, clear_listing};
 
 use crate::chrome::{TitleBar, TitleBarEvent, TitleBarOptions, Toolbar, Tooled};
 use crate::screens::search::SearchView;
+use crate::shared::powerbar::Powerbar;
 use crate::shared::tracks::{LIBRARY_COLUMNS, album_columns};
 use crate::shells::Shell;
 use crate::shells::workspace::Workspace;
@@ -129,7 +130,8 @@ impl Root {
 
         let queries = cx.new(|cx| Search::new(session.clone(), search_library, io.clone(), cx));
         let genres = cx.new(|cx| Genres::new(session.clone(), io.clone(), cx));
-        let search = cx.new(|cx| SearchView::new(queries, genres.clone(), playback.clone(), cx));
+        let search =
+            cx.new(|cx| SearchView::new(queries.clone(), genres.clone(), playback.clone(), cx));
 
         let settings = cx.new(|cx| SettingsView::new(session.clone(), playback.clone(), cx));
 
@@ -144,6 +146,7 @@ impl Root {
             Workspace::new(
                 playback.clone(),
                 queue.clone(),
+                queries.clone(),
                 library_view.clone().into(),
                 cx,
             )
@@ -597,6 +600,9 @@ impl Render for Root {
             .on_action(
                 cx.listener(|this, _: &ToggleLyrics, _, cx| this.show_side(SideTab::Lyrics, cx)),
             )
+            .on_action(cx.listener(|_, _: &TogglePowerbar, window, cx| {
+                Powerbar::toggle(window, cx);
+            }))
             .child(self.title_bar.clone())
             .when_else(
                 show_sign_in,
