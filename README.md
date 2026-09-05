@@ -96,13 +96,26 @@ Every release also attaches a standalone `.flatpak` bundle for x86_64 and aarch6
 
 ### Nix
 
-Just use the flake in the project root:
+The flake packages the latest tagged release and exposes `programs.sonora` for Home Manager.
 
-```sh
-inputs.sonora.packages.${system}.default
+```nix
+inputs.sonora.url = "github:nolight132/sonora";
 ```
 
-The flake installs the latest tagged release binary.
+Home Manager:
+
+```nix
+{
+  imports = [ inputs.sonora.homeManagerModules.default ];
+  programs.sonora = {
+    enable = true;
+    settings = {
+      provider = "youtube";
+      appearance.theme = "dark";
+    };
+  };
+}
+```
 
 ### Windows
 
