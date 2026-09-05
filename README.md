@@ -127,6 +127,19 @@ Download and run the [installer](https://github.com/nolight132/sonora/releases/l
 
 Download the latest `windows-msvc.exe` for your architecture from [Releases](https://github.com/nolight132/sonora/releases/latest).
 
+## YouTube Music Premium audio
+
+Signed-in playback automatically requests the highest-bitrate audio-only stream available to the
+account, including Premium AAC and Opus formats. Opus uses a WebM audio container; no video is
+downloaded. If authenticated resolution or downloading fails, Sonora falls back to ordinary audio.
+Guest playback is unchanged.
+
+Settings → General shows a **Premium** badge beside YouTube Music after a signed-in track response
+confirms High-tier audio. This confirmation belongs to the current session and resets on reconnect;
+it does not depend on every subsequent track or require extra membership requests. YouTube's High
+tier is nominally 256 kbps; the reported bitrate varies with the codec and track. The playback log
+records the selected format, codec and reported bitrate, including any fallback.
+
 ## Community
 
 Feel free to join our [Discord](https://discord.gg/a8N8Tx23rV) server and [Matrix](https://matrix.to/#/#sonora:nolight.dev) space.

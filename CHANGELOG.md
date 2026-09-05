@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- YouTube Music playback automatically uses the signed-in account's best available audio, including
+  Premium AAC and Opus streams, with ordinary playback as a fallback. A Premium badge appears beside
+  YouTube Music in Settings → General once the session confirms access to High-tier audio.
+
 ## [0.31.0] - 2026-09-05
 
 ### Added

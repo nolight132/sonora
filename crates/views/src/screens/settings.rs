@@ -1437,6 +1437,14 @@ impl SettingsView {
             cancel,
             error,
         } = account;
+        let premium = active
+            && !guest
+            && slug == "youtube"
+            && self
+                .session
+                .read(cx)
+                .client()
+                .is_some_and(|client| client.has_premium_audio());
         let status = match (active, guest, stored) {
             (true, true, _) => t!("settings-provider-guest"),
             (true, false, _) => t!("settings-provider-current"),
@@ -1476,7 +1484,25 @@ impl SettingsView {
                             .flex_1()
                             .min_w_0()
                             .gap_0p5()
-                            .child(div().font_weight(FontWeight::MEDIUM).child(name))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(div().font_weight(FontWeight::MEDIUM).child(name))
+                                    .when(premium, |this| {
+                                        this.child(
+                                            div()
+                                                .text_size(theme.text(Text::Small))
+                                                .text_color(theme.muted_foreground)
+                                                .bg(theme.muted)
+                                                .rounded_sm()
+                                                .px_2()
+                                                .py_0p5()
+                                                .child(t!("settings-provider-premium")),
+                                        )
+                                    }),
+                            )
                             .child(
                                 div()
                                     .text_color(theme.muted_foreground)

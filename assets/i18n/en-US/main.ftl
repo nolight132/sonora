@@ -516,6 +516,7 @@ settings-accounts-detail = The services this device can play from
 settings-provider-none = Not connected
 settings-provider-connected = Connected
 settings-provider-current = Playing from this service
+settings-provider-premium = Premium
 settings-provider-guest = Playing as a guest
 settings-provider-switch = Switch to
 settings-sign-out = Sign out

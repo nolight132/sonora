@@ -524,7 +524,13 @@ fn refusal(error: &anyhow::Error) -> PlaybackEvent {
 }
 
 async fn fetch(api: &YtMusic, id: &str) -> Result<Loaded> {
-    let (format, data) = api.load_audio(id).await?;
+    let (format, data) = api.load_high_quality_audio(id).await?;
+    log::debug!(
+        "playback: youtube audio itag={} codec={} reported_bitrate={} bps",
+        format.itag,
+        format.codec,
+        format.bitrate
+    );
     Ok(Loaded {
         data: Arc::new(data),
         loudness_db: format.loudness_db,
