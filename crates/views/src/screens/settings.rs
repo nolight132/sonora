@@ -6,14 +6,14 @@ use std::process::Command;
 use crate::shared::local;
 use crate::shared::popups::{AccountPicker, CookiePrompt, SearchPopup, matches_query};
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, TextRun, Window,
-    div, font, px,
+    AnyElement, App, Context, Entity, FontWeight, Pixels, Render, SharedString, Task, Window, div,
+    font, px,
 };
 use gpui::{ScrollHandle, prelude::*, svg};
 use i18n::{Language, t};
 use music::{AccountChoice, SignIn, SignInPrompt, WritingSystem};
 use router::{NavEntry, Screen, SettingsTab};
-use state::{AppSettings, Failure, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
+use state::{AppSettings, Failure, Io, Playback, SYSTEM_FONT, Session, SessionState, Sonora};
 use ui::{ActiveTheme as _, Scrollbar, Scroller, eyebrow};
 use ui::{
     Avatar, Button, InfoCard, Initials, Input, Look, MAX_FONT, MAX_LYRICS_SCALE, MAX_TRANSPARENCY,
@@ -131,6 +131,8 @@ pub struct SettingsView {
     typefaces: SearchPopup,
     typeface_faced: RefCell<HashSet<SharedString>>,
     installed: Option<Vec<SharedString>>,
+    loading_fonts: bool,
+    font_task: Option<Task<()>>,
 }
 
 impl SettingsView {
@@ -156,6 +158,7 @@ impl SettingsView {
             cx.notify();
         })
         .detach();
+
         Self {
             session,
             playback,
@@ -169,12 +172,32 @@ impl SettingsView {
             typefaces,
             typeface_faced: RefCell::new(HashSet::new()),
             installed: None,
+            loading_fonts: false,
+            font_task: None,
         }
     }
 
     pub(crate) fn select(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.popovers.close();
+        if tab == SettingsTab::Appearance && self.installed.is_none() && !self.loading_fonts {
+            self.loading_fonts = true;
+            let text_system = cx.text_system().clone();
+            let io = Io::global(cx);
+            self.font_task = Some(cx.spawn(async move |this, cx| {
+                let names = io
+                    .spawn_blocking(move || usable_fonts(text_system))
+                    .await
+                    .unwrap_or_default();
+                this.update(cx, |this, cx| {
+                    this.installed = Some(names);
+                    this.loading_fonts = false;
+                    this.font_task = None;
+                    cx.notify();
+                })
+                .ok();
+            }));
+        }
         cx.notify();
     }
 
@@ -419,85 +442,115 @@ impl SettingsView {
             false => SharedString::from(chosen.clone()),
         };
 
+        let picking = self.popovers.shows(TYPEFACES);
         let asked = self.typefaces.query();
         let installed = self.installed.as_deref().unwrap_or_default();
-        let entries = std::iter::once((
-            SharedString::from(SYSTEM_FONT),
-            t!("settings-typeface-system"),
-        ))
-        .chain(installed.iter().map(|name| (name.clone(), name.clone())))
-        .filter(|(id, label)| matches_query(id, label, &asked))
-        .take(TYPEFACE_LIMIT)
-        .collect::<Vec<_>>();
-        let barren = entries.is_empty();
+
+        let mut entries = Vec::new();
+        if picking {
+            entries.push((
+                SharedString::from(SYSTEM_FONT),
+                t!("settings-typeface-system"),
+            ));
+            entries.extend(installed.iter().map(|name| (name.clone(), name.clone())));
+            entries = entries
+                .into_iter()
+                .filter(|(id, label)| matches_query(id, label, &asked))
+                .take(TYPEFACE_LIMIT)
+                .collect();
+        }
+
+        let barren = picking && entries.is_empty();
         let count = entries.len();
         let cursor = self.typefaces.cursor(count);
         let submitted = entries
             .iter()
             .map(|(name, _)| name.clone())
             .collect::<Vec<_>>();
-        // a face costs a font load
-        let scroll = self.typefaces.scroll(cx);
-        let row = scroll
-            .bounds_for_item(0)
-            .map(|item| item.size.height)
-            .filter(|height| *height > px(0.));
-        let first = row.map_or(cursor, |row| {
-            ((-scroll.offset().y) / row).floor().max(0.) as usize
-        });
-        let shown = row.map_or(TYPEFACE_GUESS, |row| {
-            (self.typefaces.height() / row).ceil() as usize
-        });
-        let previewed = first.saturating_sub(TYPEFACE_LEAD)..first + shown + TYPEFACE_LEAD;
-        let picking = self.popovers.shows(TYPEFACES);
 
-        let mut budget = TYPEFACE_BATCH;
+        let mut items = Vec::new();
         let mut waiting = false;
-        let mut faced = self.typeface_faced.borrow_mut();
-        let items = entries
-            .into_iter()
-            .enumerate()
-            .map(|(place, (id, label))| {
-                let name = id.clone();
-                let preview = name.clone();
-                let wanted = picking && name.as_ref() != SYSTEM_FONT && previewed.contains(&place);
-                let shows = match (wanted, faced.contains(&name)) {
-                    (false, _) => false,
-                    (true, true) => true,
-                    (true, false) => match budget {
-                        0 => {
-                            waiting = true;
-                            false
-                        }
-                        _ => {
-                            budget -= 1;
-                            faced.insert(name.clone());
-                            true
-                        }
-                    },
-                };
-                MenuItem::new(id, label)
-                    .selected(place == cursor)
-                    .checked(chosen == name.as_ref())
-                    .when(shows, |item| item.face(preview))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        let name = name.to_string();
-                        this.settings
-                            .update(cx, |settings, cx| settings.set_font(name, cx));
-                        cx.notify();
-                    }))
-            })
-            .collect::<Vec<_>>();
-        drop(faced);
+
+        if picking {
+            let scroll = self.typefaces.scroll(cx);
+            let row = scroll
+                .bounds_for_item(0)
+                .map(|item| item.size.height)
+                .filter(|height| *height > px(0.));
+            let first = row.map_or(cursor, |row| {
+                ((-scroll.offset().y) / row).floor().max(0.) as usize
+            });
+            let shown = row.map_or(TYPEFACE_GUESS, |row| {
+                (self.typefaces.height() / row).ceil() as usize
+            });
+            let previewed = first.saturating_sub(TYPEFACE_LEAD)..first + shown + TYPEFACE_LEAD;
+
+            let mut budget = TYPEFACE_BATCH;
+            let mut faced = self.typeface_faced.borrow_mut();
+
+            // Drop faced fonts that are no longer visible in the scroll viewport to free RAM
+            faced.retain(|name| {
+                entries
+                    .iter()
+                    .enumerate()
+                    .any(|(place, (id, _))| id == name && previewed.contains(&place))
+            });
+
+            items = entries
+                .into_iter()
+                .enumerate()
+                .map(|(place, (id, label))| {
+                    let name = id.clone();
+                    let preview = name.clone();
+                    let wanted = name.as_ref() != SYSTEM_FONT && previewed.contains(&place);
+                    let shows = match (wanted, faced.contains(&name)) {
+                        (false, _) => false,
+                        (true, true) => true,
+                        (true, false) => match budget {
+                            0 => {
+                                waiting = true;
+                                false
+                            }
+                            _ => {
+                                budget -= 1;
+                                faced.insert(name.clone());
+                                true
+                            }
+                        },
+                    };
+                    MenuItem::new(id, label)
+                        .selected(place == cursor)
+                        .checked(chosen == name.as_ref())
+                        .when(shows, |item| item.face(preview))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let name = name.to_string();
+                            this.settings
+                                .update(cx, |settings, cx| settings.set_font(name, cx));
+                            cx.notify();
+                        }))
+                })
+                .collect::<Vec<_>>();
+            drop(faced);
+        }
+
         if waiting {
-            cx.notify();
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(16))
+                    .await;
+                this.update(cx, |_, cx| cx.notify()).ok();
+            })
+            .detach();
         }
 
         let picker = Picker::new(TYPEFACES, &self.popovers, current)
             .width(Picker::WIDE)
             .menu(self.typefaces.menu("typefaces-menu", Picker::WIDE))
             .items(items)
-            .when(barren, |picker| {
+            .when(self.loading_fonts, |picker| {
+                picker.item(MenuItem::new("typeface-loading", t!("play-loading")).disabled())
+            })
+            .when(barren && !self.loading_fonts, |picker| {
                 picker
                     .item(MenuItem::new("typeface-empty", t!("settings-typeface-none")).disabled())
             });
@@ -1778,34 +1831,50 @@ fn open_settings_file(path: &Path) -> std::io::Result<()> {
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.installed.is_none() {
-            self.installed = Some(usable_fonts(window, cx));
+        let in_appearance = self.tab == SettingsTab::Appearance;
+        let picking_typefaces = self.popovers.shows(TYPEFACES);
+        if (in_appearance || picking_typefaces) && self.installed.is_none() && !self.loading_fonts {
+            self.loading_fonts = true;
+            let text_system = cx.text_system().clone();
+            let io = Io::global(cx);
+            self.font_task = Some(cx.spawn(async move |this, cx| {
+                let names = io
+                    .spawn_blocking(move || usable_fonts(text_system))
+                    .await
+                    .unwrap_or_default();
+                this.update(cx, |this, cx| {
+                    this.installed = Some(names);
+                    this.loading_fonts = false;
+                    this.font_task = None;
+                    cx.notify();
+                })
+                .ok();
+            }));
         }
 
-        let chosen_language = self.settings.read(cx).language();
-        let language_selected = Language::ALL
-            .into_iter()
-            .position(|language| language.id() == chosen_language)
-            .map(|place| place + 1)
-            .or(Some(0));
-        self.languages.sync(
-            self.popovers.shows(LANGUAGES),
-            language_selected,
-            window,
-            cx,
-        );
+        let picking_languages = self.popovers.shows(LANGUAGES);
+        if picking_languages {
+            let chosen_language = self.settings.read(cx).language();
+            let language_selected = Language::ALL
+                .into_iter()
+                .position(|language| language.id() == chosen_language)
+                .map(|place| place + 1)
+                .or(Some(0));
+            self.languages.sync(true, language_selected, window, cx);
+        } else {
+            self.languages.sync(false, None, window, cx);
+        }
 
-        let chosen_typeface = self.settings.read(cx).font();
-        let typeface_selected = self
-            .typeface_entries()
-            .iter()
-            .position(|name| name.as_ref() == chosen_typeface);
-        self.typefaces.sync(
-            self.popovers.shows(TYPEFACES),
-            typeface_selected,
-            window,
-            cx,
-        );
+        if picking_typefaces {
+            let chosen_typeface = self.settings.read(cx).font();
+            let typeface_selected = self
+                .typeface_entries()
+                .iter()
+                .position(|name| name.as_ref() == chosen_typeface);
+            self.typefaces.sync(true, typeface_selected, window, cx);
+        } else {
+            self.typefaces.sync(false, None, window, cx);
+        }
 
         let accounts = match self.session.read(cx).state() {
             SessionState::Authorizing(Some(SignInPrompt::Accounts(accounts))) => {
@@ -1853,34 +1922,20 @@ impl Render for SettingsView {
     }
 }
 
-fn usable_fonts(window: &Window, cx: &App) -> Vec<SharedString> {
-    let missing = resolved(window, "sonora-has-no-such-family");
-    let mut names = cx.text_system().all_font_names();
+fn usable_fonts(text_system: std::sync::Arc<gpui::TextSystem>) -> Vec<SharedString> {
+    let missing = resolved(&text_system, "sonora-has-no-such-family");
+    let mut names = text_system.all_font_names();
     names.sort_unstable();
     names.dedup();
 
     names
         .into_iter()
         .filter(|name| !name.starts_with('.'))
-        .filter(|name| resolved(window, name) != missing)
+        .filter(|name| resolved(&text_system, name) != missing)
         .map(SharedString::from)
         .collect()
 }
 
-fn resolved(window: &Window, family: &str) -> Option<gpui::FontId> {
-    let run = TextRun {
-        len: 1,
-        font: font(SharedString::from(family.to_owned())),
-        color: gpui::black(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-
-    window
-        .text_system()
-        .shape_line(SharedString::from("A"), px(12.), &[run], None)
-        .runs
-        .first()
-        .map(|run| run.font_id)
+fn resolved(text_system: &gpui::TextSystem, family: &str) -> gpui::FontId {
+    text_system.resolve_font(&font(SharedString::from(family.to_owned())))
 }

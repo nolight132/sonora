@@ -79,6 +79,14 @@ impl Io {
     {
         self.0.spawn(future)
     }
+
+    pub fn spawn_blocking<F, R>(&self, func: F) -> JoinHandle<R>
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.0.spawn_blocking(func)
+    }
 }
 
 pub(crate) async fn join<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
