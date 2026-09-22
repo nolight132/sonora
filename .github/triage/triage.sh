@@ -11,33 +11,12 @@
 
 set -euo pipefail
 
-root="$(git rev-parse --show-toplevel)"
-config="$root/.github/triage/config.yml"
+tag=triage
+# shellcheck source=.github/triage/lib.sh
+source "$(git rev-parse --show-toplevel)/.github/triage/lib.sh"
+
 system="$root/.github/triage/prompt.md"
 marker="<!-- sonora-triage:needs-info -->"
-
-repo="${REPO:-${GITHUB_REPOSITORY:-}}"
-issue="${ISSUE:?the issue number is required}"
-base="${TRIAGE_BASE_URL:-https://opencode.ai/zen/go/v1}"
-model="${TRIAGE_MODEL:-glm-5.3-flash}"
-dry="${DRY_RUN:-}"
-session="triage-${repo//\//-}-$issue"
-
-: "${TRIAGE_API_KEY:?the inference api key is required}"
-
-say() { printf 'triage: %s\n' "$*" >&2; }
-
-# opencode Go routes on the session id and refuses a request without one, so every call
-# about the same issue carries the same one and shares its prompt cache.
-ask() {
-  curl -sS --fail-with-body --retry 2 --retry-all-errors --max-time 120 \
-    -H "Authorization: Bearer $TRIAGE_API_KEY" \
-    -H 'Content-Type: application/json' \
-    -H "x-opencode-session: $session" \
-    -A "sonora-triage/1.0" \
-    -d "$1" \
-    "$base/chat/completions"
-}
 
 # The issue as GitHub has it, plus the label names the repository actually carries. A label the
 # model picks that nobody ever created is dropped rather than failing the whole edit.
@@ -56,53 +35,26 @@ people="$(yq -o=json '.people | with_entries(select(.value.areas | length > 0))'
 
 # One user message holding the vocabulary and the report. The body is capped because a report
 # with a forty thousand line log pasted into it is still the same triage decision.
-request="$(jq -n \
-  --arg model "$model" \
-  --rawfile system "$system" \
+user="$(jq -r \
   --argjson vocabulary "$vocabulary" \
   --argjson people "$people" \
-  --argjson issue "$issue_json" \
-  '{
-     model: $model,
-     temperature: 0,
-     response_format: { type: "json_object" },
-     messages: [
-       { role: "system", content: $system },
-       { role: "user", content: (
-           "Labels:\n" + ($vocabulary.labels | tojson) +
-           "\n\nPlatforms:\n" + ($vocabulary.platforms | tojson) +
-           "\n\nPeople:\n" + ($people | tojson) +
-           "\n\nRequired context:\n" + ($vocabulary.required | tojson) +
-           "\n\nIssue #" + ($issue.number | tostring) +
-           " by " + ($issue.author.login // "unknown") +
-           "\nCurrent labels: " + ([$issue.labels[].name] | tojson) +
-           "\n\nTitle: " + $issue.title +
-           "\n\nBody:\n" + (($issue.body // "") | .[0:12000]) +
-           "\n\nComments, oldest first. Context given in one of these counts as given:\n" +
-           ([ $issue.comments[]
-              | select((.body | contains("sonora-triage")) | not)
-              | "- " + (.author.login // "unknown") + ": " + (.body | .[0:4000]) ]
-            | .[-10:] | join("\n\n"))
-         ) }
-     ]
-   }')"
+  '. as $issue |
+   "Labels:\n" + ($vocabulary.labels | tojson) +
+   "\n\nPlatforms:\n" + ($vocabulary.platforms | tojson) +
+   "\n\nPeople:\n" + ($people | tojson) +
+   "\n\nRequired context:\n" + ($vocabulary.required | tojson) +
+   "\n\nIssue #" + ($issue.number | tostring) +
+   " by " + ($issue.author.login // "unknown") +
+   "\nCurrent labels: " + ([$issue.labels[].name] | tojson) +
+   "\n\nTitle: " + $issue.title +
+   "\n\nBody:\n" + (($issue.body // "") | .[0:12000]) +
+   "\n\nComments, oldest first. Context given in one of these counts as given:\n" +
+   ([ $issue.comments[]
+      | select((.body | contains("sonora-triage")) | not)
+      | "- " + (.author.login // "unknown") + ": " + (.body | .[0:4000]) ]
+    | .[-10:] | join("\n\n"))' <<<"$issue_json")"
 
-# Not every OpenAI compatible endpoint takes response_format, so a refusal means asking again
-# without it and leaning on the prompt for the shape.
-answer="$(ask "$request")" || {
-  say "the endpoint refused json mode, asking again without it"
-  answer="$(ask "$(jq 'del(.response_format)' <<<"$request")")"
-}
-
-content="$(jq -r '.choices[0].message.content // empty' <<<"$answer")"
-if [ -z "$content" ]; then
-  say "the model returned nothing usable"
-  jq -c '.' <<<"$answer" >&2
-  exit 1
-fi
-
-# Strip a code fence if the model wrapped the object in one anyway.
-verdict="$(sed -e 's/^```json//' -e 's/^```//' -e 's/```$//' <<<"$content" | jq '.')"
+verdict="$(decide "$(compose "$system" "$user")")"
 
 # Everything the model asked for, intersected with what the config allows and what the
 # repository actually has. This is the whole safety story.
