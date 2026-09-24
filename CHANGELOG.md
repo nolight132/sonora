@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Local Music now imports playlists (`.m3u`, `.m3u8`, `.pls`, `.xspf`, `.zpl`, `.wpl`, `.asx`,
+  `.b4s`) found alongside a scanned folder's tracks.
+
 ## [0.42.1] - 2026-10-02
 
 ### Added

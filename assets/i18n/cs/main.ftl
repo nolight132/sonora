@@ -823,6 +823,12 @@ toast-track-removed = Odebráno z playlistu: { $name }
 toast-playlist-failed = Tuto změnu se nepodařilo uložit
 toast-playlist-busy = Jiná změna ještě probíhá
 toast-playlist-signed-out = Pro změnu playlistů se přihlas
+toast-playlists-import-issue = { $name }
+toast-playlists-unmatched = { $count ->
+    [one] Při importu playlistů nebyla nalezena 1 skladba
+    [few] Při importu playlistů nebyly nalezeny { $count } skladby
+   *[other] Při importu playlistů nebylo nalezeno { $count } skladeb
+}
 toast-queued-track = Do fronty přidáno: { $name }
 toast-next-track = { $name } se přehraje jako další
 toast-last-track = { $name } se přehraje jako poslední
