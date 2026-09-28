@@ -30,6 +30,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Apple Music, Quick picks on Home open on the albums, playlists and songs you played last on
   any device, the same way they do for Spotify and YouTube Music. An album you played a single
   song from shows as that song.
+- Fullscreen can stage the cover four ways: on its own, in a halo of drifting particles, as a
+  record that turns under a slow sheen, or in a sleeve with the record showing at its side.
+  Pick one under Stage in Appearance settings.
 
 ### Changed
 
