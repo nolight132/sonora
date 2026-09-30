@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyView, App, Bounds, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render, ScrollWheelEvent,
-    SharedString, SpringState, Task,
+    AnyView, App, Bounds, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render,
+    ScrollWheelEvent, SharedString, SpringState, Task,
 };
 use gpui::{Window, canvas, deferred, div, phi, px, relative};
 use i18n::t;
@@ -81,6 +81,7 @@ pub struct FullscreenView {
     over_volume: bool,
     over_zone: bool,
     over_panel: bool,
+    volume_pinned: bool,
     over_pill: bool,
     over_transport: bool,
     over_leave: bool,
@@ -133,6 +134,7 @@ impl FullscreenView {
             over_volume: false,
             over_zone: false,
             over_panel: false,
+            volume_pinned: false,
             over_pill: false,
             over_transport: false,
             over_leave: false,
@@ -229,9 +231,11 @@ impl FullscreenView {
     /// while the pointer is over the window: one set when it left stays set, and a stale flag
     /// would keep the controls up for good.
     fn busy(&self, cx: &App) -> bool {
+        let touch_support = self.settings.read(cx).touch_support();
         let parked = self.over_volume
             || self.over_zone
             || self.over_panel
+            || (touch_support && self.volume_pinned)
             || self.over_pill
             || self.over_transport
             || self.over_leave
@@ -307,8 +311,28 @@ impl FullscreenView {
         self.hidden.position.clamp(0., 1.)
     }
 
-    fn volume_open(&self) -> bool {
-        self.over_volume || self.over_zone || self.over_panel || self.volume_held
+    fn volume_open(&self, touch_support: bool) -> bool {
+        self.over_volume
+            || self.over_zone
+            || self.over_panel
+            || (touch_support && self.volume_pinned)
+            || self.volume_held
+    }
+
+    /// Toggles mute for fullscreen playback while retaining the prior level for restore.
+    fn toggle_mute(&mut self, cx: &mut Context<Self>) {
+        let level = self.playback.read(cx).volume();
+        let restore = self.muted.unwrap_or(0.7);
+        let wanted = match level <= 0.001 {
+            true => restore,
+            false => 0.,
+        };
+        self.muted = match wanted {
+            0. => Some(level),
+            _ => None,
+        };
+        self.playback
+            .update(cx, |playback, cx| playback.set_volume(wanted, cx));
     }
 
     fn turn_volume(
@@ -826,8 +850,8 @@ impl FullscreenView {
         let hazy = frosted && ui::blurring(cx);
         let zone = px(VOLUME_ZONE);
         let level = self.playback.read(cx).volume();
+        let touch_support = self.settings.read(cx).touch_support();
         let empty = theme.muted_foreground.opacity(0.3);
-        let restore = self.muted.unwrap_or(0.7);
         let span = theme.metrics.control_small + zone * 2.;
         let bubble = (self.over_panel || self.volume_held).then(|| (level, percent(level)));
 
@@ -849,25 +873,31 @@ impl FullscreenView {
                             .when(frosted, Button::frosted)
                             .small()
                             .icon(volume_icon(level))
-                            .tint(match self.volume_open() {
+                            .tint(match self.volume_open(touch_support) {
                                 true => theme.foreground,
                                 false => theme.muted_foreground,
                             })
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                let wanted = match level <= 0.001 {
-                                    true => restore,
-                                    false => 0.,
-                                };
-                                this.muted = match wanted {
-                                    0. => Some(level),
-                                    _ => None,
-                                };
-                                this.playback
-                                    .update(cx, |playback, cx| playback.set_volume(wanted, cx));
+                            .on_click(cx.listener(|this, event: &ClickEvent, _, cx| {
+                                if event.click_count() != 1 {
+                                    return;
+                                }
+                                match this.settings.read(cx).touch_support() {
+                                    true => {
+                                        this.volume_pinned = !this.volume_pinned;
+                                        this.poke(cx);
+                                        cx.notify();
+                                    }
+                                    false => this.toggle_mute(cx),
+                                }
+                            }))
+                            .on_double_click(cx.listener(|this, _, _, cx| {
+                                if this.settings.read(cx).touch_support() {
+                                    this.toggle_mute(cx);
+                                }
                             })),
                     ),
             )
-            .when(self.volume_open(), |this| {
+            .when(self.volume_open(touch_support), |this| {
                 this.child(deferred(
                     div()
                         .id("fullscreen-volume-zone")
