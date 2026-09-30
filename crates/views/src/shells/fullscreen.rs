@@ -853,7 +853,13 @@ impl FullscreenView {
         let touch_support = self.settings.read(cx).touch_support();
         let empty = theme.muted_foreground.opacity(0.3);
         let span = theme.metrics.control_small + zone * 2.;
-        let bubble = (self.over_panel || self.volume_held).then(|| (level, percent(level)));
+        let volume_open = self.volume_open(touch_support);
+
+        let bubble = if self.over_panel || self.volume_held {
+            Some((level, percent(level)))
+        } else {
+            None
+        };
 
         div()
             .relative()
@@ -864,8 +870,10 @@ impl FullscreenView {
                 div()
                     .id("fullscreen-volume-hover")
                     .on_hover(cx.listener(|this, hovering: &bool, _, cx| {
-                        this.over_volume = *hovering;
-                        cx.notify();
+                        if this.settings.read(cx).touch_support() {
+                            this.over_volume = *hovering;
+                            cx.notify();
+                        }
                     }))
                     .child(
                         Button::new("fullscreen-volume")
@@ -873,21 +881,22 @@ impl FullscreenView {
                             .when(frosted, Button::frosted)
                             .small()
                             .icon(volume_icon(level))
-                            .tint(match self.volume_open(touch_support) {
-                                true => theme.foreground,
-                                false => theme.muted_foreground,
+                            .tint(if volume_open {
+                                theme.foreground
+                            } else {
+                                theme.muted_foreground
                             })
                             .on_click(cx.listener(|this, event: &ClickEvent, _, cx| {
                                 if event.click_count() != 1 {
                                     return;
                                 }
-                                match this.settings.read(cx).touch_support() {
-                                    true => {
-                                        this.volume_pinned = !this.volume_pinned;
-                                        this.poke(cx);
-                                        cx.notify();
-                                    }
-                                    false => this.toggle_mute(cx),
+
+                                if this.settings.read(cx).touch_support() {
+                                    this.volume_pinned = !this.volume_pinned;
+                                    this.poke(cx);
+                                    cx.notify();
+                                } else {
+                                    this.toggle_mute(cx);
                                 }
                             }))
                             .on_double_click(cx.listener(|this, _, _, cx| {
@@ -897,7 +906,7 @@ impl FullscreenView {
                             })),
                     ),
             )
-            .when(self.volume_open(touch_support), |this| {
+            .when(volume_open, |this| {
                 this.child(deferred(
                     div()
                         .id("fullscreen-volume-zone")
@@ -948,7 +957,7 @@ impl FullscreenView {
                                             this.volume_held = true;
                                             this.muted = None;
                                             this.playback.update(cx, |playback, cx| {
-                                                playback.set_volume(level, cx)
+                                                playback.set_volume(level, cx);
                                             });
                                         }))
                                         .on_release(cx.listener(

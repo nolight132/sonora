@@ -1088,9 +1088,8 @@ impl SettingsView {
             small,
             Switch::new("touch-support", enabled)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.settings.update(cx, |settings, cx| {
-                        settings.set_touch_support(!enabled, cx)
-                    });
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_touch_support(!enabled, cx));
                 }))
                 .into_any_element(),
         )
