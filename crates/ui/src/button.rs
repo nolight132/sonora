@@ -17,6 +17,7 @@ const TINT_HOVER: f32 = 0.14;
 const TINT_ACTIVE: f32 = 0.24;
 
 type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+type DoubleClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 enum Variant {
     Ghost,
@@ -45,6 +46,7 @@ pub struct Button {
     tint: Option<Hsla>,
     tooltip: Option<(SharedString, Perch)>,
     on_click: Option<Click>,
+    on_double_click: Option<DoubleClick>,
 }
 
 impl Button {
@@ -68,6 +70,7 @@ impl Button {
             tint: None,
             tooltip: None,
             on_click: None,
+            on_double_click: None,
         }
     }
 
@@ -179,6 +182,16 @@ impl Button {
         self.on_click = Some(Box::new(handler));
         self
     }
+
+    /// Runs `handler` on the second or later click in a consecutive click sequence,
+    /// including a touch double-tap.
+    pub fn on_double_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_double_click = Some(Box::new(handler));
+        self
+    }
 }
 
 impl Styled for Button {
@@ -233,6 +246,7 @@ impl RenderOnce for Button {
             tint,
             tooltip,
             on_click,
+            on_double_click,
         } = self;
 
         let theme = cx.theme();
@@ -378,6 +392,14 @@ impl RenderOnce for Button {
                 this.when_some(on_click, |this, handler| {
                     this.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(move |event, window, cx| handler(event, window, cx))
+                })
+                .when_some(on_double_click, |this, handler| {
+                    this.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(move |event, window, cx| {
+                            if event.click_count() >= 2 {
+                                handler(event, window, cx);
+                            }
+                        })
                 })
             });
 

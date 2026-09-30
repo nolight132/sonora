@@ -347,6 +347,7 @@ struct Appearance {
     /// effect with client-side decorations, since server-side ones are the compositor's call.
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
     window_rounding: String,
+    touch_support: bool,
     window_controls: bool,
     #[cfg(not(target_os = "macos"))]
     traffic_light_controls: bool,
@@ -600,6 +601,7 @@ impl Default for Appearance {
             server_side_decorations: true,
             #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
             window_rounding: Rounding::Square.id().to_owned(),
+            touch_support: false,
             window_controls: true,
             #[cfg(not(target_os = "macos"))]
             traffic_light_controls: false,
@@ -1034,6 +1036,11 @@ impl AppSettings {
 
     pub fn window_controls(&self) -> bool {
         self.values.appearance.window_controls
+    }
+
+    /// Whether touch contacts are translated into click and scroll gestures.
+    pub fn touch_support(&self) -> bool {
+        self.values.appearance.touch_support
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -1673,6 +1680,12 @@ impl AppSettings {
 
     pub fn set_window_controls(&mut self, shown: bool, cx: &mut Context<Self>) {
         self.values.appearance.window_controls = shown;
+        self.schedule_save(cx);
+    }
+
+    /// Enables or disables touch gesture translation on every open window.
+    pub fn set_touch_support(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.appearance.touch_support = enabled;
         self.schedule_save(cx);
     }
 
