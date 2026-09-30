@@ -201,6 +201,7 @@ pub fn init(
         settings.report_broken(cx);
         settings
     });
+    ui::touch_drag(settings.read(cx).touch_support());
     let session =
         cx.new(|cx| Session::new(providers, local_provider, settings.clone(), io.clone(), cx));
     let network = cx.new(|_| Network::new(session.clone(), io.clone()));

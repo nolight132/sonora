@@ -1686,6 +1686,7 @@ impl AppSettings {
     /// Enables or disables touch gesture translation on every open window.
     pub fn set_touch_support(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.values.appearance.touch_support = enabled;
+        ui::touch_drag(enabled);
         self.schedule_save(cx);
     }
 
@@ -2033,6 +2034,9 @@ impl AppSettings {
         }
         if before.reduce_motion != now.reduce_motion || before.motion_pace != now.motion_pace {
             ui::motion::apply(self.stillness(), self.pace(), cx);
+        }
+        if before.touch_support != now.touch_support {
+            ui::touch_drag(now.touch_support);
         }
         cx.refresh_windows();
     }
