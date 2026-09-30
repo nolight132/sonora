@@ -23,6 +23,11 @@ pub fn touch_drag(enabled: bool) {
     TOUCH_DRAG.store(enabled, Ordering::Relaxed);
 }
 
+/// Whether touch-mode drag interactions are on, as relayed by [`touch_drag`].
+pub fn touch_drag_enabled() -> bool {
+    TOUCH_DRAG.load(Ordering::Relaxed)
+}
+
 /// The state of a left-button drag that scrolls the surface under the pointer.
 struct DragScroll {
     bar: Entity<Scrollbar>,
@@ -144,7 +149,7 @@ impl RenderOnce for Scroller {
 pub fn middle_scroll(surface: Stateful<Div>, bar: &Entity<Scrollbar>) -> Stateful<Div> {
     let drag = bar.clone();
     surface
-        .when(TOUCH_DRAG.load(Ordering::Relaxed), |surface| {
+        .when(touch_drag_enabled(), |surface| {
             surface
                 .on_drag(
                     DragScroll {
