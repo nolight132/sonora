@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Scrollable pages, menus and dialogs can now be moved by dragging, so touch-style scrolling works
+  on Linux even when the platform only sends pointer events.
+
 ## [0.42.0] - 2026-09-29
 
 ### Added

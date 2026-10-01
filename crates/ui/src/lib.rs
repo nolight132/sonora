@@ -94,7 +94,10 @@ pub use scrollbar::{
     Scrollbar, cancel_middle_scroll, quantize, release_middle_scroll, scrolled,
     update_middle_scroll,
 };
-pub use scroller::{Scroller, middle_scroll, perch_room, perched, return_to, return_top};
+pub use scroller::{
+    Scroller, middle_scroll, perch_room, perched, return_to, return_top, touch_drag,
+    touch_drag_enabled,
+};
 pub use scrubber::{Scrubber, ScrubberState};
 pub use separator::Separator;
 pub use shield::Shield;

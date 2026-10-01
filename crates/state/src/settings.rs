@@ -347,6 +347,7 @@ struct Appearance {
     /// effect with client-side decorations, since server-side ones are the compositor's call.
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
     window_rounding: String,
+    touch_support: bool,
     window_controls: bool,
     #[cfg(not(target_os = "macos"))]
     traffic_light_controls: bool,
@@ -600,6 +601,7 @@ impl Default for Appearance {
             server_side_decorations: true,
             #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
             window_rounding: Rounding::Square.id().to_owned(),
+            touch_support: false,
             window_controls: true,
             #[cfg(not(target_os = "macos"))]
             traffic_light_controls: false,
@@ -1034,6 +1036,11 @@ impl AppSettings {
 
     pub fn window_controls(&self) -> bool {
         self.values.appearance.window_controls
+    }
+
+    /// Whether touch contacts are translated into click and scroll gestures.
+    pub fn touch_support(&self) -> bool {
+        self.values.appearance.touch_support
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -1676,6 +1683,13 @@ impl AppSettings {
         self.schedule_save(cx);
     }
 
+    /// Enables or disables touch gesture translation on every open window.
+    pub fn set_touch_support(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.values.appearance.touch_support = enabled;
+        ui::touch_drag(enabled);
+        self.schedule_save(cx);
+    }
+
     #[cfg(not(target_os = "macos"))]
     pub fn set_traffic_light_controls(&mut self, traffic_light: bool, cx: &mut Context<Self>) {
         self.values.appearance.traffic_light_controls = traffic_light;
@@ -2020,6 +2034,9 @@ impl AppSettings {
         }
         if before.reduce_motion != now.reduce_motion || before.motion_pace != now.motion_pace {
             ui::motion::apply(self.stillness(), self.pace(), cx);
+        }
+        if before.touch_support != now.touch_support {
+            ui::touch_drag(now.touch_support);
         }
         cx.refresh_windows();
     }

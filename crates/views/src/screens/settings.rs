@@ -129,6 +129,7 @@ enum Slot {
     TrayIcon,
     Accounts,
     LocalFolder,
+    TouchSupport,
     Theme,
     Adaptive,
     Ambient,
@@ -547,6 +548,7 @@ impl SettingsView {
                 Slot::Entries,
                 Slot::Language,
                 Slot::Title("settings-group-window"),
+                Slot::TouchSupport,
                 Slot::Tray,
                 Slot::TrayIcon,
                 Slot::Title("settings-group-accounts"),
@@ -665,6 +667,10 @@ impl SettingsView {
             Slot::Startup => (t!("settings-startup"), t!("settings-startup-detail")),
             Slot::Entries => (t!("settings-entries"), t!("settings-entries-detail")),
             Slot::Language => (t!("settings-language"), t!("settings-language-detail")),
+            Slot::TouchSupport => (
+                t!("settings-touch-support"),
+                t!("settings-touch-support-detail"),
+            ),
             Slot::Tray => (
                 t!("settings-close-to-tray"),
                 t!("settings-close-to-tray-detail"),
@@ -930,6 +936,7 @@ impl SettingsView {
             Slot::Startup => self.startup_row(cx).element,
             Slot::Entries => self.entries_row(cx).element,
             Slot::Language => self.language_row(cx).element,
+            Slot::TouchSupport => self.touch_support_row(cx).element,
             Slot::Tray => self.tray_row(cx).element,
             Slot::TrayIcon => self.tray_icon_row(cx).element,
             Slot::Accounts => self.accounts_row(cx).element,
@@ -1065,6 +1072,26 @@ impl SettingsView {
             muted,
             small,
             picker.into_any_element(),
+        )
+    }
+
+    fn touch_support_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let enabled = self.settings.read(cx).touch_support();
+
+        self.row(
+            t!("settings-touch-support"),
+            t!("settings-touch-support-detail"),
+            muted,
+            small,
+            Switch::new("touch-support", enabled)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_touch_support(!enabled, cx));
+                }))
+                .into_any_element(),
         )
     }
 
