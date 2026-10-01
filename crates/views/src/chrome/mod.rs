@@ -59,6 +59,9 @@ pub(crate) fn cap(min: Pixels, max: Pixels, keep: Pixels, window: &Window) -> Pi
 pub(crate) struct Chrome {
     sidebar_left: Pixels,
     sidebar_right: Pixels,
+    /// The width the left sidebar leaves free for an open right sidebar, counted even while
+    /// the window is too narrow to show it.
+    reserved_right: Pixels,
 }
 
 struct Installed(Entity<Chrome>);
@@ -74,10 +77,11 @@ impl Chrome {
         cx.global::<Installed>().0.clone()
     }
 
-    pub(crate) fn publish(left: Pixels, right: Pixels, cx: &mut App) {
+    pub(crate) fn publish(left: Pixels, right: Pixels, reserved_right: Pixels, cx: &mut App) {
         let next = Self {
             sidebar_left: left,
             sidebar_right: right,
+            reserved_right,
         };
         let chrome = Self::entity(cx);
         chrome.update(cx, |chrome, cx| {
@@ -94,8 +98,8 @@ impl Chrome {
             .unwrap_or_default()
     }
 
-    pub fn sidebar_right(cx: &App) -> Pixels {
-        Self::get(cx).sidebar_right
+    pub fn reserved_right(cx: &App) -> Pixels {
+        Self::get(cx).reserved_right
     }
 
     pub fn content(window: &Window, cx: &App) -> Pixels {

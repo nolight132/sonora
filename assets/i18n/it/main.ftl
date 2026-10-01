@@ -142,16 +142,12 @@ menu-copy = Copia
 menu-paste = Incolla
 menu-select-all = Seleziona tutto
 menu-remove-from-queue = Rimuovi dalla coda
-menu-open-playlist = Apri playlist
-menu-play-playlist = Riproduci playlist
 menu-rename-playlist = Rinomina playlist
 menu-delete-playlist = Elimina playlist
 menu-add-playlist-to-library = Aggiungi alla Libreria
 menu-remove-playlist-from-library = Rimuovi dalla Libreria
 menu-make-playlist-public = Rendi pubblica
 menu-make-playlist-private = Rendi privata
-menu-open-album = Apri album
-menu-play-album = Riproduci album
 menu-play-artist = Riproduci artista
 
 # playlist editor
@@ -255,7 +251,7 @@ login-signed-in = Connesso come { $name }
 login-failed-title = Accesso non riuscito
 login-problem-region = Spotify non aprirà una sessione dal paese in cui ti trovi. Accedi dal tuo paese di residenza o cambia il paese sul tuo account Spotify.
 login-problem-credentials = La tua sessione Spotify salvata non è più valida. Accedi di nuovo per continuare.
-login-problem-network = Sonora non è riuscita a raggiungere Spotify. Controlla la connessione internet e riprova.
+login-problem-network = Sonora non è riuscita a raggiungere il servizio musicale. Controlla la connessione internet e riprova.
 login-problem-cancelled = Hai chiuso la pagina del browser prima di approvare l'accesso. Ricomincia per completare.
 login-problem-refused = Spotify ha rifiutato l'accesso. Attendi un momento e riprova.
 login-problem-premium = Sonora trasmette tramite Spotify Premium e questo account non lo possiede. Accedi con un account Premium per continuare.
@@ -285,7 +281,6 @@ login-account-title = Scegli un account
 login-account-detail = Questa sessione ha effettuato l'accesso a più di un account Google. Scegli quello che Sonora deve usare.
 
 # album and playlist pages
-detail-album = Album
 detail-playlist = Playlist
 detail-play-album = Riproduci album
 detail-play-playlist = Riproduci playlist
@@ -293,7 +288,6 @@ detail-play-playlist = Riproduci playlist
 # play button
 play-pause = Pausa
 play-resume = Riprendi
-play-loading = Caricamento…
 play-shuffle = Casuale
 
 # artist page
@@ -453,7 +447,7 @@ settings-theme-detail = Scegli la palette di colori dell'applicazione
 settings-opacity = Opacità
 settings-opacity-detail = Regola l'opacità dello sfondo dell'app
 settings-opacity-value = { $percent }%
-settings-theme-config = Apri configurazione
+settings-theme-folder = Apri configurazione
 settings-adaptive = Tema adattivo
 settings-adaptive-detail = Colora la palette con la copertina dell'album in riproduzione
 settings-visualizer = Visualizzatore

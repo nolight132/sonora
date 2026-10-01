@@ -4,16 +4,18 @@ use gpui::{
     WeakEntity, Window, div, px,
 };
 
+use std::rc::Rc;
+
 use i18n::t;
-use music::{Album, Playlist, Track};
+use music::{Album, Playlist, ReleaseType, Track};
 use router::{Destination, navigate};
 use state::{AppSettings, Collection, Detail, LibraryEvent, Origin, Playback, Sonora};
 use ui::{
     ActiveTheme as _, Button, InlineLink, InlineLinks, Menu, Picker, Popovers, Popup, SortAxis,
 };
 use ui::{
-    ColumnSpec, FilterChange, Listing as _, MIN_CONTENT, Pin, PinKind, Scrollbar, Scroller,
-    TableDelegate, TableEvent, TableState, Toggle, clock, table,
+    ColumnSpec, FilterChange, Listing as _, MIN_CONTENT, Pending, Pin, PinKind, Scrollbar,
+    Scroller, TableDelegate, TableEvent, TableState, Text, Toggle, runtime, table,
 };
 
 use crate::shared::menus::{album_menu, playlist_menu};
@@ -21,8 +23,13 @@ use crate::shared::trouble;
 
 use crate::chrome::tools::{self, Sliders};
 use crate::chrome::{Chrome, Searchable, Toolbar, Tooled};
+use crate::shared::album_grid::CardGrid;
+use crate::shared::cards;
 use crate::shared::confirm::Confirm;
-use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero, release_date_label};
+use crate::shared::hero::{
+    HeroMetaStrip, HeroPlayButton, PageHero, copyright_notices, release_date_label,
+};
+use crate::shared::shelves::{Rail, RailSpec};
 use crate::shared::tracks::{
     PlaybackStatus, TrackField, TrackSource, Tracks, drop_picked, playback_status, playlist_columns,
 };
@@ -35,6 +42,29 @@ enum Saveable {
     Playlist(Playlist),
 }
 
+/// Which list the recommendation rail shows: releases, or artists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RailTab {
+    Albums,
+    Artists,
+}
+
+impl RailTab {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Albums => "rail-tab-albums",
+            Self::Artists => "rail-tab-artists",
+        }
+    }
+
+    fn label(self) -> SharedString {
+        match self {
+            Self::Albums => t!("album-tab-albums"),
+            Self::Artists => t!("album-tab-artists"),
+        }
+    }
+}
+
 struct DetailTracks(Entity<Detail>);
 
 impl Tracks for DetailTracks {
@@ -44,6 +74,21 @@ impl Tracks for DetailTracks {
 
     fn is_loading(&self, cx: &App) -> bool {
         self.0.read(cx).is_loading()
+    }
+
+    /// As many rows as the header says the album or playlist holds, or a screenful when the
+    /// page opened without a header or with a provider that reports no count.
+    fn pending(&self, cx: &App) -> Option<Pending> {
+        let detail = self.0.read(cx);
+        if !detail.is_loading() {
+            return None;
+        }
+        Some(
+            match detail.header().map_or(0, |header| header.track_count) {
+                0 => Pending::Screen,
+                count => Pending::Rows(count as usize),
+            },
+        )
     }
 }
 
@@ -63,6 +108,10 @@ pub(crate) struct DetailView {
     popovers: Popovers,
     sliders: Sliders,
     me: WeakEntity<Self>,
+    /// The recommendation rail under the table.
+    rails: Vec<Rail>,
+    /// Which list the recommendation rail shows.
+    rail_tab: RailTab,
 }
 
 impl DetailView {
@@ -128,6 +177,8 @@ impl DetailView {
             let shown = detail.read(cx).id().map(str::to_owned);
             if this.shown != shown {
                 this.shown = shown;
+                this.rails.clear();
+                this.rail_tab = RailTab::Albums;
                 this.scrollbar
                     .read(cx)
                     .scroll()
@@ -219,6 +270,8 @@ impl DetailView {
             popovers: Popovers::default(),
             sliders: Sliders::default(),
             me: me.downgrade(),
+            rails: Vec::new(),
+            rail_tab: RailTab::Albums,
         };
         view.restore_filters(cx);
         view
@@ -296,6 +349,9 @@ impl DetailView {
         let kind = header
             .map(|header| header.kind)
             .unwrap_or(Collection::Album);
+        let release = header
+            .and_then(|header| header.release)
+            .unwrap_or(ReleaseType::Album);
         let title = header
             .map(|header| SharedString::from(header.title.clone()))
             .unwrap_or_default();
@@ -311,7 +367,10 @@ impl DetailView {
         let duration: std::time::Duration = listed.iter().map(|track| track.duration).sum();
         let (eyebrow, label) = match kind {
             Collection::Playlist => (t!("detail-playlist"), t!("detail-play-playlist")),
-            Collection::Album => (t!("detail-album"), t!("detail-play-album")),
+            Collection::Album => (
+                i18n::lookup(cards::release_key(release), None),
+                t!("detail-play-album"),
+            ),
         };
 
         let mut strip = HeroMetaStrip::new();
@@ -345,7 +404,7 @@ impl DetailView {
             strip = strip.text(t!("count-songs", count = track_count));
         }
         if !duration.is_zero() {
-            strip = strip.text(clock(duration));
+            strip = strip.text(runtime(duration));
         }
 
         let overflow = self.menu(cx).map(|menu| {
@@ -456,6 +515,149 @@ impl DetailView {
         )
     }
 
+    /// The recommendation rail under the table, on album pages only: related releases
+    /// under the albums tab, similar artists under the artists tab. The tabs show while
+    /// both lists hold something. A rail still on its way reads as skeletons only while
+    /// nothing of it is up.
+    fn recommended(
+        &self,
+        window: &Window,
+        notify: &Rc<dyn Fn(&mut App)>,
+        cx: &mut App,
+    ) -> Vec<AnyElement> {
+        let grid = CardGrid::layout(self.width - cx.theme().metrics.inset * 2.);
+        let card = grid.card;
+        let columns = grid.columns.max(1);
+        let detail = self.detail.read(cx);
+        if detail.album().is_none() {
+            return Vec::new();
+        }
+        let filling = detail.is_filling();
+        let albums = detail.also_like().len();
+        let artists = detail.similar().len();
+        if albums == 0 && artists == 0 {
+            return match filling {
+                true => vec![Rail::pending(
+                    t!("album-also-like"),
+                    card,
+                    columns,
+                    window,
+                    cx,
+                )],
+                false => Vec::new(),
+            };
+        }
+        // A tab without a list behind it is not one the page can be on.
+        let tab = match self.rail_tab {
+            RailTab::Albums if albums == 0 => RailTab::Artists,
+            RailTab::Artists if artists == 0 => RailTab::Albums,
+            tab => tab,
+        };
+
+        let opened = self.me.clone();
+        let tabs = match albums > 0 && artists > 0 {
+            false => None,
+            true => {
+                let opened = opened.clone();
+                Some(
+                    div()
+                        .flex()
+                        .gap_1()
+                        .children([RailTab::Albums, RailTab::Artists].into_iter().map(|tab| {
+                            let opened = opened.clone();
+                            Button::new(tab.id())
+                                .label(tab.label())
+                                .small()
+                                .outline()
+                                .selected(tab == self.rail_tab)
+                                .on_click(move |_, _, cx| {
+                                    opened
+                                        .update(cx, |this, cx| {
+                                            if this.rail_tab == tab {
+                                                return;
+                                            }
+                                            this.rail_tab = tab;
+                                            for rail in &this.rails {
+                                                rail.rewind();
+                                            }
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                })
+                        }))
+                        .into_any_element(),
+                )
+            }
+        };
+        vec![self.rails[0].render(
+            RailSpec {
+                tag: "detail-also-like",
+                place: 0,
+                title: t!("album-also-like"),
+                count: match tab {
+                    RailTab::Albums => albums,
+                    RailTab::Artists => artists,
+                },
+                tile: card,
+                columns,
+                tabs,
+            },
+            window,
+            cx,
+            notify,
+            move |position, _, cx| {
+                let Some(view) = opened.upgrade() else {
+                    return div().into_any_element();
+                };
+                let held = view.read(cx);
+                let detail = held.detail.read(cx);
+                match tab {
+                    RailTab::Albums => {
+                        let Some(album) = detail.also_like().get(position) else {
+                            return div().into_any_element();
+                        };
+                        cards::album_card(("detail-also-like", position), album, &held.playback, cx)
+                            .tile(card)
+                            .flat()
+                            .into_any_element()
+                    }
+                    RailTab::Artists => {
+                        let Some(artist) = detail.similar().get(position) else {
+                            return div().into_any_element();
+                        };
+                        cards::artist_card(("detail-similar", position), artist, &held.playback, cx)
+                            .tile(card)
+                            .flat()
+                            .into_any_element()
+                    }
+                }
+            },
+        )]
+    }
+
+    /// The album's copyright and label lines under the table, or nothing on a playlist and on
+    /// an album whose provider names neither.
+    fn notices(&self, cx: &App) -> Option<AnyElement> {
+        let theme = cx.theme();
+        let notices = copyright_notices(self.detail.read(cx).album()?);
+        if notices.is_empty() {
+            return None;
+        }
+        Some(
+            div()
+                .px(theme.metrics.pad * 2.)
+                .pt_2()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .min_w_0()
+                .text_size(theme.text(Text::Tiny))
+                .text_color(theme.muted_foreground)
+                .children(notices)
+                .into_any_element(),
+        )
+    }
+
     fn menu(&self, cx: &App) -> Option<Menu> {
         let detail = self.detail.read(cx);
         let id = detail.id()?.to_owned();
@@ -463,12 +665,13 @@ impl DetailView {
 
         Some(match header.kind {
             Collection::Album => {
-                album_menu(detail.album()?.clone(), self.playback.clone(), true, cx)
+                let menus = self.table.read(cx).delegate().source().menu();
+                album_menu(detail.album()?.clone(), self.playback.clone(), menus, cx)
             }
             Collection::Playlist => {
                 let saved = Sonora::global(cx).library.read(cx).playlist(&id).cloned();
                 let playlist = saved.or_else(|| detail.playlist().cloned())?;
-                playlist_menu(playlist, self.playback.clone(), true, cx)
+                playlist_menu(playlist, self.playback.clone(), cx)
             }
         })
     }
@@ -503,6 +706,18 @@ impl Render for DetailView {
             )
         });
 
+        while self.rails.is_empty() {
+            self.rails.push(Rail::new(cx.entity_id()));
+        }
+        for rail in &self.rails {
+            rail.sync();
+        }
+        let weak = cx.entity().downgrade();
+        let notify: Rc<dyn Fn(&mut App)> = Rc::new(move |cx: &mut App| {
+            weak.update(cx, |_, cx| cx.notify()).ok();
+        });
+        let rails = self.recommended(window, &notify, cx);
+
         div()
             .relative()
             .size_full()
@@ -511,7 +726,9 @@ impl Render for DetailView {
                     .pt(inset)
                     .pb(inset)
                     .child(div().px(inset).child(self.header(cx)))
-                    .child(table(&self.table)),
+                    .child(table(&self.table))
+                    .children(self.notices(cx))
+                    .child(div().px(inset).pt_10().children(rails)),
             )
             .when_some(context_menu, |this, menu| this.child(menu))
     }

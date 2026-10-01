@@ -1,22 +1,30 @@
 use std::ffi::c_void;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
 use gpui::{App, AppContext as _, Context, Entity, Global, Task};
 use music::Track;
-use souvlaki::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
-    SeekDirection,
-};
 use tokio::sync::mpsc;
 
-use crate::{Cover, Io, Playback, PlaybackState, Sonora, join};
+use crate::{Cover, Io, Playback, PlaybackState, Queue, Repeat, Sonora, join};
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+mod mpris;
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+mod souvlaki;
+
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+use self::souvlaki::Controls;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use mpris::Controls;
 
 const BUS_NAME: &str = "sonora";
 const DISPLAY_NAME: &str = "Sonora";
-const SEEK_STEP: Duration = Duration::from_secs(5);
+/// How far the position may stray from where steady playback would have put it before the
+/// widget is told the track was seeked.
+const SEEK_SLACK: Duration = Duration::from_secs(2);
 const ARTWORK: &str = "artwork";
 
 struct Attached {
@@ -25,61 +33,81 @@ struct Attached {
 
 impl Global for Attached {}
 
+/// A request from the desktop's media widget or media keys, in the terms `Playback` and
+/// `Queue` understand.
+enum Command {
+    Play,
+    Pause,
+    Toggle,
+    Next,
+    Previous,
+    Seek(Duration),
+    Forward(Duration),
+    Back(Duration),
+    Volume(f64),
+    /// Only MPRIS carries shuffle and repeat, souvlaki has neither.
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    Shuffle(bool),
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    Repeat(Repeat),
+}
+
+/// Publishes what plays to the system media controls and carries their requests back. The
+/// window handle is only read on Windows, where the controls hang off the window.
 pub fn attach(hwnd: Option<*mut c_void>, cx: &mut App) {
     if cx.has_global::<Attached>() {
         return;
     }
-    let config = PlatformConfig {
-        dbus_name: BUS_NAME,
-        display_name: DISPLAY_NAME,
-        hwnd,
-    };
-    let controls = match MediaControls::new(config) {
+    let (sender, receiver) = mpsc::unbounded_channel();
+    let controls = match Controls::new(hwnd, sender, cx) {
         Ok(controls) => controls,
         Err(error) => {
-            return log::warn!("remote: cannot reach the system media controls: {error:?}");
+            return log::warn!("remote: cannot reach the system media controls: {error:#}");
         }
     };
 
     let sonora = Sonora::global(cx);
     let playback = sonora.playback.clone();
+    let queue = sonora.queue.clone();
     let cover = sonora.cover.clone();
     let io = Io::global(cx);
-    let remote = cx.new(|cx| Remote::new(controls, playback, cover, io, cx));
+    let remote = cx.new(|cx| Remote::new(controls, receiver, playback, queue, cover, io, cx));
+    remote.update(cx, |remote, cx| remote.publish(cx));
     cx.set_global(Attached { _remote: remote });
 }
 
 pub struct Remote {
-    controls: MediaControls,
+    controls: Controls,
     playback: Entity<Playback>,
+    queue: Entity<Queue>,
     cover: Entity<Cover>,
     io: Io,
     shown: Option<String>,
     source: Option<String>,
     reported: Option<PlaybackState>,
     at: Duration,
+    /// When `at` was published, so the next position can be checked against steady playback.
+    stamp: Instant,
+    volume: Option<f32>,
+    shuffle: Option<bool>,
+    repeat: Option<Repeat>,
     artwork: Option<Task<()>>,
     _events: Task<()>,
 }
 
 impl Remote {
     fn new(
-        mut controls: MediaControls,
+        controls: Controls,
+        mut receiver: mpsc::UnboundedReceiver<Command>,
         playback: Entity<Playback>,
+        queue: Entity<Queue>,
         cover: Entity<Cover>,
         io: Io,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        if let Err(error) = controls.attach(move |event| {
-            sender.send(event).ok();
-        }) {
-            log::warn!("remote: cannot listen for media keys: {error:?}");
-        }
-
         let _events = cx.spawn(async move |this, cx| {
-            while let Some(event) = receiver.recv().await {
-                if this.update(cx, |this, cx| this.act(event, cx)).is_err() {
+            while let Some(command) = receiver.recv().await {
+                if this.update(cx, |this, cx| this.act(command, cx)).is_err() {
                     break;
                 }
             }
@@ -87,39 +115,52 @@ impl Remote {
 
         cx.observe(&playback, |this, _, cx| this.publish(cx))
             .detach();
+        cx.observe(&queue, |this, _, cx| this.publish(cx)).detach();
         // the album art resolves after the track it belongs to, so republish when it lands
         cx.observe(&cover, |this, _, cx| this.publish(cx)).detach();
 
         Self {
             controls,
             playback,
+            queue,
             cover,
             io,
             shown: None,
             source: None,
             reported: None,
             at: Duration::ZERO,
+            stamp: Instant::now(),
+            volume: None,
+            shuffle: None,
+            repeat: None,
             artwork: None,
             _events,
         }
     }
 
-    fn act(&mut self, event: MediaControlEvent, cx: &mut Context<Self>) {
+    fn act(&mut self, command: Command, cx: &mut Context<Self>) {
         self.playback
             .clone()
-            .update(cx, |playback, cx| match event {
-                MediaControlEvent::Play => playback.resume(cx),
-                MediaControlEvent::Pause | MediaControlEvent::Stop => playback.pause(cx),
-                MediaControlEvent::Toggle => playback.toggle_play(cx),
-                MediaControlEvent::Next => playback.next(cx),
-                MediaControlEvent::Previous => playback.previous(cx),
-                MediaControlEvent::SetPosition(MediaPosition(at)) => playback.seek(at, cx),
-                MediaControlEvent::Seek(direction) => shift(playback, direction, SEEK_STEP, cx),
-                MediaControlEvent::SeekBy(direction, step) => shift(playback, direction, step, cx),
-                MediaControlEvent::SetVolume(level) => playback.set_volume(level as f32, cx),
-                MediaControlEvent::OpenUri(_)
-                | MediaControlEvent::Raise
-                | MediaControlEvent::Quit => {}
+            .update(cx, |playback, cx| match command {
+                Command::Play => playback.resume(cx),
+                Command::Pause => playback.pause(cx),
+                Command::Toggle => playback.toggle_play(cx),
+                Command::Next => playback.next(cx),
+                Command::Previous => playback.previous(cx),
+                Command::Seek(at) => playback.seek(at, cx),
+                Command::Forward(step) => {
+                    shift(playback, playback.position().saturating_add(step), cx)
+                }
+                Command::Back(step) => {
+                    shift(playback, playback.position().saturating_sub(step), cx)
+                }
+                Command::Volume(level) => playback.set_volume(level as f32, cx),
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                Command::Repeat(repeat) => playback.set_repeat(repeat, cx),
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                Command::Shuffle(on) => {
+                    self.queue.update(cx, |queue, cx| queue.set_shuffle(on, cx))
+                }
             });
     }
 
@@ -128,6 +169,22 @@ impl Remote {
         let state = playback.state().clone();
         let at = playback.position();
         let track = playback.track().cloned();
+        let volume = playback.volume();
+        let repeat = playback.repeat();
+        let shuffle = self.queue.read(cx).shuffle();
+
+        if self.volume != Some(volume) {
+            self.volume = Some(volume);
+            self.controls.set_volume(volume.into());
+        }
+        if self.shuffle != Some(shuffle) {
+            self.shuffle = Some(shuffle);
+            self.controls.set_shuffle(shuffle);
+        }
+        if self.repeat != Some(repeat) {
+            self.repeat = Some(repeat);
+            self.controls.set_repeat(repeat);
+        }
 
         let id = track.as_ref().and_then(|track| track.id.clone());
         let cover = track.as_ref().and_then(|track| self.artwork_url(track, cx));
@@ -142,7 +199,9 @@ impl Remote {
                 // track already on show leaves the published thumbnail up until the file lands
                 (false, true) => {}
                 // anything else is a file already
-                _ => self.describe(track.as_ref(), cover.as_deref().filter(|_| !remote)),
+                _ => self
+                    .controls
+                    .describe(track.as_ref(), cover.as_deref().filter(|_| !remote)),
             }
             if let (Some(track), Some(url), true) = (track, cover, remote) {
                 self.artwork = Some(self.fetch_artwork(track, url, cx));
@@ -152,17 +211,18 @@ impl Remote {
         if self.reported.as_ref() == Some(&state) && self.at.as_secs() == at.as_secs() {
             return;
         }
+        let expected = match self.reported {
+            Some(PlaybackState::Playing) => self.at.saturating_add(self.stamp.elapsed()),
+            _ => self.at,
+        };
+        let jumped = !moved && at.abs_diff(expected) > SEEK_SLACK;
         self.reported = Some(state.clone());
         self.at = at;
+        self.stamp = Instant::now();
 
-        let progress = Some(MediaPosition(at));
-        let reported = match state {
-            PlaybackState::Playing | PlaybackState::Loading => MediaPlayback::Playing { progress },
-            PlaybackState::Paused => MediaPlayback::Paused { progress },
-            PlaybackState::Idle | PlaybackState::Failed(_) => MediaPlayback::Stopped,
-        };
-        if let Err(error) = self.controls.set_playback(reported) {
-            log::warn!("remote: cannot publish playback state: {error:?}");
+        self.controls.set_playback(&state, at);
+        if jumped {
+            self.controls.seeked(at);
         }
     }
 }
@@ -180,22 +240,6 @@ impl Remote {
             .or_else(|| track.cover.clone())
     }
 
-    fn describe(&mut self, track: Option<&Track>, cover: Option<&str>) {
-        let metadata = match track {
-            Some(track) => MediaMetadata {
-                title: Some(&track.name),
-                artist: Some(&track.artists),
-                album: Some(&track.album),
-                duration: Some(track.duration),
-                cover_url: cover,
-            },
-            None => MediaMetadata::default(),
-        };
-        if let Err(error) = self.controls.set_metadata(metadata) {
-            log::warn!("remote: cannot publish the current track: {error:?}");
-        }
-    }
-
     /// Brings a remote cover into the cache and republishes the track with the file. The
     /// platform widget would otherwise download it itself, on its own thread, and on macOS a
     /// download that fails there takes the process down.
@@ -209,7 +253,8 @@ impl Remote {
             };
             this.update(cx, |this, _| {
                 if this.shown == track.id {
-                    this.describe(Some(&track), Some(&format!("file://{}", path.display())));
+                    let cover = format!("file://{}", path.display());
+                    this.controls.describe(Some(&track), Some(&cover));
                 }
             })
             .ok();
@@ -263,17 +308,8 @@ fn extension(format: image::ImageFormat) -> &'static str {
     format.extensions_str().first().copied().unwrap_or("img")
 }
 
-fn shift(
-    playback: &mut Playback,
-    direction: SeekDirection,
-    step: Duration,
-    cx: &mut Context<Playback>,
-) {
-    let at = playback.position();
-    let target = match direction {
-        SeekDirection::Forward => at.saturating_add(step),
-        SeekDirection::Backward => at.saturating_sub(step),
-    };
+/// Seeks to `target`, held inside the current track.
+fn shift(playback: &mut Playback, target: Duration, cx: &mut Context<Playback>) {
     let end = playback
         .track()
         .map(|track| track.duration)

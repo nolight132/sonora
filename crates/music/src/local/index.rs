@@ -6,17 +6,14 @@ use rusqlite::{Connection, params};
 use storage::Cache;
 
 use super::scan::{Look, Reading};
-use crate::Track;
+use super::wire::Tagged;
 
-/// What the last scan learned about one file: when it was last written, how big it was, and the
-/// track its tags produced. A file whose time and size both match is not opened again.
+/// What the last scan learned about one file: when it was last written, how big it was, and what
+/// its tags produced. A file whose time and size both match is not opened again.
 pub struct Known {
     pub mtime: i64,
     pub size: u64,
-    pub track: Track,
-    pub album_artist: String,
-    /// The year the tag carried, which is what an album is dated by.
-    pub year: Option<i32>,
+    pub tagged: Tagged,
 }
 
 /// What the last scan learned about one folder. `portrait` is what `wire::artist_cover` answered
@@ -160,7 +157,7 @@ impl Index {
         // Reading the rows is quick; turning ten thousand of them back into tracks is not, and
         // it is the whole cost of a scan that changed nothing. So it goes over threads.
         let raw: Vec<(String, String, i64, i64, String)> = rows.filter_map(Result::ok).collect();
-        for (path, parent, mtime, size, track, album_artist, year) in parse(raw) {
+        for (path, parent, mtime, size, tagged) in parse(raw) {
             let path = PathBuf::from(path);
             remembered
                 .children
@@ -168,14 +165,15 @@ impl Index {
                 .or_default()
                 .files
                 .push(path.clone());
+            let Some(tagged) = tagged else {
+                continue;
+            };
             remembered.files.insert(
                 path,
                 Known {
                     mtime,
                     size: size as u64,
-                    track,
-                    album_artist,
-                    year,
+                    tagged,
                 },
             );
         }
@@ -259,9 +257,7 @@ impl Changes {
                 Known {
                     mtime: reading.mtime,
                     size: reading.size,
-                    track: reading.track.clone(),
-                    album_artist: reading.album_artist.clone(),
-                    year: reading.year,
+                    tagged: reading.tagged.clone(),
                 },
             ));
         }
@@ -311,13 +307,14 @@ fn forget_rows(connection: &Connection, table: &str, paths: &[PathBuf]) -> Resul
     Ok(())
 }
 
+/// Records each file as what its tags produced. A row in any other shape fails to parse on the next
+/// scan and its file is read again.
 fn write_files(connection: &Connection, files: &[(PathBuf, Known)]) -> Result<()> {
     let mut insert = connection
         .prepare("INSERT OR REPLACE INTO local_files (path, parent, mtime, size, track) VALUES (?, ?, ?, ?, ?)")
         .context("cannot record a file")?;
     for (path, known) in files {
-        let Ok(track) = serde_json::to_string(&(&known.track, &known.album_artist, known.year))
-        else {
+        let Ok(track) = serde_json::to_string(&known.tagged) else {
             continue;
         };
         insert
@@ -354,8 +351,8 @@ fn write_folders(connection: &Connection, folders: &[(PathBuf, Seen)]) -> Result
 }
 
 /// Turns the stored tracks back into models, a chunk of rows to a thread. A row that no longer
-/// parses is dropped, which costs one file read on the next scan and nothing else.
-type Parsed = (String, String, i64, i64, Track, String, Option<i32>);
+/// parses keeps its path with no tags, so its folder still lists it and the file is read again.
+type Parsed = (String, String, i64, i64, Option<Tagged>);
 
 fn parse(rows: Vec<(String, String, i64, i64, String)>) -> Vec<Parsed> {
     let threads = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
@@ -368,18 +365,9 @@ fn parse(rows: Vec<(String, String, i64, i64, String)>) -> Vec<Parsed> {
                 scope.spawn(|| {
                     chunk
                         .iter()
-                        .filter_map(|(path, parent, mtime, size, track)| {
-                            let (track, album_artist, year) =
-                                serde_json::from_str::<(Track, String, Option<i32>)>(track).ok()?;
-                            Some((
-                                path.clone(),
-                                parent.clone(),
-                                *mtime,
-                                *size,
-                                track,
-                                album_artist,
-                                year,
-                            ))
+                        .map(|(path, parent, mtime, size, track)| {
+                            let tagged = serde_json::from_str::<Tagged>(track).ok();
+                            (path.clone(), parent.clone(), *mtime, *size, tagged)
                         })
                         .collect::<Vec<_>>()
                 })

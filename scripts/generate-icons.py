@@ -167,6 +167,18 @@ def squircle_svg(master, pixels):
     )
 
 
+def readme_svg(master):
+    """Draws the squircle edge to edge in the master's own viewBox, without the macOS margin."""
+    path = squircle(master.span, master.span * SQUIRCLE_RADIUS, SQUIRCLE_SMOOTHING)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{master.span:g}"'
+        f' height="{master.span:g}" viewBox="0 0 {master.span:g} {master.span:g}">\n'
+        f'  <path d="{path}" fill="{master.background}"/>\n'
+        f"{master.glyph(master.stroke)}\n"
+        f"</svg>\n"
+    )
+
+
 def template_svg(master):
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{master.span:g}"'
@@ -250,6 +262,10 @@ def main():
         scalable.parent.mkdir(parents=True, exist_ok=True)
         scalable.write_text(round_svg(master, 512), encoding="utf-8")
 
+        (ROOT / ".github" / "readme-icon.svg").write_text(
+            readme_svg(master), encoding="utf-8"
+        )
+
         for pixels in LINUX_SIZES:
             blob = rasterize(round_svg(master, pixels), pixels, workdir, f"l{pixels}")
             target = (
@@ -296,7 +312,7 @@ def main():
 
     print(
         f"icons: {len(LINUX_SIZES)} linux png, 1 linux svg, 1 icns, 1 ico,"
-        f" {len(TRAY_SIZES) + 1} tray png"
+        f" {len(TRAY_SIZES) + 1} tray png, 1 readme svg"
     )
 
 

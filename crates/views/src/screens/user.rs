@@ -1,18 +1,16 @@
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, Context, Entity, Pixels, Point, Render, ScrollHandle, SharedString, Window, div, px,
+    AnyElement, Context, Entity, Pixels, Render, ScrollHandle, SharedString, Window, div, px,
 };
 use i18n::t;
-use music::Playlist;
 use state::{Playback, Profile};
-use ui::{ActiveTheme as _, Card, Popup, Scrollbar, Scroller, heading, vacant};
+use ui::{ActiveTheme as _, Card, Scrollbar, Scroller, heading, vacant};
 
 use crate::chrome::Chrome;
 use crate::shared::album_grid::CardGrid;
 use crate::shared::cards;
 use crate::shared::cells;
 use crate::shared::hero::{HeroMetaStrip, PageHero};
-use crate::shared::menus::playlist_menu;
 use crate::shared::trouble;
 
 const FALLBACK: &str = "icons/user.svg";
@@ -24,7 +22,6 @@ pub(crate) struct UserView {
     playback: Entity<Playback>,
     scrollbar: Entity<Scrollbar>,
     width: Pixels,
-    context_menu: Option<(Playlist, Point<Pixels>)>,
 }
 
 impl UserView {
@@ -36,7 +33,6 @@ impl UserView {
         let id = cx.entity_id();
 
         cx.observe(&profile, |this, _, cx| {
-            this.context_menu = None;
             this.scrollbar
                 .read(cx)
                 .scroll()
@@ -54,7 +50,6 @@ impl UserView {
             playback,
             scrollbar: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(id)),
             width: Pixels::ZERO,
-            context_menu: None,
         }
     }
 
@@ -102,20 +97,9 @@ impl UserView {
                 .iter()
                 .enumerate()
                 .map(|(place, playlist)| {
-                    let view = cx.entity().downgrade();
-                    let opened = playlist.clone();
                     cards::playlist_card(("user-playlist", place), playlist, &self.playback, cx)
                         .tile(layout.card)
                         .flat()
-                        .menu(move |event, _, cx| {
-                            let Some(view) = view.upgrade() else {
-                                return;
-                            };
-                            view.update(cx, |this, cx| {
-                                this.context_menu = Some((opened.clone(), event.position));
-                                cx.notify();
-                            });
-                        })
                         .into_any_element()
                 })
                 .collect::<Vec<_>>(),
@@ -184,28 +168,15 @@ impl Render for UserView {
             self.width = room;
         }
 
-        let context_menu = self.context_menu.clone().map(|(playlist, position)| {
-            let menu = playlist_menu(playlist, self.playback.clone(), false, cx);
-            Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
-                this.context_menu = None;
-                cx.notify();
-            }))
-        });
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .when_some(context_menu, |this, menu| this.child(menu))
-            .child(
-                Scroller::new("user-page", &self.scrollbar).p(pad).child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_8()
-                        .child(self.header(cx))
-                        .child(self.playlists(cx)),
-                ),
-            )
+        div().flex().flex_col().size_full().child(
+            Scroller::new("user-page", &self.scrollbar).p(pad).child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_8()
+                    .child(self.header(cx))
+                    .child(self.playlists(cx)),
+            ),
+        )
     }
 }

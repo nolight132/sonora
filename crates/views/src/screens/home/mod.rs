@@ -72,7 +72,7 @@ impl HomeView {
         let library = Sonora::global(cx).library.clone();
         cx.observe(&library, |_, _, cx| cx.notify()).detach();
 
-        let shelves = cx.new(|cx| Shelves::new("home-shelf", me, playback.clone(), cx));
+        let shelves = cx.new(|_| Shelves::new("home-shelf", me, playback.clone()));
         cx.observe(&shelves, |_, _, cx| cx.notify()).detach();
 
         let current_playback = playback_status(&playback, cx);

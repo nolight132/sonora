@@ -2,13 +2,13 @@ use gpui::prelude::*;
 use gpui::{App, Context, Entity, FocusHandle, Global, Render, Window, div};
 use i18n::t;
 use music::Playlist;
-use state::{Shelf, Sonora};
+use state::{Addition, Shelf, Sonora};
 use ui::{ActiveTheme as _, Button, Modal};
 use ui::{Dismiss, FORM_CONTEXT, Input, Submit};
 
 #[derive(Clone)]
 pub(crate) enum Edit {
-    Create { tracks: Vec<String>, shelf: Shelf },
+    Create { addition: Addition, shelf: Shelf },
     Rename(Playlist),
     Delete(Playlist),
     Again { playlist: Playlist, track: String },
@@ -78,9 +78,9 @@ impl PlaylistEditor {
         let library = Sonora::global(cx).library.clone();
 
         match edit {
-            Edit::Create { tracks, shelf } if !name.is_empty() => {
+            Edit::Create { addition, shelf } if !name.is_empty() => {
                 library.update(cx, |library, cx| {
-                    library.create_playlist(name, tracks, shelf, cx);
+                    library.create_playlist(name, addition, shelf, cx);
                 })
             }
             Edit::Rename(playlist) if !name.is_empty() && name != playlist.name => {

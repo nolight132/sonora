@@ -10,7 +10,7 @@ use ui::rank::{HANDY, NICE, SPARE, USEFUL};
 use ui::{Cell, ColumnSpec, Menu, Pin, TableSource, Width};
 
 use crate::shared::cells::{self, DATE, NUMBER, TRAILING, YEAR};
-use crate::shared::menus::album_menu;
+use crate::shared::menus::{ItemMenu, album_menu};
 use crate::shared::pins::Pinned as _;
 use crate::shared::text::{folded, holds};
 use crate::shared::tracks::initial;
@@ -91,6 +91,8 @@ pub(super) const COLUMNS: &[ColumnSpec<AlbumField>] = &[
 pub(super) struct AlbumSource {
     library: Entity<Library>,
     playback: Entity<Playback>,
+    /// The state of the row menu's Add to playlist submenu.
+    menu: ItemMenu,
     shelf: Shelf,
     year_span: Option<(f32, f32)>,
     starred: bool,
@@ -106,11 +108,13 @@ impl AlbumSource {
     pub(super) fn shelved(
         library: Entity<Library>,
         playback: Entity<Playback>,
+        menu: ItemMenu,
         shelf: Shelf,
     ) -> Self {
         Self {
             library,
             playback,
+            menu,
             shelf,
             year_span: None,
             starred: false,
@@ -120,13 +124,13 @@ impl AlbumSource {
 
     fn index_cell(&self, cell: &Cell<AlbumField>, album: &Album, cx: &App) -> AnyElement {
         let origin = Origin::album(album.id.clone()).named(album.name.clone());
-        let state = self.playback.read(cx).playing_from(&origin);
+        let playing = self.playback.read(cx).playing_from(&origin);
         let played = origin.clone();
-        let press = cells::toggle(&self.playback, state.clone(), move |playback, cx| {
+        let press = cells::toggle(&self.playback, playing, move |playback, cx| {
             playback.play_origin(played.clone(), cx)
         });
 
-        cells::index(cell, state, true, None, None, press, cx)
+        cells::index(cell, playing, true, None, None, press, cx)
     }
 
     pub(super) fn at(&self, row: usize, cx: &App) -> Option<Album> {
@@ -272,9 +276,13 @@ impl TableSource for AlbumSource {
         Some(album_menu(
             self.at(*rows.first()?, cx)?,
             self.playback.clone(),
-            false,
+            &self.menu,
             cx,
         ))
+    }
+
+    fn context_menu_will_open(&self, _rows: &[usize], cx: &App) {
+        self.menu.reset(cx);
     }
 
     fn cell(&self, cell: Cell<AlbumField>, cx: &mut App) -> AnyElement {

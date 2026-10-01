@@ -5,13 +5,14 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use moka::{future::Cache, sync::Cache as SyncCache};
 use music::{
-    AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, GenreDetail, MusicApi, PlaylistDetail,
-    Track,
+    AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, GenreDetail, MusicApi,
+    PlaylistDetail, Track,
 };
 
 const ARTISTS: usize = 32;
 const ARTIST_PROFILES: usize = 64;
 const ALBUMS: usize = 48;
+const ALBUM_CATALOGUES: usize = 48;
 const PLAYLISTS: usize = 16;
 const SONGS: usize = 64;
 const GENRES: usize = 24;
@@ -29,6 +30,13 @@ trait CatalogBackend: Send + Sync {
     async fn track(&self, id: &str) -> Result<Track>;
     async fn track_playcount(&self, id: &str) -> Result<Option<u64>>;
     async fn album(&self, id: &str) -> Result<AlbumDetail>;
+    async fn album_catalogue(
+        &self,
+        _album_id: &str,
+        _artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        Ok(AlbumCatalogue::default())
+    }
     async fn playlist(&self, id: &str) -> Result<PlaylistDetail>;
     async fn playlist_continuation(
         &self,
@@ -61,6 +69,13 @@ impl CatalogBackend for ApiBackend {
     }
     async fn album(&self, id: &str) -> Result<AlbumDetail> {
         self.0.album(id).await
+    }
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        self.0.album_catalogue(album_id, artist_id).await
     }
     async fn playlist(&self, id: &str) -> Result<PlaylistDetail> {
         self.0.playlist(id).await
@@ -132,6 +147,7 @@ pub(crate) struct CatalogSource {
     catalogues: CatalogCache<ArtistCatalogue>,
     artist_profiles: CatalogCache<ArtistProfile>,
     albums: CatalogCache<AlbumDetail>,
+    album_catalogues: CatalogCache<AlbumCatalogue>,
     playlists: CatalogCache<PlaylistDetail>,
     songs: CatalogCache<SongPage>,
     genres: CatalogCache<GenreDetail>,
@@ -149,6 +165,7 @@ impl CatalogSource {
             catalogues: CatalogCache::new(ARTISTS),
             artist_profiles: CatalogCache::new(ARTIST_PROFILES),
             albums: CatalogCache::new(ALBUMS),
+            album_catalogues: CatalogCache::new(ALBUM_CATALOGUES),
             playlists: CatalogCache::new(PLAYLISTS),
             songs: CatalogCache::new(SONGS),
             genres: CatalogCache::new(GENRES),
@@ -197,6 +214,27 @@ impl CatalogSource {
 
     pub(crate) async fn album(&self, id: &str) -> Result<Arc<AlbumDetail>> {
         self.albums.load(id, self.backend.album(id)).await
+    }
+
+    pub(crate) fn peek_album_catalogue(&self, id: &str) -> Option<Arc<AlbumCatalogue>> {
+        self.album_catalogues.peek(id)
+    }
+
+    /// The rest of the album page, which the provider fetches once the tracks are up. It is
+    /// cached beside the album, so opening the same page again fills its rails without
+    /// asking the provider twice.
+    pub(crate) async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<Arc<AlbumCatalogue>> {
+        let artist_id = artist_id.map(str::to_owned);
+        self.album_catalogues
+            .load(
+                album_id,
+                self.backend.album_catalogue(album_id, artist_id.as_deref()),
+            )
+            .await
     }
 
     pub(crate) fn peek_playlist(&self, id: &str) -> Option<Arc<PlaylistDetail>> {

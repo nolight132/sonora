@@ -126,6 +126,7 @@ enum Slot {
     Entries,
     Language,
     Tray,
+    TrayIcon,
     Accounts,
     LocalFolder,
     Theme,
@@ -133,6 +134,7 @@ enum Slot {
     Ambient,
     AmbientMotion,
     Visualizer,
+    VisualizerAbsolute,
     Icons,
     Opacity,
     WindowBlur,
@@ -161,6 +163,7 @@ enum Slot {
     Normalisation,
     Gapless,
     Sleep,
+    StayAwake,
     Widevine,
     Equalizer,
     EqualizerPreset,
@@ -170,6 +173,7 @@ enum Slot {
     Karaoke,
     Romanized,
     LyricsForLocal,
+    ArtworkForLocal,
     Discord,
     DiscordName,
     DiscordShowPaused,
@@ -544,6 +548,7 @@ impl SettingsView {
                 Slot::Language,
                 Slot::Title("settings-group-window"),
                 Slot::Tray,
+                Slot::TrayIcon,
                 Slot::Title("settings-group-accounts"),
                 Slot::Accounts,
                 Slot::Title("settings-group-library"),
@@ -570,8 +575,15 @@ impl SettingsView {
                     .ambient()
                     .then_some(Slot::AmbientMotion),
             )
+            .chain([Slot::Visualizer])
+            .chain(
+                self.settings
+                    .read(cx)
+                    .visualizer_style()
+                    .shown()
+                    .then_some(Slot::VisualizerAbsolute),
+            )
             .chain([
-                Slot::Visualizer,
                 Slot::FullscreenControlsAutohide,
                 Slot::Title("settings-group-lyrics"),
                 Slot::PanelLyricsSize,
@@ -594,6 +606,7 @@ impl SettingsView {
                     Slot::Normalisation,
                     Slot::Gapless,
                     Slot::Sleep,
+                    Slot::StayAwake,
                 ];
                 if self.drm.read(cx).shown(cx) {
                     slots.push(Slot::Widevine);
@@ -615,7 +628,12 @@ impl SettingsView {
                 slots
             }
             SettingsTab::Privacy => {
-                vec![Slot::Title("settings-group-lyrics"), Slot::LyricsForLocal]
+                vec![
+                    Slot::Title("settings-group-lyrics"),
+                    Slot::LyricsForLocal,
+                    Slot::Title("settings-group-discord"),
+                    Slot::ArtworkForLocal,
+                ]
             }
             SettingsTab::Integrations => self
                 .discord_slots(cx)
@@ -651,6 +669,7 @@ impl SettingsView {
                 t!("settings-close-to-tray"),
                 t!("settings-close-to-tray-detail"),
             ),
+            Slot::TrayIcon => (t!("settings-tray-icon"), t!("settings-tray-icon-detail")),
             Slot::Accounts => {
                 let detail = t!("settings-accounts-detail");
                 let names = self.account_words(cx);
@@ -671,6 +690,10 @@ impl SettingsView {
                 t!("settings-ambient-motion-detail"),
             ),
             Slot::Visualizer => (t!("settings-visualizer"), t!("settings-visualizer-detail")),
+            Slot::VisualizerAbsolute => (
+                t!("settings-visualizer-absolute"),
+                t!("settings-visualizer-absolute-detail"),
+            ),
             Slot::Icons => (t!("settings-icons"), t!("settings-icons-detail")),
             Slot::Opacity => (t!("settings-opacity"), t!("settings-opacity-detail")),
             Slot::WindowBlur => (
@@ -735,6 +758,7 @@ impl SettingsView {
             ),
             Slot::Gapless => (t!("settings-gapless"), t!("settings-gapless-detail")),
             Slot::Sleep => (t!("settings-sleep"), t!("settings-sleep-detail")),
+            Slot::StayAwake => (t!("settings-stay-awake"), t!("settings-stay-awake-detail")),
             Slot::Widevine => {
                 let (detail, _) = widevine_copy(self.drm.read(cx).state());
                 (t!("settings-widevine"), i18n::lookup(detail, None))
@@ -777,6 +801,10 @@ impl SettingsView {
             Slot::DiscordBadge => (
                 t!("settings-discord-badge"),
                 t!("settings-discord-badge-detail"),
+            ),
+            Slot::ArtworkForLocal => (
+                t!("settings-artwork-for-local-files"),
+                t!("settings-artwork-for-local-files-detail"),
             ),
             Slot::DiscordAnonymous => (
                 t!("settings-discord-anonymous"),
@@ -903,6 +931,7 @@ impl SettingsView {
             Slot::Entries => self.entries_row(cx).element,
             Slot::Language => self.language_row(cx).element,
             Slot::Tray => self.tray_row(cx).element,
+            Slot::TrayIcon => self.tray_icon_row(cx).element,
             Slot::Accounts => self.accounts_row(cx).element,
             Slot::LocalFolder => self.local_folder_row(cx).element,
             Slot::Theme => self.theme_row(cx).element,
@@ -910,6 +939,7 @@ impl SettingsView {
             Slot::Ambient => self.ambient_row(cx).element,
             Slot::AmbientMotion => self.ambient_motion_row(cx).element,
             Slot::Visualizer => self.visualizer_style_row(cx).element,
+            Slot::VisualizerAbsolute => self.visualizer_absolute_row(cx).element,
             Slot::Icons => self.icons_row(cx).element,
             Slot::Opacity => self.opacity_row(cx).element,
             Slot::WindowBlur => self.blur_window_row(cx).element,
@@ -938,6 +968,7 @@ impl SettingsView {
             Slot::Normalisation => self.playback_row(cx).element,
             Slot::Gapless => self.gapless_row(cx).element,
             Slot::Sleep => self.sleep_row(cx).element,
+            Slot::StayAwake => self.stay_awake_row(cx).element,
             Slot::Widevine => self.widevine_row(cx).element,
             Slot::Equalizer => self.equalizer_row(cx).element,
             Slot::EqualizerPreset => self.equalizer_preset_row(cx).element,
@@ -951,6 +982,7 @@ impl SettingsView {
             Slot::DiscordName => self.discord_name_row(cx).element,
             Slot::DiscordShowPaused => self.discord_show_paused_row(cx).element,
             Slot::DiscordBadge => self.discord_badge_row(cx).element,
+            Slot::ArtworkForLocal => self.artwork_for_local_files_row(cx).element,
             Slot::DiscordAnonymous => self.discord_anonymous_row(cx).element,
             Slot::DiscordButtons => self.discord_buttons_row(cx).element,
             Slot::Scrobble(index) => match index < self.scrobbling.read(cx).rows().len() {
@@ -1010,17 +1042,21 @@ impl SettingsView {
         let small = theme.text(Text::Small);
         let chosen = Screen::from_id(self.settings.read(cx).startup()).unwrap_or(Screen::Home);
         let current = i18n::lookup(chosen.key(), None);
+        let guest = !self.session.read(cx).authenticated();
 
         let picker = Picker::new(STARTUP, &self.popovers, current)
             .width(Picker::NARROW)
             .items(Screen::ALL.map(|screen| {
-                MenuItem::new(screen.id(), i18n::lookup(screen.key(), None))
-                    .selected(screen == chosen)
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                let item = MenuItem::new(screen.id(), i18n::lookup(screen.key(), None))
+                    .selected(screen == chosen);
+                match guest && screen.needs_account() {
+                    true => item.disabled().tooltip("settings-startup-no-guest"),
+                    false => item.on_click(cx.listener(move |this, _, _, cx| {
                         this.settings
                             .update(cx, |settings, cx| settings.set_startup(screen.id(), cx));
                         cx.notify();
-                    }))
+                    })),
+                }
             }));
 
         self.row(
@@ -1302,7 +1338,7 @@ impl SettingsView {
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
         let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let overrides = self.settings.read(cx).theme_overrides();
 
         let picker = Picker::new(CORNERS, &self.popovers, look.rounding.label())
             .width(Picker::NARROW)
@@ -1336,7 +1372,7 @@ impl SettingsView {
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
         let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let overrides = self.settings.read(cx).theme_overrides();
 
         self.row(
             t!("settings-blur"),
@@ -1362,7 +1398,7 @@ impl SettingsView {
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
         let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let overrides = self.settings.read(cx).theme_overrides();
         let opaque = !look.transparent;
 
         self.row(
@@ -1395,7 +1431,7 @@ impl SettingsView {
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
         let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let overrides = self.settings.read(cx).theme_overrides();
 
         let step = move |id: &'static str, label: &'static str, delta: f32| {
             let overrides = overrides.clone();
@@ -1570,15 +1606,26 @@ impl SettingsView {
     fn profile(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
+        // The service the account belongs to, named next to the region so the card says which
+        // provider it is rather than a bare country code.
+        let provider = self
+            .session
+            .read(cx)
+            .providers()
+            .find(|info| info.active)
+            .map(|info| info.name.to_string());
 
         div()
             .flex()
             .items_center()
             .gap_4()
             .child(match self.session.read(cx).state() {
-                SessionState::SignedIn(profile) => {
-                    Initials::new(profile.display_name.clone(), px(64.)).into_any_element()
-                }
+                SessionState::SignedIn(profile) => match &profile.avatar {
+                    Some(avatar) => Avatar::new(Some(avatar.clone()))
+                        .size(px(64.))
+                        .into_any_element(),
+                    None => Initials::new(profile.display_name.clone(), px(64.)).into_any_element(),
+                },
                 _ => Skeleton::new().size(px(64.)).circle().into_any_element(),
             })
             .child(
@@ -1596,7 +1643,14 @@ impl SettingsView {
                     })
                     .child(match self.session.read(cx).state() {
                         SessionState::SignedIn(profile) => div()
-                            .child(profile.id.clone())
+                            .child(match &provider {
+                                Some(provider) => t!(
+                                    "settings-profile-account",
+                                    provider = provider,
+                                    account = &profile.id
+                                ),
+                                None => profile.id.clone().into(),
+                            })
                             .text_color(muted)
                             .text_size(theme.text(Text::Small))
                             .into_any_element(),
@@ -1610,30 +1664,86 @@ impl SettingsView {
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
         let look = self.look(cx);
-        let current = look.kind;
-        let adaptive = self.settings.read(cx).adaptive_theme();
-        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let (selected, adaptive, custom) = {
+            let settings = self.settings.read(cx);
+            (
+                settings.theme().to_owned(),
+                settings.adaptive_theme(),
+                settings
+                    .custom_themes()
+                    .map(|(id, name)| (id.to_owned(), name.to_owned()))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let built_in = ThemeKind::ALL
+            .into_iter()
+            .find(|kind| kind.id() == selected);
+        let custom_selected = custom.iter().any(|(id, _)| id == &selected);
+        let current = custom
+            .iter()
+            .find(|(id, _)| id == &selected)
+            .map(|(_, name)| SharedString::from(name.clone()))
+            .or_else(|| built_in.map(ThemeKind::label))
+            .unwrap_or_else(|| t!("theme-unavailable", name = selected.clone()));
 
-        let picker = Picker::new(THEMES, &self.popovers, current.label())
-            .width(Picker::NARROW)
-            .items(ThemeKind::ALL.into_iter().map(|kind| {
-                let item = MenuItem::new(kind.id(), kind.label()).selected(current == kind);
+        let mut items = ThemeKind::ALL
+            .into_iter()
+            .map(|kind| {
+                let item = MenuItem::new(kind.id(), kind.label()).selected(selected == kind.id());
                 match adaptive
                     && !matches!(kind, ThemeKind::System | ThemeKind::Dark | ThemeKind::Light)
                 {
-                    true => item.disabled(),
-                    false => {
-                        let overrides = overrides.clone();
-                        item.on_click(cx.listener(move |this, _, _, cx| {
-                            this.settings.update(cx, |settings, cx| {
-                                settings.set_theme(kind.id(), cx);
-                            });
-                            Theme::fade(Look { kind, ..look }, &overrides, cx);
-                            cx.notify();
-                        }))
-                    }
+                    true => item.disabled().tooltip("settings-theme-unavailable"),
+                    false => item.on_click(cx.listener(move |this, _, _, cx| {
+                        let overrides = this.settings.update(cx, |settings, cx| {
+                            settings.set_theme(kind.id(), cx);
+                            settings.theme_overrides()
+                        });
+                        Theme::fade(Look { kind, ..look }, &overrides, cx);
+                        cx.notify();
+                    })),
                 }
-            }));
+            })
+            .collect::<Vec<_>>();
+
+        if !custom.is_empty() || built_in.is_none() {
+            items.push(MenuItem::separator(("custom-themes", 0usize)));
+        }
+        items.extend(custom.into_iter().map(|(id, name)| {
+            let item = MenuItem::new(format!("custom-theme:{id}"), name).selected(selected == id);
+            match adaptive {
+                true => item.disabled().tooltip("settings-theme-unavailable"),
+                false => item.on_click(cx.listener(move |this, _, _, cx| {
+                    let overrides = this.settings.update(cx, |settings, cx| {
+                        settings.set_theme(id.clone(), cx);
+                        settings.theme_overrides()
+                    });
+                    Theme::fade(
+                        Look {
+                            kind: ThemeKind::Dark,
+                            ..look
+                        },
+                        &overrides,
+                        cx,
+                    );
+                    cx.notify();
+                })),
+            }
+        }));
+        if built_in.is_none() && !custom_selected {
+            items.push(
+                MenuItem::new(
+                    "unavailable-theme",
+                    t!("theme-unavailable", name = selected.clone()),
+                )
+                .selected(true)
+                .disabled(),
+            );
+        }
+
+        let picker = Picker::new(THEMES, &self.popovers, current)
+            .width(Picker::REGULAR)
+            .items(items);
 
         let settings = self.settings.clone();
         let actions = div()
@@ -1641,12 +1751,13 @@ impl SettingsView {
             .items_center()
             .gap_2()
             .child(
-                Button::new("open-theme-config")
-                    .label(t!("settings-theme-config"))
+                Button::new("open-theme-folder")
+                    .label(t!("settings-theme-folder"))
                     .small()
                     .outline()
                     .on_click(move |_, _, cx| {
-                        let path = settings.update(cx, |settings, _| settings.ensure_file());
+                        let path =
+                            settings.update(cx, |settings, _| settings.ensure_themes_directory());
                         if let Err(error) = open_path(&path) {
                             log::warn!("settings: cannot open {}: {error}", path.display());
                         }
@@ -1697,7 +1808,7 @@ impl SettingsView {
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
         let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
+        let overrides = self.settings.read(cx).theme_overrides();
         let transparency = match look.transparent {
             true => look.transparency,
             false => 0.,
@@ -1754,9 +1865,17 @@ impl SettingsView {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
-        let on = self.settings.read(cx).adaptive_theme();
+        let (on, neutral) = {
+            let settings = self.settings.read(cx);
+            let theme = settings.theme();
+            (
+                settings.adaptive_theme(),
+                [ThemeKind::System, ThemeKind::Dark, ThemeKind::Light]
+                    .into_iter()
+                    .any(|kind| kind.id() == theme),
+            )
+        };
         let look = self.look(cx);
-        let overrides = self.settings.read(cx).theme_overrides().clone();
 
         self.row(
             t!("settings-adaptive"),
@@ -1766,21 +1885,19 @@ impl SettingsView {
             Switch::new("adaptive-theme", on)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     let adaptive = !on;
-                    let kind = match adaptive
-                        && !matches!(
-                            look.kind,
-                            ThemeKind::System | ThemeKind::Dark | ThemeKind::Light
-                        ) {
+                    let reset = adaptive && !neutral;
+                    let kind = match reset {
                         true => ThemeKind::Dark,
                         false => look.kind,
                     };
-                    this.settings.update(cx, |settings, cx| {
+                    let overrides = this.settings.update(cx, |settings, cx| {
                         settings.set_adaptive_theme(adaptive, cx);
-                        if kind != look.kind {
+                        if reset {
                             settings.set_theme(kind.id(), cx);
                         }
+                        settings.theme_overrides()
                     });
-                    if kind != look.kind {
+                    if reset {
                         Theme::fade(Look { kind, ..look }, &overrides, cx);
                     }
                 }))
@@ -1855,6 +1972,26 @@ impl SettingsView {
             muted,
             small,
             picker.into_any_element(),
+        )
+    }
+
+    fn visualizer_absolute_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).visualizer_absolute();
+
+        self.row(
+            t!("settings-visualizer-absolute"),
+            t!("settings-visualizer-absolute-detail"),
+            muted,
+            small,
+            Switch::new("visualizer-absolute", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_visualizer_absolute(!on, cx));
+                }))
+                .into_any_element(),
         )
     }
 
@@ -2032,6 +2169,26 @@ impl SettingsView {
         )
     }
 
+    fn tray_icon_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).tray_icon();
+
+        self.row(
+            t!("settings-tray-icon"),
+            t!("settings-tray-icon-detail"),
+            muted,
+            small,
+            Switch::new("tray-icon", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_tray_icon(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
     fn gapless_row(&self, cx: &mut Context<Self>) -> Setting {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
@@ -2047,6 +2204,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_gapless(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn stay_awake_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).stay_awake();
+
+        self.row(
+            t!("settings-stay-awake"),
+            t!("settings-stay-awake-detail"),
+            muted,
+            small,
+            Switch::new("stay-awake", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_stay_awake(!on, cx));
                 }))
                 .into_any_element(),
         )
@@ -2580,6 +2757,27 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_discord_badge(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn artwork_for_local_files_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).artwork_for_local_files();
+
+        self.row(
+            t!("settings-artwork-for-local-files"),
+            t!("settings-artwork-for-local-files-detail"),
+            muted,
+            small,
+            Switch::new("artwork-for-local-files", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings.update(cx, |settings, cx| {
+                        settings.set_artwork_for_local_files(!on, cx)
+                    });
                 }))
                 .into_any_element(),
         )

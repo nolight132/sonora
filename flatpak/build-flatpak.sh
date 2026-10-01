@@ -30,8 +30,8 @@ fi
 # Check for required Flatpak runtimes & SDKs
 echo "==> Checking required Flatpak SDKs..."
 REQUIRED_REFS="
-org.freedesktop.Platform//25.08
-org.freedesktop.Sdk//25.08
+org.gnome.Platform//50
+org.gnome.Sdk//50
 org.freedesktop.Sdk.Extension.rust-stable//25.08
 "
 

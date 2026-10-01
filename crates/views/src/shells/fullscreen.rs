@@ -112,7 +112,9 @@ impl FullscreenView {
         cx.observe(&library, |_, _, cx| cx.notify()).detach();
         let settings = Sonora::global(cx).settings.clone();
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
-        let aside = cx.new(|cx| Aside::new(queue.clone(), playback.clone(), SideTab::Lyrics, cx));
+        let panel = settings.read(cx).fullscreen_tab();
+        let shown = panel.unwrap_or(SideTab::Lyrics);
+        let aside = cx.new(|cx| Aside::new(queue.clone(), playback.clone(), shown, cx));
         aside.update(cx, |aside, _| aside.strip());
         let me = cx.entity_id();
         let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(me));
@@ -123,7 +125,7 @@ impl FullscreenView {
             cover,
             settings,
             aside,
-            panel: Some(SideTab::Lyrics),
+            panel,
             seek: ScrubberState::new("fullscreen-seek"),
             pending: None,
             over_seek: None,
@@ -165,6 +167,8 @@ impl FullscreenView {
 
     fn show(&mut self, panel: Option<SideTab>, cx: &mut Context<Self>) {
         self.panel = panel;
+        self.settings
+            .update(cx, |settings, cx| settings.set_fullscreen_tab(panel, cx));
         if let Some(tab) = panel {
             self.aside.update(cx, |aside, cx| aside.show(tab, cx));
         }
@@ -351,8 +355,12 @@ impl FullscreenView {
         let album = track.as_ref().and_then(|track| track.album_id.clone());
         let small = track.as_ref().and_then(|track| track.cover.clone());
         let cover_large = self.cover.read(cx).large();
+        // Only upgrade to the cached large art when the track itself has a cover.
+        // Local folders share one album_id; Cover caches the first track's art for the
+        // album. Without this guard, a track with no art would show a sibling's cover
+        // after any track with art was played (issue #833).
         let large = cover_large
-            .filter(|url| Some(*url) != small.as_deref())
+            .filter(|url| small.is_some() && Some(*url) != small.as_deref())
             .map(SharedString::from);
 
         if self.large != large {
@@ -1092,7 +1100,7 @@ impl Render for FullscreenView {
         let style = self.settings.read(cx).visualizer_style();
         let visualizer_on = self.panel.is_none() && style.shown();
         match visualizer_on
-            .then(|| self.playback.read(cx).spectrum())
+            .then(|| self.playback.read(cx).spectrum(cx))
             .flatten()
         {
             Some(spectrum) => self.visualizer.show(cx.entity_id(), spectrum, window),

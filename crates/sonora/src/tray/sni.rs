@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use ksni::blocking::{Handle, TrayMethods as _};
 use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 use ksni::{Category, ToolTip};
@@ -10,9 +11,13 @@ const ICON_NAME: &str = "sonora";
 const PNG: &[u8] = include_bytes!("../../../../assets/tray/sonora.png");
 /// Flatpak writes this file into every sandbox it starts.
 const FLATPAK_INFO: &str = "/.flatpak-info";
+const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 
 pub struct Icon {
-    handle: Handle<Item>,
+    /// What a fresh service is spawned from when the icon goes into the tray. It only follows
+    /// `show` while the icon is out, since `Tray::place` publishes again right after the spawn.
+    item: Item,
+    handle: Option<Handle<Item>>,
 }
 
 impl Icon {
@@ -36,31 +41,60 @@ impl Icon {
                 Vec::new()
             }
         };
-        // A sandbox cannot own `org.kde.StatusNotifierItem-<pid>-<n>`, and a manifest cannot
-        // grant it: flatpak's own-name wildcard only matches a `.*` suffix. The watcher
-        // accepts the unique bus name instead.
-        let sandboxed = std::path::Path::new(FLATPAK_INFO).exists();
         let item = Item {
             sender,
             pixmap,
-            icon_name: icon_name(sandboxed),
+            icon_name: icon_name(sandboxed()),
             shown: None,
         };
-        match item.disable_dbus_name(sandboxed).spawn() {
-            Ok(handle) => Some(Self { handle }),
+        Some(Self { item, handle: None })
+    }
+
+    /// Whether a status notifier watcher is on the session bus, so there is a tray to bring Sonora
+    /// back from. It asks the bus, not the watcher, so it works while the icon is out.
+    pub fn hosted() -> bool {
+        match watched() {
+            Ok(hosted) => hosted,
             Err(error) => {
-                log::warn!("tray: cannot reach the status notifier host: {error}");
-                None
+                log::warn!("tray: cannot ask the session bus for a tray: {error:#}");
+                false
             }
         }
     }
 
+    /// Puts the icon in the tray, or takes it out. A host draws every item that is registered, so
+    /// leaving the bus is the only way out.
+    pub fn place(&mut self, placed: bool) -> Result<()> {
+        match (self.handle.take(), placed) {
+            // the request is sent, not awaited: the item leaves the bus either way
+            (Some(handle), false) => drop(handle.shutdown()),
+            (None, true) => self.handle = Some(spawn(self.item.clone())?),
+            (handle, _) => self.handle = handle,
+        }
+        Ok(())
+    }
+
     pub fn show(&mut self, shown: &Shown) {
         let shown = shown.clone();
-        self.handle.update(|item| item.shown = Some(shown));
+        match &self.handle {
+            Some(handle) => {
+                handle.update(|item| item.shown = Some(shown));
+            }
+            None => self.item.shown = Some(shown),
+        }
     }
 }
 
+fn spawn(item: Item) -> Result<Handle<Item>> {
+    // A sandbox cannot own `org.kde.StatusNotifierItem-<pid>-<n>`, and a manifest cannot
+    // grant it: flatpak's own-name wildcard only matches a `.*` suffix. The watcher
+    // accepts the unique bus name instead.
+    item.disable_dbus_name(sandboxed())
+        .spawn()
+        .context("cannot reach the status notifier host")
+}
+
+#[derive(Clone)]
 struct Item {
     sender: UnboundedSender<Event>,
     pixmap: Vec<ksni::Icon>,
@@ -159,6 +193,19 @@ impl ksni::Tray for Item {
             self.entry(&shown.quit, Event::Quit),
         ]
     }
+}
+
+fn watched() -> Result<bool> {
+    let bus = zbus::blocking::Connection::session().context("cannot reach the session bus")?;
+    let name = zbus::names::BusName::try_from(WATCHER).context("cannot name the watcher")?;
+    zbus::blocking::fdo::DBusProxy::new(&bus)
+        .context("cannot reach the bus daemon")?
+        .name_has_owner(name)
+        .context("cannot ask for the watcher")
+}
+
+fn sandboxed() -> bool {
+    std::path::Path::new(FLATPAK_INFO).exists()
 }
 
 /// The themed icon to ask the host for, or none when the host's theme cannot be counted on to

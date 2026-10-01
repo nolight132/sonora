@@ -101,7 +101,7 @@ pub use shield::Shield;
 pub use skeleton::{Initials, Skeleton};
 pub use switch::Switch;
 pub use table::{
-    Activate, Cell, ColumnSpec, Deselect, Layout, Listing, ROW_GROUP, Remove, SelectNext,
+    Activate, Cell, ColumnSpec, Deselect, Layout, Listing, Pending, ROW_GROUP, Remove, SelectNext,
     SelectPrevious, Sort, Sorting, TABLE_CONTEXT, Table, TableDelegate, TableEvent, TableSource,
     TableState, Toggle, Viewport, Width, clear_listing, rank, show_listing, shown_listing, table,
 };
@@ -111,9 +111,9 @@ pub use theme::{
     MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE, Theme, ThemeKind, ThemeOverrides, WINDOW_BLUR,
     backdrop,
 };
-pub use time::{clock, tabular};
+pub use time::{clock, runtime, tabular};
 pub use toast::Toast;
-pub use tooltip::{Perch, Tooltip};
+pub use tooltip::{Perch, Tipped, Tooltip};
 pub use traffic_light_controls::TrafficLightControls;
 pub use vacancy::Vacancy;
 pub use view::Mode;

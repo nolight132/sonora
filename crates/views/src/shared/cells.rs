@@ -10,7 +10,7 @@ use gpui::{
 use i18n::t;
 use music::{ArtistRef, Contributor};
 use router::{Destination, Link as _, navigate};
-use state::{Playback, PlaybackState};
+use state::Playback;
 use ui::{
     ActiveTheme as _, Artwork, Avatar, Cell, ExplicitBadge, InlineLink, InlineLinks, ROW_GROUP,
     Theme, clock, tabular,
@@ -84,10 +84,11 @@ impl RenderOnce for Face {
 }
 
 /// The transport cell at the head of a row. `number` is the label the row rests at; `None`
-/// counts the rows, which is what a list with no numbering of its own wants.
+/// counts the rows, which is what a list with no numbering of its own wants. `playing` is the
+/// row's `Playback::control`, `None` for a row that is not the current one.
 pub(crate) fn index<F>(
     cell: &Cell<F>,
-    state: Option<PlaybackState>,
+    playing: Option<bool>,
     playable: bool,
     number: Option<SharedString>,
     preload: Option<Tap>,
@@ -107,9 +108,9 @@ pub(crate) fn index<F>(
             .group_hover(ROW_GROUP, |style| style.invisible())
             .into_any_element()
     };
-    let resting = match &state {
-        Some(PlaybackState::Playing) => dimmed(PLAYING, theme.foreground),
-        Some(_) => dimmed(PAUSE, theme.muted_foreground),
+    let resting = match playing {
+        Some(true) => dimmed(PLAYING, theme.foreground),
+        Some(false) => dimmed(PAUSE, theme.muted_foreground),
         None => div()
             .id(("index-number", cell.row))
             .text_color(match playable {
@@ -121,7 +122,7 @@ pub(crate) fn index<F>(
             .into_any_element(),
     };
 
-    let icon = match (matches!(state, Some(PlaybackState::Playing)), playable) {
+    let icon = match (playing == Some(true), playable) {
         (true, _) => PAUSE,
         (false, true) => PLAY,
         (false, false) => UNAVAILABLE,
@@ -143,21 +144,18 @@ pub(crate) fn index<F>(
     )
 }
 
-pub(crate) fn toggle<F>(
-    playback: &Entity<Playback>,
-    state: Option<PlaybackState>,
-    start: F,
-) -> Option<Tap>
+/// The press of a row's transport cell. It pauses or resumes the current row and calls `start`
+/// for any other.
+pub(crate) fn toggle<F>(playback: &Entity<Playback>, playing: Option<bool>, start: F) -> Option<Tap>
 where
     F: Fn(&mut Playback, &mut Context<Playback>) + 'static,
 {
     let playback = playback.clone();
 
     Some(Box::new(move |cx: &mut App| {
-        playback.update(cx, |playback, cx| match &state {
-            Some(PlaybackState::Playing) => playback.pause(cx),
-            Some(PlaybackState::Paused) => playback.resume(cx),
-            _ => start(playback, cx),
+        playback.update(cx, |playback, cx| match playing {
+            Some(_) => playback.toggle_play(cx),
+            None => start(playback, cx),
         });
     }))
 }

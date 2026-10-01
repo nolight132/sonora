@@ -3,7 +3,7 @@
 ## How does local music library work
 1. Multiple folders can be added; the library is built from every folder's tracks together.
 2. `Track` identity is the file system path. `Artist` is a normalized string, `Album` a normalized
-   `(artist, name)` pair.
+   `(album_artist, name)` pair, or `(folder, name)` when the tags name no album artist.
 3. Metadata fallback, in order: tag (`lofty`) -> `symphonia` -> `id3.rs` (hand-rolled, ID3v2 only,
    last resort) -> filesystem hint -> raw filename.
 4. Cover art: embedded picture -> `.jpg`/`.png` etc. in the folder nearby.
@@ -11,7 +11,10 @@
    a resolved artist's name, with a cover-like image beside it, becomes that artist's portrait. No
    match, no portrait (UI falls back to initials).
 6. `album_artist` (the real grouping key for albums, not the per-track `artist`) follows the same
-   cascade: tag `AlbumArtist` -> `symphonia` -> the track's own resolved `artist` as default.
+   cascade: tag `AlbumArtist` -> `symphonia` -> `id3.rs`. With none of them, the album is keyed by
+   the track's folder (a `CD1`/`Disc 2` folder counts as the one above it), so tracks with
+   different features still make one album. Such an album is credited to the artists every track
+   shares after splitting on `,`, `;`, `feat.`, `ft.` and `featuring`, or `Various Artists`.
 7. No incremental index — every scan (startup, add/remove folder, Rescan) rebuilds `Scanned` from
    scratch. Folders are merged *before* grouping, so an artist/album split across folders still
    merges into one entry.

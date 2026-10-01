@@ -51,6 +51,9 @@ library-no-catalog-albums = Aucun album trouvé
 library-no-catalog-artists = Aucun artiste trouvé
 library-no-matches = Aucun résultat
 library-not-loaded = Votre bibliothèque ne s’est pas chargée
+library-scanning = Analyse de vos dossiers…
+library-scanning-found = Analyse de vos dossiers… { $found } trouvés jusqu'ici
+library-scanning-progress = Lecture de votre musique… { $read } sur { $found }
 library-part-not-loaded = Cette partie de votre bibliothèque ne s’est pas chargée
 library-local-unconfigured = Configurez votre bibliothèque locale
 
@@ -102,6 +105,7 @@ menu-add-tracks-to-playlist = { $count ->
 menu-new-playlist = Nouvelle playlist
 menu-edit-tags = Modifier les tags
 menu-no-playlists = Aucune playlist
+menu-search-playlists = Rechercher une playlist
 menu-add-to-library = Ajouter aux favoris
 menu-add-tracks-to-library = { $count ->
     [one] Ajouter { $count } titre aux favoris
@@ -122,6 +126,11 @@ menu-remove-tracks-from-history = { $count ->
     [one] Retirer { $count } titre de l'historique
    *[other] Retirer { $count } titres de l'historique
 }
+menu-delete-track-file = Supprimer le fichier du titre
+menu-delete-track-files = { $count ->
+    [one] Supprimer le fichier de { $count } titre
+   *[other] Supprimer les fichiers de { $count } titres
+}
 menu-play-next = Lire juste après
 menu-play-tracks-next = { $count ->
     [one] Lire { $count } titre juste après
@@ -131,6 +140,11 @@ menu-add-to-queue = Ajouter à la file d'attente
 menu-add-tracks-to-queue = { $count ->
     [one] Ajouter { $count } titre à la file d'attente
    *[other] Ajouter { $count } titres à la file d'attente
+}
+menu-play-last = Lire en dernier
+menu-play-tracks-last = { $count ->
+    [one] Lire { $count } titre en dernier
+   *[other] Lire { $count } titres en dernier
 }
 menu-song-radio = Ouvrir la radio du titre
 menu-go-to-album = Aller à l'album
@@ -142,16 +156,22 @@ menu-copy = Copier
 menu-paste = Coller
 menu-select-all = Tout sélectionner
 menu-remove-from-queue = Retirer de la file d'attente
-menu-open-playlist = Ouvrir la playlist
-menu-play-playlist = Lire la playlist
 menu-rename-playlist = Renommer la playlist
 menu-delete-playlist = Supprimer la playlist
 menu-add-playlist-to-library = Ajouter à la bibliothèque
 menu-remove-playlist-from-library = Retirer de la bibliothèque
+menu-library-add = Ajouter à la bibliothèque
+menu-library-add-tracks = { $count ->
+    [one] Ajouter { $count } titre à la bibliothèque
+   *[other] Ajouter { $count } titres à la bibliothèque
+}
+menu-library-remove = Retirer de la bibliothèque
+menu-library-remove-tracks = { $count ->
+    [one] Retirer { $count } titre de la bibliothèque
+   *[other] Retirer { $count } titres de la bibliothèque
+}
 menu-make-playlist-public = Rendre publique
 menu-make-playlist-private = Rendre privée
-menu-open-album = Ouvrir l'album
-menu-play-album = Lire l'album
 menu-play-artist = Lire l'artiste
 
 # playlist editor
@@ -192,12 +212,15 @@ confirm-remove-playlists = { $count ->
     [one] Retirer cette playlist de votre bibliothèque ?
    *[other] Retirer { $count } playlists de votre bibliothèque ?
 }
+confirm-delete-track-files-title = Supprimer les fichiers des titres ?
+confirm-delete-track-files = Le ou les fichiers seront définitivement supprimés du disque. Cette action est irréversible.
 
 # queue panel
 queue-title = File d'attente
 queue-history = Historique
 queue-now-playing = En cours de lecture
 queue-from = Depuis
+queue-next-in-queue = Suivant dans la file d'attente
 queue-up-next = À suivre
 queue-reset = Réinitialiser
 queue-clear = Vider
@@ -255,12 +278,13 @@ login-signed-in = Connecté en tant que { $name }
 login-failed-title = Échec de la connexion
 login-problem-region = Spotify n'ouvre pas de session depuis le pays où vous êtes. Connectez-vous depuis votre pays d'origine, ou changez le pays de votre compte Spotify.
 login-problem-credentials = Votre session Spotify enregistrée n'est plus valide. Reconnectez-vous pour continuer.
-login-problem-network = Sonora n'a pas pu joindre Spotify. Vérifiez votre connexion internet et réessayez.
+login-problem-network = Sonora n'a pas pu joindre le service de musique. Vérifiez votre connexion internet et réessayez.
 login-problem-cancelled = Vous avez fermé la page du navigateur avant d'approuver la connexion. Recommencez pour aller au bout.
 login-problem-refused = Spotify a refusé la connexion. Patientez un instant et réessayez.
 login-problem-premium = Sonora diffuse via Spotify Premium, et ce compte ne l'a pas. Connectez-vous avec un compte Premium pour continuer.
 login-sign-in = Se connecter avec { $provider }
 login-connect-cookies = Coller les cookies manuellement
+login-cookie-open = Ouvrir { $provider }
 login-cookie-submit = Continuer
 login-cookie-hint = Collez ici l'en-tête de requête Cookie
 login-cookie-step-1 = Ouvrez music.youtube.com et vérifiez que vous êtes connecté. Une fenêtre de navigation privée fonctionne le mieux.
@@ -268,6 +292,16 @@ login-cookie-step-2 = Appuyez sur F12, ouvrez l'onglet Réseau et rechargez la p
 login-cookie-step-3 = Sélectionnez une requête nommée « browse » ou « next ».
 login-cookie-step-4 = Dans les en-têtes, trouvez Cookie sous les en-têtes de requête, faites un clic droit dessus et copiez sa valeur.
 login-cookie-step-note = Collez la valeur entière ci-dessous : le panneau Cookies de la requête ne suffit pas, car la valeur doit contenir SAPISID et __Secure-3PAPISID.
+login-cookie-header-title = Collez vos cookies { $provider } pour terminer la connexion
+login-cookie-apple-step-3 = Sélectionnez n'importe quelle requête vers { $site }.
+login-cookie-apple-note = Veillez à coller la valeur entière, y compris { $cookie }.
+login-cookie-named-title = Collez votre cookie { $provider } pour terminer la connexion
+login-cookie-named-hint = Collez ici la valeur du cookie
+login-cookie-named-step-1 = Ouvrez { $site } et vérifiez que vous êtes connecté.
+login-cookie-named-step-2 = Appuyez sur F12 et ouvrez l'onglet Stockage dans Firefox, ou l'onglet Application dans Chrome.
+login-cookie-named-step-3 = Dépliez Cookies, sélectionnez { $site } et trouvez le cookie nommé { $cookie }.
+login-cookie-named-step-4 = Double-cliquez sur sa valeur et copiez-la.
+login-cookie-named-note = La valeur de { $cookie } seule suffit. Un en-tête Cookie entier copié depuis l'onglet Réseau fonctionne aussi.
 login-window-title = Connexion à { $provider }
 login-use = Utiliser { $provider }
 login-guest-title = Mode invité
@@ -283,9 +317,10 @@ login-password-hint = Mot de passe
 login-server-submit = Se connecter
 login-account-title = Choisir un compte
 login-account-detail = Cette session est connectée à plusieurs comptes Google. Choisissez celui que Sonora doit utiliser.
+login-choose-title = Se connecter à { $provider }
+login-choose-detail = Choisissez comment vous connecter à { $provider }.
 
 # album and playlist pages
-detail-album = Album
 detail-playlist = Playlist
 detail-play-album = Lire l'album
 detail-play-playlist = Lire la playlist
@@ -293,7 +328,6 @@ detail-play-playlist = Lire la playlist
 # play button
 play-pause = Pause
 play-resume = Reprendre
-play-loading = Chargement…
 play-shuffle = Lecture aléatoire
 
 # artist page
@@ -315,6 +349,11 @@ artist-filter-all = Toutes
 artist-filter-albums = Albums
 artist-filter-singles = Singles
 artist-filter-eps = EP
+artist-appears-on = Apparaît sur
+album-also-like = Vous aimerez peut-être aussi
+album-tab-albums = Albums
+album-tab-artists = Artistes
+album-label = ℗ { $label }
 
 # user profile page
 user-eyebrow = Profil
@@ -341,6 +380,11 @@ release-meta = { $year } • { $kind }
 # home page
 home-quick-picks = Sélection rapide
 home-quick-picks-empty = Likez quelques titres et ils apparaîtront ici
+home-recently-added = Ajoutés récemment
+home-playlists = Playlists
+home-favorite-albums = Albums favoris
+home-artists = Artistes
+home-collection-albums = Albums de votre collection
 
 # search page
 search-placeholder = Que voulez-vous écouter ?
@@ -419,6 +463,9 @@ count-tracks =
         [one] { $count } titre
        *[other] { $count } titres
     }
+runtime-seconds = { $seconds } s
+runtime-minutes = { $minutes } min { $seconds } s
+runtime-hours = { $hours } h { $minutes } min
 
 # dates
 date-just-now = À l'instant
@@ -453,11 +500,22 @@ settings-theme-detail = Choisissez la palette de couleurs de l'application
 settings-opacity = Opacité
 settings-opacity-detail = Ajustez l'opacité du fond de l'application
 settings-opacity-value = { $percent } %
-settings-theme-config = Ouvrir la configuration
+settings-theme-folder = Ouvrir la configuration
+settings-theme-unavailable = Ce thème ne peut être appliqué que si le thème adaptatif est désactivé
 settings-adaptive = Thème adaptatif
 settings-adaptive-detail = Teinte la palette avec la pochette de l'album en cours
+settings-ambient = Fond ambiant
+settings-ambient-detail = Remplir le lecteur plein écran de couleurs tirées de la pochette
+settings-ambient-motion = Mouvement ambiant
+settings-ambient-motion-detail = Faire dériver les couleurs ambiantes au lieu de les garder fixes
 settings-visualizer = Visualiseur
 settings-visualizer-detail = Afficher des barres de spectre derrière la pochette en plein écran
+settings-visualizer-style-none = Désactivé
+settings-visualizer-style-bars = Barres
+settings-visualizer-style-wave = Onde
+settings-visualizer-style-both = Barres et onde
+settings-visualizer-absolute = Ignorer le volume
+settings-visualizer-absolute-detail = Dessiner le spectre au niveau d'origine du titre, quel que soit le volume dans Sonora
 settings-fullscreen-controls-autohide = Masquer les contrôles en plein écran
 settings-fullscreen-controls-autohide-detail = Estomper les contrôles de lecture quand le plein écran est inactif
 settings-icons = Jeu d'icônes
@@ -479,6 +537,7 @@ settings-font-detail = Taille de base du texte, tout le reste s'y adapte
 settings-font-value = { $size } px
 settings-startup = Afficher au démarrage
 settings-startup-detail = L'écran sur lequel Sonora s'ouvre
+settings-startup-no-guest = Indisponible en mode invité
 settings-entries = Entrées de la barre latérale
 settings-entries-detail = Les sections affichées dans la barre latérale
 settings-entries-pick = Choisir les entrées
@@ -505,6 +564,8 @@ settings-controls-side = Côté des contrôles
 settings-controls-side-detail = L'extrémité de la barre de titre où se placent les contrôles
 settings-close-to-tray = Continuer la lecture à la fermeture
 settings-close-to-tray-detail = Garder Sonora dans la zone de notification et poursuivre la lecture après la fermeture de sa fenêtre
+settings-tray-icon = Afficher dans la zone de notification
+settings-tray-icon-detail = Ajouter une icône avec les commandes de lecture dans la zone de notification
 settings-discord = Afficher sur Discord
 settings-discord-detail = Afficher le titre que vous écoutez sur votre profil Discord
 settings-discord-name = Nom du statut
@@ -536,10 +597,37 @@ settings-gapless = Lecture sans blanc
 settings-gapless-detail = Enchaîne un titre au suivant sans pause, comme l'album a été conçu
 settings-sleep = Minuteur de veille
 settings-sleep-detail = Laisse la musique s'arrêter d'elle-même après un délai, pour vous endormir en musique
+settings-stay-awake = Rester éveillé pendant la lecture
+settings-stay-awake-detail = Empêcher la mise en veille pendant la lecture et garder l'écran allumé en plein écran
 settings-sleep-configure = Configurer…
 settings-sleep-off = Désactivé
 settings-sleep-end-of-track = Fin du titre
 settings-sleep-minutes = { $count } min
+settings-widevine = Module Widevine
+settings-widevine-detail = Les titres Apple Music sont chiffrés et nécessitent le module Widevine de Google. Sonora utilise celui qu'il a téléchargé depuis Google avec votre accord, ou, à défaut, celui d'un navigateur déjà installé ici.
+settings-widevine-none = Les titres Apple Music sont chiffrés et nécessitent le module Widevine de Google. Aucun navigateur installé ici ne le fournit, Sonora peut donc le télécharger depuis Google avec votre accord.
+settings-widevine-looking = Recherche…
+settings-widevine-asking = En attente de votre réponse
+settings-widevine-fetching = Téléchargement…
+settings-widevine-installing = Installation…
+settings-widevine-installed = Trouvé dans un navigateur
+settings-widevine-fetched = Téléchargé depuis Google
+settings-widevine-missing = Non installé
+settings-widevine-configured = Défini par l'environnement
+settings-widevine-fetch = Télécharger
+settings-widevine-uninstall = Désinstaller
+confirm-uninstall-widevine-title = Désinstaller le module Widevine ?
+confirm-uninstall-widevine = Sonora supprime la copie téléchargée depuis Google. Les titres Apple Music ne pourront plus être lus tant que Sonora ne l'aura pas téléchargée à nouveau.
+widevine-prompt-title = Module Widevine
+widevine-prompt-wanted = Les titres Apple Music sont chiffrés et nécessitent le module Widevine de Google. Aucun navigateur de cet ordinateur ne le fournit. Sonora peut le télécharger depuis les serveurs de Google, le même fichier que celui installé par Chrome, et le garder dans son propre dossier.
+widevine-prompt-replace = Les titres Apple Music sont chiffrés et nécessitent le module Widevine de Google. Un navigateur de cet ordinateur le fournit déjà, mais Sonora peut télécharger la copie officielle de Google pour l'utiliser à la place : le même fichier que celui installé par Chrome, gardé dans son propre dossier.
+widevine-prompt-downloading = Téléchargement…
+widevine-prompt-terms = La version { $version } est téléchargée. L'installer implique d'accepter les conditions de Google pour ce module :
+widevine-prompt-installing = Installation…
+widevine-prompt-download = Télécharger
+widevine-prompt-later = Plus tard
+widevine-prompt-accept = Accepter et installer
+widevine-prompt-decline = Refuser
 settings-equalizer = Égaliseur
 settings-equalizer-detail = Façonne le son sur dix bandes, une par octave
 settings-equalizer-preset = Préréglage
@@ -567,6 +655,10 @@ settings-fullscreen-lyrics-size-detail = Taille du texte des paroles sur le lect
 settings-lyrics-size-value = { $size } %
 settings-lyrics-for-local-files = Paroles des fichiers locaux
 settings-lyrics-for-local-files-detail = Utiliser les métadonnées des fichiers locaux pour chercher les paroles sur internet
+settings-artwork-for-local-files = Pochettes des fichiers locaux
+settings-artwork-for-local-files-detail = Utiliser les métadonnées des fichiers locaux pour trouver sur Deezer une pochette à afficher dans votre statut Discord
+settings-prefer-local-lyrics = Préférer les paroles locales
+settings-prefer-local-lyrics-detail = Utiliser les paroles stockées dans les tags d'un fichier local ou dans son fichier .lrc au lieu de chercher chez les autres fournisseurs
 settings-karaoke-lyrics = Paroles karaoké
 settings-karaoke-lyrics-detail = Mettre les paroles en évidence mot à mot quand la synchronisation est disponible
 settings-blur-lyrics = Flouter les paroles inactives
@@ -574,6 +666,20 @@ settings-blur-lyrics-detail = Flouter les lignes suivantes et précédentes dans
 settings-romanized-lyrics = Paroles romanisées
 settings-romanized-lyrics-detail = Afficher une prononciation générée localement pour les systèmes d'écriture choisis
 settings-romanization-writing-systems = Systèmes d'écriture
+settings-lyrics-providers = Fournisseurs de paroles
+settings-lyrics-providers-detail = Choisissez les services dans lesquels chercher les paroles
+settings-lyrics-providers-selected = { $count ->
+    [one] { $count } sélectionné
+   *[other] { $count } sélectionnés
+    }
+settings-lyrics-provider-local = Fichiers locaux
+settings-lyrics-provider-spotify = Spotify
+settings-lyrics-provider-youtube = YouTube Music
+settings-lyrics-provider-apple-music = Apple Music
+settings-lyrics-provider-musixmatch = Musixmatch
+settings-lyrics-provider-lrclib = LRCLIB
+settings-lyrics-provider-kugou = Kugou
+settings-lyrics-provider-netease = NetEase
 settings-romanization-japanese = Écriture japonaise
 settings-romanization-chinese = Écriture chinoise
 settings-romanization-korean = Écriture coréenne
@@ -587,6 +693,7 @@ settings-group-accounts = Comptes
 settings-group-library = Bibliothèque
 settings-group-text = Texte
 settings-group-motion = Animations
+settings-group-fullscreen = Plein écran
 settings-group-title-bar = Barre de titre
 settings-group-window-style = Style de fenêtre
 settings-group-lyrics = Paroles
@@ -602,6 +709,7 @@ settings-provider-connected = Connecté
 settings-provider-current = Lecture depuis ce service
 settings-provider-guest = Lecture en tant qu'invité
 settings-provider-switch = Basculer vers
+settings-profile-account = { $provider } · { $account }
 settings-sign-out = Se déconnecter
 settings-group-scrobbling = Scrobbling
 settings-lastfm = Last.fm
@@ -631,6 +739,9 @@ settings-choose-folder = Choisir un dossier…
 settings-add-folder = Ajouter un dossier
 settings-remove-folder = Retirer le dossier
 settings-rescan = Réanalyser
+settings-scan-walking = Analyse…
+settings-scan-progress = { $percent } %
+settings-scan-done = Terminé en { $seconds } s
 settings-tab-about = À propos
 settings-version = Version
 settings-version-detail = La version de Sonora que vous utilisez
@@ -657,6 +768,7 @@ theme-ocean = Océan
 theme-rose = Rose
 theme-lavender = Lavande
 theme-amber = Ambre
+theme-unavailable = { $name } (indisponible)
 
 # corners
 corners-square = Carrés
@@ -679,6 +791,7 @@ saver-strong = Forte ({ $fps } FPS)
 toast-playlist-created = Playlist créée
 toast-playlist-renamed = Playlist renommée
 toast-playlist-deleted = Playlist supprimée
+toast-local-delete-failed = Certains fichiers de titres n'ont pas pu être supprimés
 toast-playlist-added = Playlist ajoutée à votre bibliothèque
 toast-playlist-removed = Playlist retirée de votre bibliothèque
 toast-playlist-visibility = Visibilité de la playlist modifiée
@@ -689,18 +802,27 @@ toast-playlist-busy = Une autre modification est encore en cours
 toast-playlist-signed-out = Connectez-vous pour modifier des playlists
 toast-queued-track = { $name } ajouté à la file d'attente
 toast-next-track = { $name } sera lu juste après
+toast-last-track = { $name } sera lu en dernier
 toast-queued-album = Album ajouté à la file d'attente
 toast-next-album = L'album sera lu juste après
+toast-last-album = L'album sera lu en dernier
 toast-queued-playlist = Playlist ajoutée à la file d'attente
 toast-next-playlist = La playlist sera lue juste après
+toast-last-playlist = La playlist sera lue en dernier
 toast-queued-artist = Artiste ajouté à la file d'attente
 toast-next-artist = L'artiste sera lu juste après
+toast-last-artist = L'artiste sera lu en dernier
 toast-queue-failed = Impossible d'ajouter cela à la file d'attente
 toast-keys-refused = Spotify n'accorde pas de clés de lecture à ce compte
 toast-sign-in-to-play = { $name } ne diffuse qu'aux auditeurs connectés
 toast-track-unplayable = { $name } n'a pas pu être lu
+toast-playback-stopped = Lecture arrêtée : plusieurs titres d'affilée n'ont pas pu être lus
+toast-throttled = { $name } limite la lecture pour l'instant. Nouvel essai dans un moment
+toast-still-throttled = { $name } limite toujours la lecture. Appuyez sur Lecture pour réessayer
 toast-library-add-failed = { $name } n'a pas pu être ajouté à votre bibliothèque
 toast-library-remove-failed = { $name } n'a pas pu être retiré de votre bibliothèque
+toast-library-added = Ajouté à votre bibliothèque
+toast-library-removed = Retiré de votre bibliothèque
 
 # lyrics
 lyrics-title = Paroles
@@ -711,6 +833,7 @@ lyrics-instrumental = Ce morceau est instrumental
 lyrics-failed = Le service de paroles est injoignable
 lyrics-follow = Suivre à nouveau le titre
 lyrics-source = Paroles fournies par { $source }
+lyrics-source-local = Paroles du fichier local
 lyrics-writers = Écrit par { $writers }
 
 update-available = Sonora { $version } est disponible
@@ -753,3 +876,11 @@ nav-pins-alphabetical = Alphabétique
 nav-pins-kind = Par type
 nav-show-full-library = Afficher toute la bibliothèque
 nav-return-top = Revenir en haut
+trouble-offline = Pas de connexion
+trouble-offline-detail = Vérifiez votre connexion internet et réessayez.
+trouble-not-loaded = Chargement impossible
+trouble-retry = Réessayer
+toast-offline = Pas de connexion. Aucune lecture en streaming tant qu'elle n'est pas rétablie.
+toast-settings-broken = Corrigez la ligne { $name } de settings.json pour enregistrer les modifications
+toast-tray-unavailable = Il n'y a pas de zone de notification où placer l'icône
+wake-reason = Musique en cours de lecture

@@ -30,6 +30,7 @@ mod tags;
 mod toast;
 mod updates;
 mod usage;
+mod wake;
 mod window_shape;
 
 pub use artist::ArtistDetail;
@@ -39,7 +40,9 @@ pub use drm::{CdmState, Drm};
 pub use genre::{GenreDetails, Genres};
 pub use history::{History, HistoryState};
 pub use home::Home;
-pub use library::{Library, LibraryEvent, LibraryPart, LibraryState, Problem, Ready, Shelf};
+pub use library::{
+    Addition, Library, LibraryEvent, LibraryPart, LibraryState, Problem, Ready, Shelf,
+};
 pub use logging::log_file;
 pub use lyrics::{Lyrics, LyricsState};
 pub use network::{Network, Reconnected};
@@ -61,6 +64,7 @@ pub use tags::{TagState, Tags};
 pub use toast::{Outcome, Target, Toast, Toasts};
 pub use updates::{Release, UpdateState, Updates};
 pub use usage::Usage;
+pub use wake::Wake;
 pub use window_shape::{apply_window_rounding, install_rounded_window_hook};
 
 use std::future::Future;
@@ -171,6 +175,7 @@ pub struct Sonora {
     pub settings: Entity<AppSettings>,
     pub updates: Entity<Updates>,
     pub usage: Entity<Usage>,
+    pub wake: Entity<Wake>,
 }
 
 impl Global for Sonora {}
@@ -192,7 +197,7 @@ pub fn init(
     cx.set_global(io.clone());
     let settings = cx.new(|cx| {
         let mut settings = AppSettings::load(database.clone());
-        settings.watch_file(cx);
+        settings.watch_files(cx);
         settings.report_broken(cx);
         settings
     });
@@ -221,8 +226,15 @@ pub fn init(
         )
     });
     let scan = cx.new(|cx| Scan::new(session.clone(), cx));
-    let scrobbling =
-        cx.new(|cx| Scrobbling::new(playback.clone(), settings.clone(), io.clone(), cx));
+    let scrobbling = cx.new(|cx| {
+        Scrobbling::new(
+            playback.clone(),
+            session.clone(),
+            settings.clone(),
+            io.clone(),
+            cx,
+        )
+    });
     let lyrics = cx.new(|cx| {
         Lyrics::new(
             playback.clone(),
@@ -240,6 +252,7 @@ pub fn init(
     let usage = cx.new(|cx| Usage::new(session.clone(), database, io.clone(), cx));
     let pins = cx.new(|cx| Pins::new(settings.clone(), library.clone(), session.clone(), cx));
     let potoken = potoken::attach(cx);
+    let wake = cx.new(|cx| Wake::new(settings.clone(), playback.clone(), io.clone(), cx));
     discord::attach(
         playback.clone(),
         settings.clone(),
@@ -266,5 +279,6 @@ pub fn init(
         settings,
         updates,
         usage,
+        wake,
     });
 }

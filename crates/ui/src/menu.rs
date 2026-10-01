@@ -22,6 +22,7 @@ use crate::separator::Separator;
 use crate::shield::Shield;
 use crate::table::{SelectNext, SelectPrevious};
 use crate::theme::ActiveTheme as _;
+use crate::tooltip::{Perch, Tipped as _};
 
 pub const MENU_CONTEXT: &str = "Menu";
 
@@ -367,6 +368,7 @@ pub struct MenuItem {
     face: Option<SharedString>,
     icon: Option<&'static str>,
     artwork: Option<Option<SharedString>>,
+    tooltip: Option<SharedString>,
     press: Option<Action>,
     submenu: Option<Submenu>,
 }
@@ -387,6 +389,7 @@ impl MenuItem {
             content: None,
             icon: None,
             artwork: None,
+            tooltip: None,
             press: None,
             submenu: None,
         }
@@ -415,6 +418,7 @@ impl MenuItem {
             face: None,
             icon: None,
             artwork: None,
+            tooltip: None,
             press: None,
             submenu: None,
         }
@@ -438,6 +442,12 @@ impl MenuItem {
 
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
+        self
+    }
+
+    /// Shows the Fluent message `key` beside the pointer while the item is hovered.
+    pub fn tooltip(mut self, key: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(key.into());
         self
     }
 
@@ -694,6 +704,7 @@ impl RenderOnce for Menu {
                 face,
                 icon,
                 artwork,
+                tooltip,
                 press,
                 submenu,
             } = item;
@@ -796,6 +807,7 @@ impl RenderOnce for Menu {
                         state.near(Near::Item, *hovered, window.window_handle(), cx)
                     })
                 })
+                .when_some(tooltip, |this, key| this.tip(key, Perch::Follow))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .when_some(press, |this, press| {
                     let released = press.clone();

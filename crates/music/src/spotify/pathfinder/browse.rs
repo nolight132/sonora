@@ -1,9 +1,12 @@
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use librespot_core::Session;
 use serde::{Deserialize, Deserializer};
 
 use super::query;
-use crate::{Album, ArtistRef, Genre, GenreDetail, GenreItem, GenreSection, Playlist, ReleaseType};
+use crate::{
+    Album, ArtistRef, Genre, GenreDetail, GenreItem, GenreSection, HomeFeed, Playlist, ReleaseType,
+    SavedArtist,
+};
 
 const PAGE_PREFIX: &str = "spotify:page:";
 const PLAYLIST_PREFIX: &str = "spotify:playlist:";
@@ -14,6 +17,11 @@ const INTEGRATION: &str = "INTEGRATION_WEB_PLAYER";
 const SECTIONS: u32 = 20;
 const ITEMS: u32 = 10;
 const CARDS: u32 = 99;
+/// The untitled grid at the top of Spotify's home, holding what the user played lately.
+const RECENTS: &str = "HomeShortsSectionData";
+/// A titled home shelf. The single-card feed sections and the Recents list are other kinds.
+const SHELF: &str = "HomeGenericSectionData";
+const ZONE: &str = "UTC";
 
 #[derive(Deserialize)]
 struct Start {
@@ -24,6 +32,17 @@ struct Start {
 #[derive(Deserialize)]
 struct Page {
     browse: Option<Container>,
+}
+
+#[derive(Deserialize)]
+struct Home {
+    home: Option<HomeData>,
+}
+
+#[derive(Deserialize)]
+struct HomeData {
+    #[serde(rename = "sectionContainer")]
+    container: Option<Container>,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +73,8 @@ struct Section {
 
 #[derive(Default, Deserialize)]
 struct SectionData {
+    #[serde(rename = "__typename", default, deserialize_with = "nullable")]
+    kind: String,
     title: Option<Label>,
 }
 
@@ -80,9 +101,22 @@ struct Content {
 enum Entity {
     Playlist(WirePlaylist),
     Album(WireAlbum),
+    Artist(WireArtist),
     BrowseSectionContainer(WireCard),
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Deserialize)]
+struct WireArtist {
+    profile: Option<Profile>,
+    visuals: Option<Visuals>,
+}
+
+#[derive(Deserialize)]
+struct Visuals {
+    #[serde(rename = "avatarImage", default, deserialize_with = "nullable")]
+    avatar: Artwork,
 }
 
 #[derive(Deserialize)]
@@ -204,6 +238,43 @@ pub(crate) async fn page(session: &Session, genre_id: &str) -> Result<GenreDetai
     detail(query::<Page>(session, "browsePage", variables).await?)
 }
 
+/// Spotify's own home feed, the one the web player opens on. Fails when the feed holds
+/// neither recents nor a shelf this module can read.
+pub(crate) async fn home(session: &Session) -> Result<HomeFeed> {
+    let zone = jiff::tz::TimeZone::system();
+    let variables = serde_json::json!({
+        "homeEndUserIntegration": INTEGRATION,
+        "timeZone": zone.iana_name().unwrap_or(ZONE),
+        "sp_t": "",
+        "facet": "",
+        "sectionItemsLimit": ITEMS,
+        "includeEpisodeContentRatingsV2": false,
+    });
+    feed(query::<Home>(session, "home", variables).await?)
+}
+
+fn feed(data: Home) -> Result<HomeFeed> {
+    let container = data
+        .home
+        .and_then(|home| home.container)
+        .context("home Pathfinder response has no sections")?;
+
+    let mut feed = HomeFeed::default();
+    for shelf in container.sections.items {
+        match shelf.data.kind.as_str() {
+            RECENTS if feed.listen_again.is_empty() => {
+                feed.listen_again = shelf.items.items.into_iter().filter_map(item).collect();
+            }
+            SHELF => feed.sections.extend(section(shelf)),
+            _ => {}
+        }
+    }
+    if feed.listen_again.is_empty() && feed.sections.is_empty() {
+        bail!("home Pathfinder response has no readable sections");
+    }
+    Ok(feed)
+}
+
 fn cards(data: Start) -> Result<Vec<Genre>> {
     let start = data
         .start
@@ -300,6 +371,12 @@ fn item(item: Item) -> Option<GenreItem> {
                 added_at: None,
             }))
         }
+        Entity::Artist(artist) => Some(GenreItem::Artist(SavedArtist {
+            id: trimmed(&uri, ARTIST_PREFIX)?,
+            name: artist.profile?.name,
+            cover: artist.visuals.and_then(|visuals| image(&visuals.avatar)),
+            added_at: None,
+        })),
         Entity::BrowseSectionContainer(card) => genre(&uri, card).map(GenreItem::Genre),
         Entity::Unknown => None,
     }

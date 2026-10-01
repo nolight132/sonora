@@ -3,10 +3,10 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use crate::progress;
-use crate::{Album, Track};
+use crate::{Album, ReleaseType, Track};
 
 use super::index::{Changes, Index, Remembered};
-use super::wire;
+use super::wire::{self, Tagged};
 
 const SEPARATORS: [char; 8] = ['-', '–', '—', '.', '_', '·', ':', ' '];
 
@@ -47,10 +47,8 @@ pub(super) struct Reading {
     pub path: PathBuf,
     pub mtime: i64,
     pub size: u64,
-    pub track: Track,
-    pub album_artist: String,
-    /// What the tag said the year was, kept so dating an album never reopens a file.
-    pub year: Option<i32>,
+    /// The track and album tags, kept so dating and labelling an album never reopens a file.
+    pub tagged: Tagged,
     /// Whether the file was opened this time round, so its row has to be written back.
     pub fresh: bool,
 }
@@ -110,12 +108,9 @@ pub fn scan(roots: &[PathBuf], cache_dir: &Path, index: &Index) -> Scanned {
     let changes = Changes::between(&remembered, &readings, &looks, &reached);
     let opened = readings.iter().filter(|reading| reading.fresh).count();
     scanned.portraits = name_portraits(&looks, &readings);
-    let parsed: Vec<(Track, String, Option<i32>)> = readings
-        .into_iter()
-        .map(|reading| (reading.track, reading.album_artist, reading.year))
-        .collect();
+    let parsed: Vec<Tagged> = readings.into_iter().map(|reading| reading.tagged).collect();
     scanned.albums = group_albums(&parsed);
-    scanned.tracks = parsed.into_iter().map(|(track, ..)| track).collect();
+    scanned.tracks = parsed.into_iter().map(|tagged| tagged.track).collect();
     index.save(&changes);
 
     log::debug!(
@@ -148,22 +143,16 @@ fn read_tags(
                 path: found.path.clone(),
                 mtime: found.mtime,
                 size: found.size,
-                track: known.track.clone(),
-                album_artist: known.album_artist.clone(),
-                year: known.year,
+                tagged: known.tagged.clone(),
                 fresh: false,
             }),
-            false => {
-                read_one(&found.path, roots, cache_dir).map(|(track, album_artist, year)| Reading {
-                    path: found.path.clone(),
-                    mtime: found.mtime,
-                    size: found.size,
-                    track,
-                    album_artist,
-                    year,
-                    fresh: true,
-                })
-            }
+            false => read_one(&found.path, roots, cache_dir).map(|tagged| Reading {
+                path: found.path.clone(),
+                mtime: found.mtime,
+                size: found.size,
+                tagged,
+                fresh: true,
+            }),
         };
         progress.read();
         reading
@@ -171,11 +160,7 @@ fn read_tags(
 }
 
 /// One file's tags, with the folders above it standing in for whatever the tag does not say.
-fn read_one(
-    path: &Path,
-    roots: &[PathBuf],
-    cache_dir: &Path,
-) -> Option<(Track, String, Option<i32>)> {
+fn read_one(path: &Path, roots: &[PathBuf], cache_dir: &Path) -> Option<Tagged> {
     let artist_hint = path
         .parent()
         .and_then(Path::parent)
@@ -246,7 +231,7 @@ fn look_for_portraits(
 ) -> Vec<Look> {
     let named: HashSet<String> = readings
         .iter()
-        .map(|reading| wire::normalize(&reading.track.artists))
+        .map(|reading| wire::normalize(&reading.tagged.track.artists))
         .collect();
 
     spread(folders, progress, |folder| {
@@ -276,8 +261,8 @@ fn name_portraits(looks: &[Look], readings: &[Reading]) -> HashMap<String, Strin
     let mut by_normalized: HashMap<String, String> = HashMap::new();
     for reading in readings {
         by_normalized
-            .entry(wire::normalize(&reading.track.artists))
-            .or_insert_with(|| reading.track.artists.clone());
+            .entry(wire::normalize(&reading.tagged.track.artists))
+            .or_insert_with(|| reading.tagged.track.artists.clone());
     }
 
     let mut portraits = HashMap::new();
@@ -295,12 +280,15 @@ fn name_portraits(looks: &[Look], readings: &[Reading]) -> HashMap<String, Strin
     portraits
 }
 
-fn group_albums(parsed: &[(Track, String, Option<i32>)]) -> Vec<Album> {
+/// Groups tracks into albums by the id each one carries, in scan order. An album is credited to
+/// the first album artist its tags name, or to the artists all of its tracks share, and takes the
+/// first release type any of its tracks names.
+fn group_albums(parsed: &[Tagged]) -> Vec<Album> {
     let mut order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
 
-    for (index, (track, ..)) in parsed.iter().enumerate() {
-        let Some(id) = &track.album_id else {
+    for (index, tagged) in parsed.iter().enumerate() {
+        let Some(id) = &tagged.track.album_id else {
             continue;
         };
         if !groups.contains_key(id) {
@@ -313,14 +301,28 @@ fn group_albums(parsed: &[(Track, String, Option<i32>)]) -> Vec<Album> {
         .into_iter()
         .filter_map(|id| {
             let indices = groups.get(&id)?;
-            let mut tracks: Vec<Track> = indices.iter().map(|&i| parsed[i].0.clone()).collect();
+            let mut tracks: Vec<Track> = indices.iter().map(|&i| parsed[i].track.clone()).collect();
             tracks.sort_by_key(|track| (track.disc_number, track.track_number, track.name.clone()));
 
-            let album_artist = parsed[indices[0]].1.clone();
+            let album_artist = indices
+                .iter()
+                .find_map(|&i| parsed[i].album_artist.clone())
+                .unwrap_or_else(|| wire::shared_artists(&tracks));
             let name = tracks[0].album.clone();
             let year = album_year(indices, parsed);
+            let release = indices
+                .iter()
+                .find_map(|&i| parsed[i].release)
+                .unwrap_or(ReleaseType::Album);
 
-            Some(wire::album_from_tracks(&name, &album_artist, &tracks, year))
+            Some(wire::album_from_tracks(
+                &id,
+                &name,
+                &album_artist,
+                &tracks,
+                year,
+                release,
+            ))
         })
         .collect()
 }
@@ -328,13 +330,13 @@ fn group_albums(parsed: &[(Track, String, Option<i32>)]) -> Vec<Album> {
 /// The year an album is dated by: the first year any of its tracks carries, and the year in its
 /// folder's name when none of them does. The years come from the scan's own reads, so dating an
 /// album of a hundred tracks costs nothing on top.
-fn album_year(indices: &[usize], parsed: &[(Track, String, Option<i32>)]) -> i32 {
+fn album_year(indices: &[usize], parsed: &[Tagged]) -> i32 {
     indices
         .iter()
-        .find_map(|&i| parsed[i].2)
+        .find_map(|&i| parsed[i].year)
         .or_else(|| {
             parsed[indices[0]]
-                .0
+                .track
                 .id
                 .as_deref()
                 .and_then(wire::path_from_track_id)
@@ -346,8 +348,8 @@ fn album_year(indices: &[usize], parsed: &[(Track, String, Option<i32>)]) -> i32
 
 /// One pass over a folder tree, collecting the audio files to read and the folders to look for
 /// portraits in. A folder whose time matches the index is listed from memory: no listing of it,
-/// and no stat for any file in it. Children come out sorted either way, so the library holds the
-/// same order whichever path a folder took.
+/// and no stat for any file in it but one whose stored row no longer parses. Children come out
+/// sorted either way, so the library holds the same order whichever path a folder took.
 fn walk(
     dir: &Path,
     remembered: &Remembered,
@@ -371,15 +373,26 @@ fn walk(
                 return;
             };
             for path in &children.files {
-                let Some(known) = remembered.files.get(path) else {
-                    continue;
+                let found = match remembered.files.get(path) {
+                    Some(known) => Found {
+                        path: path.clone(),
+                        mtime: known.mtime,
+                        size: known.size,
+                        known: true,
+                    },
+                    None => {
+                        let Some((mtime, size)) = stat(path) else {
+                            continue;
+                        };
+                        Found {
+                            path: path.clone(),
+                            mtime,
+                            size,
+                            known: false,
+                        }
+                    }
                 };
-                files.push(Found {
-                    path: path.clone(),
-                    mtime: known.mtime,
-                    size: known.size,
-                    known: true,
-                });
+                files.push(found);
             }
             for child in &children.folders {
                 if !progress.live() {
@@ -621,6 +634,42 @@ mod tests {
                 dir.join("a/b/c")
             ]
         );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_album_keeps_its_release_type_across_an_index_from_before_it() {
+        let _scanning = alone();
+        let name = "sonora-scan-test-release-type";
+        let (dir, index) = scratch(name);
+        let album = dir.join("Sylosis/The Path");
+        fs::create_dir_all(&album).unwrap();
+        for number in 1..=5 {
+            let title = format!("TITLE=Track {number}");
+            let track = format!("TRACKNUMBER={number}");
+            let comments = [
+                "ALBUM=The Path",
+                "ALBUMARTIST=Sylosis",
+                "RELEASETYPE=ep",
+                title.as_str(),
+                track.as_str(),
+            ];
+            super::super::tags::tests::flac(&album.join(format!("0{number}.flac")), &comments);
+        }
+
+        let first = scan(std::slice::from_ref(&dir), &dir, &index);
+        assert_eq!(first.albums.len(), 1);
+        assert_eq!(first.albums[0].release_type, ReleaseType::Ep);
+
+        let database = std::env::temp_dir().join(format!("{name}-index.sqlite"));
+        rusqlite::Connection::open(&database)
+            .unwrap()
+            .execute("UPDATE local_files SET track = '[null, null, null]'", [])
+            .unwrap();
+        let second = scan(std::slice::from_ref(&dir), &dir, &index);
+
+        assert_eq!(second.tracks.len(), 5);
+        assert_eq!(second.albums[0].release_type, ReleaseType::Ep);
         fs::remove_dir_all(&dir).ok();
     }
 }

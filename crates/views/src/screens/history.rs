@@ -7,7 +7,7 @@ use music::Track;
 use state::{History, HistoryState, Playback};
 use ui::{
     ActiveTheme as _, Button, Listing as _, Modal, Scrollbar, Scroller, TableDelegate, TableEvent,
-    TableState, clock, table, vacant,
+    TableState, runtime, table, vacant,
 };
 
 use crate::chrome::{Searchable, Toolbar, Tooled};
@@ -121,7 +121,7 @@ impl HistoryView {
         };
         let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = count));
         if !duration.is_zero() {
-            strip = strip.text(clock(duration));
+            strip = strip.text(runtime(duration));
         }
 
         PageHero::new("history-hero", t!("nav-history"))

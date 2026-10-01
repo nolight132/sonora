@@ -10,7 +10,7 @@ mod wire;
 
 pub use lyrics::LocalLyrics;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow};
@@ -19,7 +19,7 @@ use storage::{Cache, Database};
 
 use crate::{
     Capabilities, InputSource, MusicApi, MusicProvider, PlaybackFactory, PromptSink,
-    ProviderSession, Shape, SignIn, UserProfile,
+    ProviderSession, Shape, SignIn, Track, UserProfile,
 };
 
 pub struct LocalProvider {
@@ -47,7 +47,6 @@ impl LocalProvider {
         let api: Arc<dyn MusicApi> = Arc::new(client::LocalClient::new(
             scanned,
             self.database.clone(),
-            self.cache_dir.clone(),
             self.index.clone(),
         ));
         let playback: Arc<dyn PlaybackFactory> = Arc::new(playback::Factory);
@@ -56,6 +55,7 @@ impl LocalProvider {
             profile: UserProfile {
                 id: "local".to_owned(),
                 display_name: "Local Files".to_owned(),
+                avatar: None,
             },
             api,
             playback,
@@ -86,6 +86,14 @@ impl MusicProvider for LocalProvider {
 
     fn forget_scan(&self) {
         self.index.distrust();
+    }
+
+    fn playback_factory(&self) -> Option<Arc<dyn PlaybackFactory>> {
+        Some(Arc::new(playback::Factory))
+    }
+
+    fn track_from_path(&self, path: &Path) -> Option<Track> {
+        wire::track_from_file(path, None, None, &self.cache_dir).map(|tagged| tagged.track)
     }
 
     fn listening_to(&self) -> &'static str {

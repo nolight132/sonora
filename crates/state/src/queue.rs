@@ -395,7 +395,7 @@ impl Queue {
             .past
             .iter()
             .chain(self.current.as_ref())
-            .chain(self.upcoming.iter())
+            .chain(self.upcoming.range(self.manual..))
             .cloned()
             .collect();
         self.changed(cx);

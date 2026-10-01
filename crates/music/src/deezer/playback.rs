@@ -79,6 +79,10 @@ impl Fetch for Deezer {
         loaded.loudness
     }
 
+    async fn downloaded(&self, loaded: &Loaded) {
+        loaded.stream.finished().await;
+    }
+
     /// Builds a decoder over a stream and places it at `at`. The bytes past the preroll are
     /// still arriving, so this only reads the header.
     fn open(&self, id: &str, loaded: &Loaded, at: Duration) -> Option<Self::Source> {

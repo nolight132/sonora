@@ -1,11 +1,13 @@
-use std::collections::HashMap;
-use std::time::Duration;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use opensubsonic::api::lists::AlbumListType;
 use opensubsonic::data::{AlbumId3, AlbumWithSongsId3, Child, Genre as SourceGenre};
 use opensubsonic::{Auth, Client};
+use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
 
 use crate::engine::Loudness;
@@ -13,18 +15,24 @@ use crate::escape;
 use crate::subsonic::auth::Signature;
 use crate::subsonic::wire;
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem, GenreSection,
-    HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, UserProfile,
-    distinct_covers,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem,
+    GenreSection, HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, Report, SUGGESTIONS,
+    SavedArtist, Track, UserProfile, distinct_covers,
 };
 
 const PORTRAIT_LIMIT: usize = 24;
 const RADIO_COUNT: i32 = 25;
+/// How many similar artists lend their albums to a thin rail, and how many albums each
+/// lends.
+const SIMILAR_ARTISTS: usize = 6;
+const SIMILAR_RELEASES: usize = 2;
 const HOME_SONGS: i32 = 25;
 const HOME_ALBUMS: i32 = 12;
 const LIBRARY_PAGE: i32 = 500;
 const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "sonora";
+/// The OpenSubsonic extension that takes a playback position and state.
+const PLAYBACK_REPORT: &str = "playbackReport";
 
 #[derive(Clone)]
 pub struct SubsonicClient {
@@ -35,6 +43,8 @@ pub struct SubsonicClient {
     /// every url afresh, which would give one cover a new url on every conversion and defeat
     /// every image cache between here and the screen.
     covers: String,
+    /// Whether the server takes `reportPlayback`, asked the first time a report goes out.
+    playback_report: Arc<OnceCell<bool>>,
 }
 
 /// What the server records about a track that playback wants before the decoder can tell.
@@ -68,7 +78,27 @@ impl SubsonicClient {
             username,
             http: reqwest::Client::new(),
             covers,
+            playback_report: Arc::default(),
         })
+    }
+
+    /// Whether the server lists the `playbackReport` extension, asked once per client. A plain
+    /// Subsonic server has no extension list and answers with an error, which counts as no.
+    async fn reports_playback(&self) -> bool {
+        *self
+            .playback_report
+            .get_or_init(|| async {
+                match self.client.get_open_subsonic_extensions().await {
+                    Ok(extensions) => extensions
+                        .iter()
+                        .any(|extension| extension.name == PLAYBACK_REPORT),
+                    Err(error) => {
+                        log::info!("subsonic: the server lists no extensions: {error:#}");
+                        false
+                    }
+                }
+            })
+            .await
     }
 
     fn cover_url(&self, id: &str, size: i32) -> Option<String> {
@@ -116,7 +146,10 @@ impl SubsonicClient {
             artist_refs,
             cover,
             cover_large: large,
-            release_type: crate::ReleaseType::Album,
+            release_type: wire::release_type(
+                detail.release_types.as_deref(),
+                detail.is_compilation,
+            ),
             year,
             track_count: detail
                 .song_count
@@ -126,7 +159,7 @@ impl SubsonicClient {
                 0 => String::new(),
                 _ => year.to_string(),
             },
-            label: String::new(),
+            label: wire::labels(detail.record_labels.as_deref()),
             copyrights: Vec::new(),
             added_at: None,
         }
@@ -158,6 +191,84 @@ impl SubsonicClient {
             return Some(url.to_owned());
         }
         self.cover_large(art, fallback)
+    }
+
+    /// Up to `SUGGESTIONS` of the artist's own albums without the album the page is already
+    /// showing.
+    async fn more_from_artist(&self, album_id: &str, artist_id: &str) -> Result<Vec<Album>> {
+        let detail = self
+            .client
+            .get_artist(artist_id)
+            .await
+            .with_context(|| format!("cannot load more from artist {artist_id}"))?;
+        Ok(detail
+            .album
+            .into_iter()
+            .map(|album| self.convert_album(album))
+            .filter(|album| album.id != album_id)
+            .take(SUGGESTIONS)
+            .collect())
+    }
+
+    /// Up to `SUGGESTIONS` artists the server lists as similar, for the rail's artists tab.
+    async fn similar_artists(&self, artist_id: &str) -> Result<Vec<SavedArtist>> {
+        let info = self
+            .client
+            .get_artist_info2(artist_id, Some(SUGGESTIONS as i32), None)
+            .await
+            .with_context(|| format!("cannot load artists similar to {artist_id}"))?;
+        Ok(info
+            .similar_artist
+            .into_iter()
+            .filter(|artist| !artist.name.is_empty())
+            .map(|artist| SavedArtist {
+                cover: self.artist_cover(
+                    artist.cover_art.as_deref(),
+                    artist.artist_image_url.as_deref(),
+                    &artist.id,
+                ),
+                id: artist.id.clone(),
+                name: artist.name.clone(),
+                added_at: None,
+            })
+            .take(SUGGESTIONS)
+            .collect())
+    }
+
+    /// A few albums each from the first similar artists, skipping the page's own album:
+    /// the cross-artist half of the rail. One artist failing only shortens the rail.
+    async fn similar_releases(&self, album_id: &str, similar: &[SavedArtist]) -> Vec<Album> {
+        let mut tasks = JoinSet::new();
+        for artist in similar.iter().take(SIMILAR_ARTISTS) {
+            let client = self.clone();
+            let album_id = album_id.to_owned();
+            let artist_id = artist.id.clone();
+            tasks.spawn(async move {
+                let detail = match client.client.get_artist(&artist_id).await {
+                    Ok(detail) => detail,
+                    Err(error) => {
+                        log::warn!("subsonic: cannot load similar artist {artist_id}: {error:#}");
+                        return None;
+                    }
+                };
+                Some(
+                    detail
+                        .album
+                        .into_iter()
+                        .map(|album| client.convert_album(album))
+                        .filter(|album| album.id != album_id)
+                        .take(SIMILAR_RELEASES)
+                        .collect::<Vec<Album>>(),
+                )
+            });
+        }
+        let mut releases = Vec::new();
+        while let Some(read) = tasks.join_next().await {
+            if let Ok(Some(read)) = read {
+                releases.extend(read);
+            }
+        }
+        releases
     }
 }
 
@@ -324,6 +435,48 @@ impl MusicApi for SubsonicClient {
         Ok(song
             .and_then(|song| song.play_count)
             .map(|count| count as u64))
+    }
+
+    /// Sends the position and state through `reportPlayback`, with scrobbling left to `played`.
+    /// A server without the extension only hears that the track is playing, through the
+    /// now-playing form of `scrobble`, since it has nowhere to put a position.
+    async fn report(&self, track_id: &str, report: Report, position: Duration) -> Result<()> {
+        if !self.reports_playback().await {
+            return match report {
+                Report::Playing => self
+                    .client
+                    .scrobble(track_id, None, Some(false))
+                    .await
+                    .with_context(|| format!("cannot report {track_id} as playing")),
+                Report::Paused | Report::Stopped => Ok(()),
+            };
+        }
+        let state = match report {
+            Report::Playing => "playing",
+            Report::Paused => "paused",
+            Report::Stopped => "stopped",
+        };
+        let millis = i64::try_from(position.as_millis()).unwrap_or(i64::MAX);
+        self.client
+            .report_playback(track_id, "song", millis, state, None, Some(true))
+            .await
+            .with_context(|| format!("cannot report {track_id} as {state}"))
+    }
+
+    /// Subsonic takes the start of the listen in milliseconds since the epoch.
+    async fn played(&self, track_id: &str, at: SystemTime) -> Result<()> {
+        let millis = at
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        self.client
+            .scrobble(
+                track_id,
+                Some(i64::try_from(millis).unwrap_or(i64::MAX)),
+                Some(true),
+            )
+            .await
+            .with_context(|| format!("cannot record a play of {track_id}"))
     }
 
     async fn playlists(&self) -> Result<Vec<Playlist>> {
@@ -515,6 +668,52 @@ impl MusicApi for SubsonicClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         Ok(self.album(album_id).await?.tracks)
+    }
+
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let Some(artist_id) = artist_id else {
+            return Ok(AlbumCatalogue::default());
+        };
+        let (more_by, similar) = tokio::join!(
+            self.more_from_artist(album_id, artist_id),
+            self.similar_artists(artist_id),
+        );
+        // Nothing read at all is an error rather than an empty rail, so the catalog does not
+        // keep the empty answer for the rest of the session.
+        let (more_by, similar) = match (more_by, similar) {
+            (Err(error), Err(_)) => return Err(error.context("cannot read any recommendations")),
+            pair => pair,
+        };
+        if let Err(error) = &more_by {
+            log::warn!("subsonic: cannot read more from this artist: {error:#}");
+        }
+        if let Err(error) = &similar {
+            log::warn!("subsonic: cannot read similar artists: {error:#}");
+        }
+        let (more_by, similar) = (more_by.unwrap_or_default(), similar.unwrap_or_default());
+        let mut seen = HashSet::new();
+        let mut liked: Vec<Album> = more_by
+            .into_iter()
+            .filter(|album| seen.insert(album.id.clone()))
+            .collect();
+        if liked.len() < SUGGESTIONS && !similar.is_empty() {
+            for album in self.similar_releases(album_id, &similar).await {
+                if liked.len() >= SUGGESTIONS {
+                    break;
+                }
+                if seen.insert(album.id.clone()) {
+                    liked.push(album);
+                }
+            }
+        }
+        Ok(AlbumCatalogue {
+            also_like: liked,
+            similar,
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {

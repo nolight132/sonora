@@ -15,6 +15,7 @@ mod auth;
 mod client;
 mod playback;
 mod progressive;
+mod recommend;
 mod stream;
 mod wire;
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -6,8 +7,8 @@ use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::Accessor;
 use lofty::probe::Probe;
-use lofty::tag::ItemKey::AlbumArtist;
-use lofty::tag::Tag;
+use lofty::tag::{ItemKey, Tag};
+use serde::{Deserialize, Serialize};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, StandardTagKey};
@@ -44,6 +45,21 @@ const ARTIST_NAMES: &[&str] = &[
     "cover.png",
     "cover.webp",
 ];
+
+/// What separates one artist from the next in a track's credit, matched without regard to case.
+/// An ampersand is left alone because it is as often part of one name as a join of two.
+const CREDIT_MARKS: &[&str] = &[
+    " featuring ",
+    " feat. ",
+    " feat ",
+    " ft. ",
+    " ft ",
+    ",",
+    ";",
+];
+
+/// The credit of an album whose tracks name no album artist and share no artist either.
+const VARIOUS_ARTISTS: &str = "Various Artists";
 
 const PLAYABLE_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "wav", "opus", "webm", "mka", "wv", "ape",
@@ -177,7 +193,8 @@ fn infer_from_stem(stem: &str) -> (Option<String>, Option<String>) {
             if right.chars().all(|c| c.is_ascii_digit()) {
                 return (Some(left.to_owned()), None);
             }
-            return (Some(left.to_owned()), Some(right.to_owned()));
+            let title = numbered(left).unwrap_or_else(|| left.to_owned());
+            return (Some(title), Some(right.to_owned()));
         }
     }
     numbered(stem)
@@ -186,12 +203,33 @@ fn infer_from_stem(stem: &str) -> (Option<String>, Option<String>) {
 }
 
 fn numbered(stem: &str) -> Option<String> {
-    let (digits, rest) = stem.split_once('.')?;
-    if digits.is_empty() || digits.len() > 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
-        return None;
+    let stem = stem.trim();
+    for sep in [".", " - ", " \u{2013} ", " \u{2014} ", " \u{ff0d} "] {
+        if let Some((digits, rest)) = stem.split_once(sep)
+            && !digits.is_empty()
+            && digits.len() <= 3
+            && digits.chars().all(|c| c.is_ascii_digit())
+        {
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                return Some(rest.to_owned());
+            }
+        }
     }
-    let rest = rest.trim();
-    (!rest.is_empty()).then(|| rest.to_owned())
+    None
+}
+
+/// One file as a scan reads it: the track, and the tags its album is grouped, dated and labelled by.
+/// The index stores it whole, so a new field makes every stored row unreadable and each file is read
+/// again once.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Tagged {
+    pub track: Track,
+    /// The album artist the tags name, `None` when they name none.
+    pub album_artist: Option<String>,
+    pub year: Option<i32>,
+    /// The release type the tags name, `None` when they name neither a type nor a compilation.
+    pub release: Option<ReleaseType>,
 }
 
 struct FallbackProbe {
@@ -203,6 +241,8 @@ struct FallbackProbe {
     track_number: u32,
     disc_number: u32,
     year: Option<i32>,
+    release: Vec<String>,
+    compilation: bool,
     cover_data: Option<(Vec<u8>, String)>,
 }
 
@@ -270,6 +310,8 @@ fn probe_symphonia_at(path: &Path, skip: u64) -> Option<FallbackProbe> {
     let mut track_number = 0;
     let mut disc_number = 0;
     let mut year = None;
+    let mut release = Vec::new();
+    let mut compilation = false;
     let mut cover_data = None;
 
     let mut collect_metadata = |rev: &symphonia::core::meta::MetadataRevision| {
@@ -306,6 +348,12 @@ fn probe_symphonia_at(path: &Path, skip: u64) -> Option<FallbackProbe> {
                         disc_number = n;
                     }
                 }
+                Some(StandardTagKey::MusicBrainzReleaseType) => {
+                    release.extend(clean_val(&tag.value));
+                }
+                Some(StandardTagKey::Compilation) => {
+                    compilation |= flagged(&tag.value.to_string());
+                }
                 Some(StandardTagKey::Date) if year.is_none() => {
                     let s = tag.value.to_string();
                     if s.len() >= 4 {
@@ -341,6 +389,8 @@ fn probe_symphonia_at(path: &Path, skip: u64) -> Option<FallbackProbe> {
         track_number,
         disc_number,
         year,
+        release,
+        compilation,
         cover_data,
     })
 }
@@ -357,15 +407,17 @@ pub fn modified_at(path: &Path) -> Option<i64> {
     }
 }
 
-/// Reads one file into a track, the album artist it belongs under, and the year its tag
-/// claims. The year comes out of the same read rather than a second one: it is what an album
-/// is dated by, and opening every album's first track again costs a round trip each on a share.
+/// Reads one file into a track, with the album artist, year and release type its tags claim.
+/// A file naming an album artist joins that artist's album of the same name. One that names none
+/// joins the album of the same name in its own folder, so featured artists never split an album.
+/// The year comes out of the same read because it is what an album is dated by, and opening every
+/// album's first track again costs a round trip each on a share.
 pub fn track_from_file(
     path: &Path,
     artist_hint: Option<&str>,
     album_hint: Option<&str>,
     cache_dir: &Path,
-) -> Option<(Track, String, Option<i32>)> {
+) -> Option<Tagged> {
     let tagged = Probe::open(path).ok().and_then(|file| file.read().ok());
     let tag = tagged
         .as_ref()
@@ -411,12 +463,11 @@ pub fn track_from_file(
         .unwrap_or_else(|| "Unknown Artist".to_owned());
 
     let album_artist = clean(
-        tag.and_then(|tag| tag.get_string(AlbumArtist))
+        tag.and_then(|tag| tag.get_string(ItemKey::AlbumArtist))
             .map(std::borrow::Cow::Borrowed),
     )
     .or_else(|| fallback.as_ref().and_then(|fb| fb.album_artist.clone()))
-    .or_else(|| lenient.as_ref().and_then(|l| l.album_artist.clone()))
-    .unwrap_or_else(|| artist.clone());
+    .or_else(|| lenient.as_ref().and_then(|l| l.album_artist.clone()));
 
     let album_name = clean(tag.and_then(Accessor::album))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.album.clone()))
@@ -460,7 +511,12 @@ pub fn track_from_file(
         cover = cache_image_data(data, mime, cache_dir);
     }
 
-    let album_id = (!album_name.is_empty()).then(|| album_id(&album_artist, &album_name));
+    let album_id = (!album_name.is_empty()).then(|| {
+        let owner = album_artist
+            .clone()
+            .unwrap_or_else(|| album_folder(path).to_string_lossy().into_owned());
+        album_id(&owner, &album_name)
+    });
     let year = tag
         .and_then(|tag| tag.date())
         .map(|date| date.year as i32)
@@ -468,8 +524,19 @@ pub fn track_from_file(
         .or_else(|| fallback.as_ref().and_then(|fb| fb.year))
         .or_else(|| lenient.as_ref().and_then(|l| l.year));
 
-    Some((
-        Track {
+    let release = match tag {
+        Some(tag) => release_type(
+            tag.get_strings(ItemKey::MusicBrainzReleaseType),
+            tag.get_string(ItemKey::FlagCompilation)
+                .is_some_and(flagged),
+        ),
+        None => fallback
+            .as_ref()
+            .and_then(|fb| release_type(fb.release.iter().map(String::as_str), fb.compilation)),
+    };
+
+    Some(Tagged {
+        track: Track {
             id: Some(track_id(path)),
             name,
             playable: is_playable(path),
@@ -492,25 +559,102 @@ pub fn track_from_file(
         },
         album_artist,
         year,
-    ))
+        release,
+    })
 }
 
-pub fn album_from_tracks(name: &str, artist: &str, tracks: &[Track], year: i32) -> Album {
+/// Builds the album `tracks` were grouped under. `id` is the one the tracks carry, since it is
+/// keyed by folder rather than by `artist` when the files name no album artist.
+pub fn album_from_tracks(
+    id: &str,
+    name: &str,
+    artist: &str,
+    tracks: &[Track],
+    year: i32,
+    release: ReleaseType,
+) -> Album {
     let cover = tracks.iter().find_map(|track| track.cover.clone());
     Album {
-        id: album_id(artist, name),
+        id: id.to_owned(),
         name: name.to_owned(),
         artists: artist.to_owned(),
         artist_refs: vec![artist_ref(artist)],
         cover: cover.clone(),
         cover_large: cover,
-        release_type: ReleaseType::Album,
+        release_type: release,
         year,
         track_count: tracks.len() as u32,
         release_date: String::new(),
         label: String::new(),
         copyrights: Vec::new(),
         added_at: tracks.iter().filter_map(|track| track.added_at).max(),
+    }
+}
+
+/// The artists every track credits, in the order the first track lists them, for an album whose
+/// files name no album artist. Credits split on commas, semicolons and featuring marks, and
+/// tracks that share nobody are credited to various artists.
+pub fn shared_artists(tracks: &[Track]) -> String {
+    let Some((first, rest)) = tracks.split_first() else {
+        return VARIOUS_ARTISTS.to_owned();
+    };
+    let others: Vec<HashSet<String>> = rest
+        .iter()
+        .map(|track| {
+            credited(&track.artists)
+                .iter()
+                .map(|name| normalize(name))
+                .collect()
+        })
+        .collect();
+    let shared: Vec<String> = credited(&first.artists)
+        .into_iter()
+        .filter(|name| {
+            others
+                .iter()
+                .all(|credits| credits.contains(&normalize(name)))
+        })
+        .collect();
+    match shared.is_empty() {
+        true => VARIOUS_ARTISTS.to_owned(),
+        false => shared.join(", "),
+    }
+}
+
+/// Splits one track's artist credit into the names it lists.
+fn credited(artists: &str) -> Vec<String> {
+    let mut text = format!(" {} ", artists.replace(['(', ')', '[', ']'], " "));
+    for mark in CREDIT_MARKS {
+        while let Some(at) = text.to_ascii_lowercase().find(mark) {
+            text.replace_range(at..at + mark.len(), "\n");
+        }
+    }
+    text.split('\n')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The folder an untagged track's album is keyed by. A disc folder such as `CD1` or `Disc 2`
+/// stands for the album folder above it, so a multi-disc rip still makes one album.
+fn album_folder(path: &Path) -> &Path {
+    let Some(dir) = path.parent() else {
+        return path;
+    };
+    let name = dir
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let disc = ["cd", "disc", "disk"].iter().any(|prefix| {
+        name.strip_prefix(prefix).is_some_and(|rest| {
+            let rest = rest.trim_start_matches([' ', '_', '-', '.']);
+            !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
+        })
+    });
+    match disc {
+        true => dir.parent().unwrap_or(dir),
+        false => dir,
     }
 }
 
@@ -595,6 +739,24 @@ fn cache_image_data(data: &[u8], media_type_or_ext: &str, cache_dir: &Path) -> O
     Some(format!("file://{}", dest.display()))
 }
 
+/// The release type MusicBrainz tags name, `None` when they name no type and no compilation flag.
+fn release_type<'a>(
+    types: impl IntoIterator<Item = &'a str>,
+    compilation: bool,
+) -> Option<ReleaseType> {
+    let mut types = types
+        .into_iter()
+        .filter(|kind| !kind.trim().is_empty())
+        .peekable();
+    (types.peek().is_some() || compilation)
+        .then(|| ReleaseType::from_musicbrainz(types, compilation))
+}
+
+/// Whether a flag tag such as `COMPILATION` or `TCMP` is set, which taggers write as `1`.
+fn flagged(value: &str) -> bool {
+    matches!(value.trim(), "1" | "true" | "True" | "TRUE")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,7 +839,9 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let (track, ..) = track_from_file(path, None, None, &temp).expect("track parsed");
+        let track = track_from_file(path, None, None, &temp)
+            .expect("track parsed")
+            .track;
         assert!(track.playable);
         assert_eq!(track.name, "Chann Vi Gawah");
         assert_eq!(track.artists, "Madhav Mahajan");
@@ -706,7 +870,9 @@ mod tests {
         std::fs::write(&path, []).unwrap();
 
         let stamped = modified_at(&path).expect("a file just written has a modified time");
-        let (track, ..) = track_from_file(&path, None, None, &dir).expect("a track");
+        let track = track_from_file(&path, None, None, &dir)
+            .expect("a track")
+            .track;
 
         assert_eq!(track.added_at, Some(stamped));
         std::fs::remove_dir_all(&dir).ok();
@@ -718,12 +884,21 @@ mod tests {
         let path = dir.join("song.mp3");
         std::fs::write(&path, []).unwrap();
 
-        let (mut older, ..) = track_from_file(&path, None, None, &dir).expect("a track");
+        let mut older = track_from_file(&path, None, None, &dir)
+            .expect("a track")
+            .track;
         let mut newer = older.clone();
         older.added_at = Some(1_000);
         newer.added_at = Some(2_000);
 
-        let album = album_from_tracks("Album", "Artist", &[older, newer], 2026);
+        let album = album_from_tracks(
+            "id",
+            "Album",
+            "Artist",
+            &[older, newer],
+            2026,
+            ReleaseType::Album,
+        );
 
         assert_eq!(album.added_at, Some(2_000));
         std::fs::remove_dir_all(&dir).ok();
@@ -748,6 +923,48 @@ mod tests {
         std::fs::write(&path, b"ID3\x04\x00\x00\x00\x00\x00\x00").unwrap();
 
         assert!(track_from_file(&path, None, None, &dir).is_some());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_release_type_comes_from_the_tags() {
+        let dir = scratch("sonora-wire-test-release-type");
+        let cases = [
+            (
+                "ep.flac",
+                &["ALBUM=The Path", "RELEASETYPE=ep"][..],
+                Some(ReleaseType::Ep),
+            ),
+            (
+                "single.flac",
+                &["RELEASETYPE=Single"],
+                Some(ReleaseType::Single),
+            ),
+            (
+                "album.flac",
+                &["RELEASETYPE=album"],
+                Some(ReleaseType::Album),
+            ),
+            (
+                "live.flac",
+                &["RELEASETYPE=album; compilation"],
+                Some(ReleaseType::Compilation),
+            ),
+            (
+                "flagged.flac",
+                &["COMPILATION=1"],
+                Some(ReleaseType::Compilation),
+            ),
+            ("untyped.flac", &["ALBUM=Untyped"], None),
+        ];
+        for (name, comments, expected) in cases {
+            let path = dir.join(name);
+            super::super::tags::tests::flac(&path, comments);
+
+            let tagged = track_from_file(&path, None, None, &dir).expect("a track");
+
+            assert_eq!(tagged.release, expected, "{name}");
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -103,6 +103,10 @@ impl Fetch for Apple {
         loaded.loudness
     }
 
+    async fn downloaded(&self, loaded: &Loaded) {
+        loaded.media.finished().await;
+    }
+
     /// A fragmented stream has no index for symphonia to jump around in, so a seek opens a
     /// second decoder spliced to the target rather than asking this one to move.
     fn reopen_to_seek(&self) -> bool {

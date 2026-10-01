@@ -32,6 +32,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Keep playing when closed is now called Keep running in the background. A new Show in the system
+  tray switch next to it hides the tray icon, or the menu bar item on macOS, whether or not Sonora
+  keeps running after its window closes. Settings > General > Window
+
 - An artist page opens as soon as their profile and popular tracks arrive, and fills its
   releases in behind that, so an artist with a thousand of them no longer leaves the page
   blank for half a minute.
@@ -1805,7 +1809,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.39.0...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/sonorahq/sonora/compare/v0.41.0...v0.42.0
+[0.41.0]: https://github.com/sonorahq/sonora/compare/v0.40.0...v0.41.0
+[0.40.0]: https://github.com/sonorahq/sonora/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/sonorahq/sonora/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/sonorahq/sonora/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/sonorahq/sonora/compare/v0.36.0...v0.37.0

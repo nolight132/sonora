@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct UserProfile {
     pub id: String,
     pub display_name: String,
+    /// A picture for the account, when the provider hands one out. `None` falls back to the
+    /// initials of `display_name`.
+    pub avatar: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -109,6 +112,29 @@ impl ReleaseType {
             Self::Podcast => "Podcast",
         }
     }
+
+    /// Reads the MusicBrainz release types a tag or an OpenSubsonic server lists, such as
+    /// `["album", "compilation"]` or a single `"EP; Live"`, in any case. A primary EP or single
+    /// wins over a compilation, and a release naming neither is an album.
+    pub fn from_musicbrainz<'a>(
+        types: impl IntoIterator<Item = &'a str>,
+        compilation: bool,
+    ) -> Self {
+        let mut named = compilation.then_some(Self::Compilation);
+        let parts = types
+            .into_iter()
+            .flat_map(|types| types.split([';', '/', ',', '\0']))
+            .map(str::trim);
+        for part in parts {
+            match part.to_ascii_lowercase().as_str() {
+                "ep" => return Self::Ep,
+                "single" => return Self::Single,
+                "compilation" => named = Some(Self::Compilation),
+                _ => {}
+            }
+        }
+        named.unwrap_or(Self::Album)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +158,23 @@ pub struct Album {
 pub struct AlbumDetail {
     pub album: Album,
     pub tracks: Vec<Track>,
+}
+
+/// What an album page fills in once its tracks are already on screen: the releases the
+/// provider lists as related, with more from the same artist first and similar artists'
+/// releases topping the rail up, plus the similar artists themselves for the rail's
+/// artists tab. Every list replaces what the page held, and an empty one leaves that
+/// part alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AlbumCatalogue {
+    pub also_like: Vec<Album>,
+    pub similar: Vec<SavedArtist>,
+}
+
+impl AlbumCatalogue {
+    pub fn is_empty(&self) -> bool {
+        self.also_like.is_empty() && self.similar.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -224,17 +267,19 @@ pub struct Artist {
     pub albums: Vec<Album>,
 }
 
-/// What an artist page fills in once its overview is already on screen. Both lists replace
-/// what `MusicApi::artist` answered with, and an empty one leaves that part alone.
+/// What an artist page fills in once its overview is already on screen. Every list
+/// replaces what `MusicApi::artist` answered with, and an empty one leaves that part alone.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ArtistCatalogue {
     pub albums: Vec<Album>,
     pub top_tracks: Vec<Track>,
+    /// What the artist guests on, from the provider's appears-on listing.
+    pub appears_on: Vec<Album>,
 }
 
 impl ArtistCatalogue {
     pub fn is_empty(&self) -> bool {
-        self.albums.is_empty() && self.top_tracks.is_empty()
+        self.albums.is_empty() && self.top_tracks.is_empty() && self.appears_on.is_empty()
     }
 }
 
@@ -466,4 +511,31 @@ pub enum PinOutcome {
     Updated,
     LimitReached,
     Outside,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn musicbrainz_types_name_the_release() {
+        let cases = [
+            (&["ep"][..], false, ReleaseType::Ep),
+            (&["EP", "Live"], false, ReleaseType::Ep),
+            (&["single"], false, ReleaseType::Single),
+            (&["album", "compilation"], false, ReleaseType::Compilation),
+            (&["Album; Compilation"], false, ReleaseType::Compilation),
+            (&["ep/compilation"], false, ReleaseType::Ep),
+            (&["album"], true, ReleaseType::Compilation),
+            (&["album", "soundtrack"], false, ReleaseType::Album),
+            (&[], false, ReleaseType::Album),
+        ];
+        for (types, compilation, expected) in cases {
+            assert_eq!(
+                ReleaseType::from_musicbrainz(types.iter().copied(), compilation),
+                expected,
+                "{types:?}"
+            );
+        }
+    }
 }

@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use storage::Database;
 
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, GenreItem, GenreSection, HomeFeed, MediaKind,
-    MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, TrackTags, UserProfile,
-    distinct_covers,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, GenreItem, GenreSection, HomeFeed,
+    MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, TrackTags,
+    UserProfile, distinct_covers,
 };
 
 use super::index::Index;
@@ -23,16 +23,14 @@ const NOT_SUPPORTED: &str = "local playlists are not shared";
 pub struct LocalClient {
     scanned: RwLock<Scanned>,
     store: Store,
-    cache_dir: PathBuf,
     index: Index,
 }
 
 impl LocalClient {
-    pub fn new(scanned: Scanned, database: Database, cache_dir: PathBuf, index: Index) -> Self {
+    pub fn new(scanned: Scanned, database: Database, index: Index) -> Self {
         Self {
             scanned: RwLock::new(scanned),
             store: Store::new(database),
-            cache_dir,
             index,
         }
     }
@@ -173,6 +171,7 @@ impl MusicApi for LocalClient {
         Ok(UserProfile {
             id: "local".to_owned(),
             display_name: "Local Files".to_owned(),
+            avatar: None,
         })
     }
 
@@ -283,12 +282,6 @@ impl MusicApi for LocalClient {
             .find(|track| track.id.as_deref() == Some(track_id))
             .cloned()
             .ok_or_else(|| anyhow!("cannot find local track {track_id}"))
-    }
-
-    async fn track_from_path(&self, path: &Path) -> Result<Track> {
-        let (track, ..) = wire::track_from_file(path, None, None, &self.cache_dir)
-            .ok_or_else(|| anyhow!("cannot read {} as an audio file", path.display()))?;
-        Ok(track)
     }
 
     async fn track_playcount(&self, _track_id: &str) -> Result<Option<u64>> {
@@ -408,6 +401,31 @@ impl MusicApi for LocalClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         Ok(self.album_songs(album_id))
+    }
+
+    /// The other albums carrying the page's artist credit. Nothing here knows one artist
+    /// from another beyond the credit string, so similarity stays out.
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        _artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let albums = self.all_albums().await?;
+        let Some(artists) = albums
+            .iter()
+            .find(|album| album.id == album_id)
+            .map(|album| album.artists.clone())
+        else {
+            return Ok(AlbumCatalogue::default());
+        };
+        Ok(AlbumCatalogue {
+            also_like: albums
+                .into_iter()
+                .filter(|album| album.id != album_id && album.artists == artists)
+                .take(SUGGESTIONS)
+                .collect(),
+            similar: Vec::new(),
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {
@@ -663,7 +681,7 @@ mod tests {
             portraits: HashMap::new(),
         };
 
-        let client = LocalClient::new(scanned, db.clone(), dir.clone(), index);
+        let client = LocalClient::new(scanned, db.clone(), index);
 
         // Star track 0 and 1
         client.set_track_saved("local:0", true).await.unwrap();

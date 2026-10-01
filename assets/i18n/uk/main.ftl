@@ -158,8 +158,6 @@ menu-copy = Скопіювати
 menu-paste = Вставити
 menu-select-all = Вибрати все
 menu-remove-from-queue = Вилучити з черги
-menu-open-playlist = Відкрити плейлист
-menu-play-playlist = Відтворити плейлист
 menu-rename-playlist = Перейменувати плейлист
 menu-delete-playlist = Видалити плейлист
 menu-add-playlist-to-library = Додати до медіатеки
@@ -178,8 +176,6 @@ menu-library-remove-tracks = { $count ->
 }
 menu-make-playlist-public = Зробити публічним
 menu-make-playlist-private = Зробити приватним
-menu-open-album = Відкрити альбом
-menu-play-album = Відтворити альбом
 menu-play-artist = Відтворити виконавця
 
 # playlist editor
@@ -290,7 +286,7 @@ login-signed-in = Ви увійшли як { $name }
 login-failed-title = Не вдалося увійти
 login-problem-region = Spotify не відкриває сесію з країни, де ви перебуваєте. Увійдіть з домашньої країни або змініть країну в акаунті Spotify.
 login-problem-credentials = Збережена сесія Spotify більше недійсна. Увійдіть знову.
-login-problem-network = Sonora не змогла зв'язатися зі Spotify. Перевірте інтернет-з'єднання та спробуйте ще раз.
+login-problem-network = Sonora не змогла зв'язатися з музичним сервісом. Перевірте інтернет-з'єднання та спробуйте ще раз.
 login-problem-cancelled = Ви закрили сторінку браузера, не підтвердивши вхід. Почніть знову.
 login-problem-refused = Spotify відхилив вхід. Зачекайте трохи і спробуйте ще раз.
 login-problem-premium = Sonora відтворює музику через Spotify Premium, а цей акаунт його не має. Увійдіть в акаунт з Premium, щоб продовжити.
@@ -333,7 +329,6 @@ login-choose-title = Вхід у { $provider }
 login-choose-detail = Виберіть спосіб входу в { $provider }.
 
 # album and playlist pages
-detail-album = Альбом
 detail-playlist = Плейлист
 detail-play-album = Слухати альбом
 detail-play-playlist = Слухати плейлист
@@ -341,7 +336,6 @@ detail-play-playlist = Слухати плейлист
 # play button
 play-pause = Пауза
 play-resume = Продовжити
-play-loading = Завантаження…
 play-shuffle = Перемішати
 
 # artist page
@@ -364,6 +358,10 @@ artist-filter-all = Усі
 artist-filter-albums = Альбоми
 artist-filter-singles = Сингли
 artist-filter-eps = EP
+artist-appears-on = З'являється в
+album-also-like = Вам також може сподобатися
+album-tab-albums = Альбоми
+album-tab-artists = Артисти
 
 # user profile page
 user-eyebrow = Профіль
@@ -512,7 +510,7 @@ settings-theme-detail = Кольорова палітра застосунку
 settings-opacity = Непрозорість
 settings-opacity-detail = Налаштуйте непрозорість фону застосунку
 settings-opacity-value = { $percent }%
-settings-theme-config = Відкрити конфіг
+settings-theme-folder = Відкрити конфіг
 settings-adaptive = Адаптивна тема
 settings-adaptive-detail = Підфарбовувати палітру обкладинкою альбому, що грає
 settings-ambient = Атмосферне тло

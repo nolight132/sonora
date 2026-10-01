@@ -36,6 +36,7 @@ image.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
 ksni.workspace = true
+zbus.workspace = true
 
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 tray-icon.workspace = true

@@ -1,21 +1,27 @@
 //! Scrobbling
 //!
 //! One entity drives every service at once. [`Scrobbling`] holds a [`ScrobbleRow`] per service, follows
-//! [`Playback`] and fans the same listen out to whichever rows are linked and turned on.
+//! [`Playback`] and fans the same listen out to whichever rows are linked and turned on. The
+//! provider the track came from hears about it too, so a server such as Navidrome keeps its own
+//! play counts and now-playing list.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
-use gpui::{Context, Entity, SharedString, Task};
-use music::Track;
+use gpui::{App, Context, Entity, SharedString, Task};
 use music::scrobble::{self, Account, Link, Play, Secret, Service};
+use music::{MusicApi, Report, Track};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
 use crate::playback::PlaybackEvent;
-use crate::{AppSettings, Io, Playback, PlaybackState, join};
+use crate::{AppSettings, Io, Playback, PlaybackState, Session, join};
 
 /// What the settings row says when a link did not go through. The failure itself is in the log.
 const FAILED: &str = "settings-scrobble-failed";
+
+/// One state report on its way to the provider that served the track.
+type Reported = (Arc<dyn MusicApi>, String, Report, Duration);
 
 /// One service's link as the settings screen sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,12 +81,20 @@ impl ScrobbleRow {
 
 pub struct Scrobbling {
     playback: Entity<Playback>,
+    session: Entity<Session>,
     settings: Entity<AppSettings>,
     io: Io,
     rows: Vec<ScrobbleRow>,
     play: Option<Play>,
     current: Option<String>,
     started: SystemTime,
+    /// Whether the current play has already gone to the provider it came from.
+    reported: bool,
+    /// Where the current track was last heard, for the report that says it stopped.
+    position: Duration,
+    /// The queue that sends state reports one at a time. A segue puts a stop and the next start
+    /// back to back, and the start has to land last or the server forgets the new track.
+    reports: mpsc::UnboundedSender<Reported>,
     link: Option<Task<()>>,
     waiting: Option<AbortHandle>,
 }
@@ -88,13 +102,15 @@ pub struct Scrobbling {
 impl Scrobbling {
     pub fn new(
         playback: Entity<Playback>,
+        session: Entity<Session>,
         settings: Entity<AppSettings>,
         io: Io,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.subscribe(&playback, |this, _, event, cx| match event {
             PlaybackEvent::StartedPlayback => this.begin(cx),
-            PlaybackEvent::EndedPlayback => this.end(),
+            PlaybackEvent::EndedPlayback => this.end(cx),
+            PlaybackEvent::Paused | PlaybackEvent::Seeked => this.moved(cx),
         })
         .detach();
         cx.observe(&playback, |this, _, cx| this.tick(cx)).detach();
@@ -111,12 +127,16 @@ impl Scrobbling {
 
         let mut scrobbling = Self {
             playback,
+            session,
             settings,
-            io,
+            io: io.clone(),
             rows,
             play: None,
             current: None,
             started: SystemTime::now(),
+            reported: false,
+            position: Duration::ZERO,
+            reports: send_reports(&io),
             link: None,
             waiting: None,
         };
@@ -227,18 +247,22 @@ impl Scrobbling {
     /// Starts a play and reports it to every live service. A pause and resume of the same track
     /// keeps the original start time, so the listen is timed from when it really began.
     fn begin(&mut self, cx: &mut Context<Self>) {
-        let Some(track) = self.playback.read(cx).track() else {
+        let playback = self.playback.read(cx);
+        let Some(track) = playback.track() else {
             return;
         };
         let resumed = track.id.is_some() && self.current == track.id;
         if !resumed {
             self.current = track.id.clone();
             self.started = SystemTime::now();
+            self.reported = false;
             for row in &mut self.rows {
                 row.sent = false;
             }
         }
         self.play = played(track, self.started);
+        self.position = playback.position();
+        self.report(Report::Playing, cx);
         let Some(play) = self.play.clone() else {
             return;
         };
@@ -259,9 +283,29 @@ impl Scrobbling {
         }
     }
 
-    fn end(&mut self) {
+    /// Reports a pause or a landed seek to the provider, for the track `begin` saw start. A
+    /// track restored paused at launch was never reported, so it stays quiet until it plays.
+    fn moved(&mut self, cx: &mut Context<Self>) {
+        let playback = self.playback.read(cx);
+        let id = playback.track().and_then(|track| track.id.as_ref());
+        if self.current.is_none() || id != self.current.as_ref() {
+            return;
+        }
+        let report = match playback.state() {
+            PlaybackState::Playing => Report::Playing,
+            _ => Report::Paused,
+        };
+        self.position = playback.position();
+        self.report(report, cx);
+    }
+
+    /// Tells the provider the track stopped where it was last heard, since `Playback` has
+    /// already reset its position by the time the end arrives.
+    fn end(&mut self, cx: &mut Context<Self>) {
+        self.report(Report::Stopped, cx);
         self.play = None;
         self.current = None;
+        self.reported = false;
         for row in &mut self.rows {
             row.sent = false;
         }
@@ -273,8 +317,23 @@ impl Scrobbling {
             return;
         };
         let playback = self.playback.read(cx);
+        if playback.track().and_then(|track| track.id.as_ref()) == self.current.as_ref() {
+            self.position = playback.position();
+        }
         if *playback.state() != PlaybackState::Playing || !play.earned(playback.position()) {
             return;
+        }
+
+        if !self.reported
+            && let Some((client, id)) = self.provider(cx)
+        {
+            self.reported = true;
+            let at = play.at;
+            self.io.spawn(async move {
+                if let Err(error) = client.played(&id, at).await {
+                    log::warn!("scrobble: cannot submit the track to its provider: {error:#}");
+                }
+            });
         }
 
         for row in &mut self.rows {
@@ -297,6 +356,26 @@ impl Scrobbling {
             });
         }
     }
+
+    /// Sends the provider the current track's state at the last position heard.
+    fn report(&self, report: Report, cx: &App) {
+        let Some((client, id)) = self.provider(cx) else {
+            return;
+        };
+        self.reports.send((client, id, report, self.position)).ok();
+    }
+
+    /// The client that serves the current track, and the track's id on it. Local files go to
+    /// the local client, which keeps no record and ignores the report.
+    fn provider(&self, cx: &App) -> Option<(Arc<dyn MusicApi>, String)> {
+        let id = self.current.clone()?;
+        let session = self.session.read(cx);
+        let client = match music::is_local_id(&id) {
+            true => session.local_client(),
+            false => session.client(),
+        }?;
+        Some((client, id))
+    }
 }
 
 /// Turns a track into a listen. A track with no artist or no title is not submittable anywhere.
@@ -317,4 +396,18 @@ fn played(track: &Track, at: SystemTime) -> Option<Play> {
         duration: track.duration,
         at,
     })
+}
+
+/// Starts the task that sends state reports in the order they were queued. It ends when the
+/// entity drops its sender.
+fn send_reports(io: &Io) -> mpsc::UnboundedSender<Reported> {
+    let (sender, mut queued) = mpsc::unbounded_channel::<Reported>();
+    io.spawn(async move {
+        while let Some((client, id, report, position)) = queued.recv().await {
+            if let Err(error) = client.report(&id, report, position).await {
+                log::warn!("scrobble: cannot report the track to its provider: {error:#}");
+            }
+        }
+    });
+    sender
 }

@@ -16,7 +16,7 @@ use crate::label::upper;
 use crate::metrics::{LEADING, Text, snapped};
 use crate::skeleton::Skeleton;
 use crate::theme::ActiveTheme as _;
-use crate::tooltip::{Perch, Tooltip};
+use crate::tooltip::{Perch, Tipped as _};
 
 const BAR_TITLE: (Pixels, Pixels) = (px(140.), px(11.));
 const BAR_META: (Pixels, Pixels) = (px(90.), px(9.));
@@ -414,7 +414,7 @@ impl RenderOnce for Card {
                                     .rounded(corner)
                                     .cursor_pointer()
                                     .bg(theme.overlay)
-                                    .tooltip(Tooltip::build(hint, Perch::Pointer))
+                                    .tip(hint, Perch::Pointer)
                                     .child(
                                         svg()
                                             .path(icons::path(glyph))
@@ -456,7 +456,7 @@ impl RenderOnce for Card {
             .when_some(weight, |this, weight| this.font_weight(weight))
             .when(underline, |this| this.hover(|style| style.underline()))
             .when(hint && !title.is_empty(), |this| {
-                this.tooltip(Tooltip::label(title.clone(), Perch::Pointer))
+                this.tip_label(title.clone(), Perch::Pointer)
             })
             .text_color(tint.unwrap_or(theme.foreground))
             .when_some(size, |this, size| this.text_size(theme.text(size)))

@@ -5,11 +5,11 @@ use input::{
     CloseWindow, MinimizeWindow, NavigateBack, NavigateForward, OpenFilter, OpenSearch,
     OpenSettings, ToggleFullscreen, ToggleLyrics, ToggleQueue, ToggleWindowFullscreen, ZoomWindow,
 };
-use router::{Destination, NavigationEvent, SettingsTab, back, forward, navigate};
+use router::{Destination, NavigationEvent, Screen, SettingsTab, back, forward, navigate};
 use state::{
     ArtistDetail, Detail, GenreDetails, Genres, Home, Io, Library, Network, Playback, Profile,
-    Queue, Reconnected, SYSTEM_FONT, Scan, Search, Session, SessionState, Shelf, SideTab,
-    SongDetail, Sonora,
+    Queue, Reconnected, SYSTEM_FONT, Scan, Search, Session, SessionEvent, SessionState, Shelf,
+    SideTab, SongDetail, Sonora,
 };
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use ui::WindowFrame;
@@ -114,6 +114,25 @@ impl Root {
         })
         .detach();
 
+        cx.subscribe(&session, |_, session, event, cx| {
+            if matches!(event, SessionEvent::SignedIn) && !session.read(cx).authenticated() {
+                let settings = Sonora::global(cx).settings.clone();
+                let startup = settings.read(cx).startup().to_owned();
+                if Screen::from_id(&startup).is_some_and(Screen::needs_account) {
+                    settings.update(cx, |settings, cx| {
+                        settings.set_startup(Screen::Home.id(), cx);
+                    });
+                }
+                if matches!(
+                    router::trail(cx).read(cx).current(),
+                    Destination::Library(_)
+                ) {
+                    navigate(Destination::Home, cx);
+                }
+            }
+        })
+        .detach();
+
         let login = cx.new(|cx| LoginView::new(session.clone(), cx));
 
         let navigation = router::trail(cx);
@@ -195,6 +214,12 @@ impl Root {
             if !window.is_window_active() {
                 return;
             }
+            // Pick up plays made on other devices while Sonora was in the background, off the
+            // window coming back to the foreground rather than a poll.
+            Sonora::global(cx)
+                .history
+                .clone()
+                .update(cx, |history, cx| history.refresh(cx));
             let settings = Sonora::global(cx).settings.clone();
             let (stillness, pace) = {
                 let settings = settings.read(cx);
@@ -206,6 +231,10 @@ impl Root {
             ui::motion::apply(stillness, pace, cx);
         })
         .detach();
+
+        cx.observe_window_activation(window, |_, window, cx| update_focus_for_wake(window, cx))
+            .detach();
+        update_focus_for_wake(window, cx);
 
         window
             .observe_window_appearance(|_, cx| {
@@ -224,7 +253,7 @@ impl Root {
                     tint: cx.theme().tint,
                     ..settings.look()
                 };
-                let overrides = settings.theme_overrides().clone();
+                let overrides = settings.theme_overrides();
                 Theme::fade(look, &overrides, cx);
             })
             .detach();
@@ -388,12 +417,14 @@ impl Root {
             .update(cx, |workspace, cx| workspace.show_side(tab, cx));
     }
 
-    /// Tells the adaptive theme whether fullscreen is up. The ambient background is painted
-    /// out of the cover's hues, so fullscreen samples the cover even with the adaptive theme
-    /// off, and leaving drops the tint again.
-    fn tinting(&self, fullscreen: bool, cx: &mut Context<Self>) {
+    /// Tells the adaptive theme and the wake lock whether fullscreen is up. The ambient
+    /// background is painted out of the cover's hues, so fullscreen samples the cover even with
+    /// the adaptive theme off, and leaving drops the tint again.
+    fn announce_fullscreen(&self, fullscreen: bool, cx: &mut Context<Self>) {
         self.adaptive
             .update(cx, |adaptive, cx| adaptive.set_fullscreen(fullscreen, cx));
+        let wake = Sonora::global(cx).wake.clone();
+        wake.update(cx, |wake, cx| wake.set_fullscreen(fullscreen, cx));
     }
 
     fn toggle_fullscreen(&mut self, cx: &mut Context<Self>) {
@@ -474,13 +505,13 @@ impl Root {
             .update(cx, |view, cx| view.set_visible(home, cx));
         if let Destination::Fullscreen = destination {
             self.view = RootView::Fullscreen;
-            self.tinting(true, cx);
+            self.announce_fullscreen(true, cx);
             self.pending = Some(Focus::Fullscreen);
             cx.notify();
             return;
         }
         self.view = RootView::Workspace;
-        self.tinting(false, cx);
+        self.announce_fullscreen(false, cx);
         self.pending = Some(match destination {
             Destination::Search => Focus::Search,
             _ => Focus::Workspace,
@@ -614,6 +645,13 @@ fn scripts(custom: bool) -> &'static FontFallbacks {
         }),
         false => BUNDLED.get_or_init(|| FontFallbacks::from_fonts(named().collect())),
     }
+}
+
+/// Tells the wake lock whether the window has focus, which the display lock needs.
+fn update_focus_for_wake(window: &Window, cx: &mut App) {
+    let focused = window.is_window_active();
+    let wake = Sonora::global(cx).wake.clone();
+    wake.update(cx, |wake, cx| wake.set_focused(focused, cx));
 }
 
 impl Render for Root {

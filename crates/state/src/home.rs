@@ -22,6 +22,10 @@ const RETRIES: [Duration; 3] = [
 /// picks up to here.
 const PICKS_LIMIT: usize = 30;
 
+/// How many of the provider's recent items lead Quick picks at most, whatever the provider
+/// lists.
+const RECENT_LIMIT: usize = 10;
+
 pub struct Home {
     library: Entity<Library>,
     session: Entity<Session>,
@@ -76,6 +80,12 @@ impl Home {
         .detach();
 
         cx.observe(&library, |this, _, cx| this.mix(cx)).detach();
+        // A restore that ends offline sends no event of its own, and Quick picks wait for it.
+        cx.observe(&session, |this, _, cx| {
+            this.mix(cx);
+            cx.notify();
+        })
+        .detach();
 
         let mut home = Self {
             library,
@@ -259,7 +269,9 @@ impl Home {
 
     /// Puts a lot on the page as it is.
     fn take(&mut self, feed: HomeFeed, cx: &mut Context<Self>) {
-        self.recent = Rc::new(feed.listen_again);
+        let mut recent = feed.listen_again;
+        recent.truncate(RECENT_LIMIT);
+        self.recent = Rc::new(recent);
         if let Some(quick_picks) = feed.quick_picks {
             self.picks = Rc::new(quick_picks);
         }
@@ -361,19 +373,21 @@ impl Home {
         self.quick_picks.clone()
     }
 
-    /// Whether Quick picks are still on their way: the feed is in flight and nothing of it has
-    /// landed yet, or the library the picks would otherwise be mixed from is.
+    /// Whether Quick picks are still on their way: the account is still being restored, the
+    /// feed is in flight and nothing of it has landed yet, or the library the picks would
+    /// otherwise be mixed from is.
     pub fn is_loading(&self, cx: &App) -> bool {
         let shelf = self.shelf(cx);
-        (self.feeding && self.quick_picks.is_empty())
+        self.session.read(cx).is_pending()
+            || (self.feeding && self.quick_picks.is_empty())
             || self.library.read(cx).loading(shelf, LibraryPart::Tracks)
     }
 
     /// Mixes picks from the library, but only in place of a provider's that never came: not
-    /// while the feed is still in flight, and never over picks already there. A signed-out
-    /// run has no feed, so it mixes as soon as the library is ready.
+    /// while the account is still being restored or the feed is in flight, and never over picks
+    /// already there. A signed-out run has no feed, so it mixes as soon as the library is ready.
     fn mix(&mut self, cx: &mut Context<Self>) {
-        if self.feeding || !self.picks.is_empty() {
+        if self.feeding || !self.picks.is_empty() || self.session.read(cx).is_pending() {
             return;
         }
         let shelf = self.shelf(cx);

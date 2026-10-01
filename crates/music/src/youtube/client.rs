@@ -8,8 +8,9 @@ use ytmusic::YtMusic;
 
 use crate::youtube::{genres, radio, subscriptions, wire};
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, Feed, Genre, GenreDetail, HomeFeed, MediaKind,
-    MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, UserProfile, escape,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, Feed, Genre, GenreDetail, HomeFeed,
+    MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, UserProfile,
+    escape,
 };
 
 const PORTRAIT_LIMIT: usize = 24;
@@ -271,6 +272,35 @@ impl MusicApi for YouTubeClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         Ok(self.album(album_id).await?.tracks)
+    }
+
+    /// The artist's own releases without the album the page is already showing. Similar
+    /// artists stay out: the client library reads no similarity off artist pages.
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let Some(artist_id) = artist_id else {
+            return Ok(AlbumCatalogue::default());
+        };
+        let artist = self
+            .api
+            .artist(artist_id)
+            .await
+            .with_context(|| format!("cannot load more from artist {artist_id}"))?;
+        let also_like = artist
+            .albums
+            .into_iter()
+            .chain(artist.singles)
+            .map(wire::album)
+            .filter(|album| album.id != album_id)
+            .take(SUGGESTIONS)
+            .collect();
+        Ok(AlbumCatalogue {
+            also_like,
+            similar: Vec::new(),
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {

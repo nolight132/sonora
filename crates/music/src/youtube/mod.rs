@@ -5,11 +5,13 @@ mod genres;
 mod lyrics;
 mod playback;
 mod radio;
+mod segments;
 mod subscriptions;
 mod wire;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
@@ -32,6 +34,11 @@ const GUEST_ID: &str = "youtube-guest";
 const SIGN_IN_URL: &str = "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F";
 const LANDING: &str = "music.youtube.com";
 const COOKIE_DOMAIN: &str = "youtube.com";
+/// How often a signed-in session asks Google for fresh cookies, the cadence of an open YouTube tab.
+const ROTATION: Duration = Duration::from_secs(10 * 60);
+/// How often the rotation loop looks at the wall clock. A machine that slept past a rotation
+/// catches up within this, since a monotonic timer stops while the system is suspended.
+const ROTATION_CHECK: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -113,7 +120,11 @@ impl YouTubeProvider {
         )
     }
 
+    /// A signed-in session over `api`. It starts the loop that keeps the cookies rotated, so it
+    /// must be called on the tokio runtime.
     fn authenticated_session(&self, api: Arc<YtMusic>, profile: UserProfile) -> ProviderSession {
+        let since = self.rotated_at().unwrap_or_else(SystemTime::now);
+        keep_fresh(Arc::downgrade(&api), since);
         let client = YouTubeClient::new(api.clone()).owned_by(profile.display_name.clone());
         ProviderSession {
             profile,
@@ -133,6 +144,7 @@ impl YouTubeProvider {
             profile: UserProfile {
                 id: GUEST_ID.to_string(),
                 display_name: "YouTube Music".to_string(),
+                avatar: None,
             },
             api: Arc::new(YouTubeClient::new(api.clone())),
             playback: Arc::new(Factory::new(api)),
@@ -191,6 +203,12 @@ impl YouTubeProvider {
         page_id: Option<&str>,
     ) -> Result<Option<ProviderSession>> {
         let api = self.cookie_client(cookies, authuser, page_id);
+        let fresh = self
+            .rotated_at()
+            .is_some_and(|at| at.elapsed().is_ok_and(|elapsed| elapsed < ROTATION));
+        if !fresh && let Err(error) = api.rotate_cookies().await {
+            log::warn!("youtube: cannot rotate the stored cookies: {error:#}");
+        }
         match api.profile().await {
             Ok(profile) => {
                 log::debug!(
@@ -208,6 +226,14 @@ impl YouTubeProvider {
         }
     }
 
+    /// When the cookie store was last written, which is when Google last rotated the session.
+    /// Nothing when there is no store yet, as after a fresh sign-in or on an older install.
+    fn rotated_at(&self) -> Option<SystemTime> {
+        std::fs::metadata(&self.cookies)
+            .and_then(|meta| meta.modified())
+            .ok()
+    }
+
     /// Records that the user chose to listen as a guest, so the next launch restores that
     /// instead of asking again. The rotating cookie store goes with it, since a guest client
     /// never reads one.
@@ -217,6 +243,29 @@ impl YouTubeProvider {
             log::warn!("youtube: cannot remember the guest session: {error:#}");
         }
     }
+}
+
+/// Rotates the session cookies every `ROTATION` of wall-clock time, counted from `since`, for as
+/// long as the client lives, the way an open YouTube tab does. The loop ends once the session
+/// drops the client.
+fn keep_fresh(api: Weak<YtMusic>, since: SystemTime) {
+    tokio::spawn(async move {
+        let mut rotated = since;
+        loop {
+            tokio::time::sleep(ROTATION_CHECK).await;
+            let Some(api) = api.upgrade() else {
+                return;
+            };
+            if rotated.elapsed().is_ok_and(|elapsed| elapsed < ROTATION) {
+                continue;
+            }
+            match api.rotate_cookies().await {
+                Ok(()) => log::debug!("youtube: rotated the session cookies"),
+                Err(error) => log::warn!("youtube: cannot rotate the session cookies: {error:#}"),
+            }
+            rotated = SystemTime::now();
+        }
+    });
 }
 
 fn save(file: &std::path::Path, saved: &Saved) -> Result<()> {

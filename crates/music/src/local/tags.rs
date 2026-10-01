@@ -373,7 +373,7 @@ fn counted(tag: &mut Tag, key: ItemKey, value: &str) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     fn entries(content: &[(u32, &str)]) -> Vec<(u32, String)> {
@@ -422,7 +422,8 @@ mod tests {
         assert_eq!(lines[1].start, Duration::from_millis(1000));
     }
 
-    fn flac(path: &Path, comments: &[&str]) {
+    /// Writes a FLAC file holding no audio and the Vorbis comments given, each as `KEY=value`.
+    pub(in crate::local) fn flac(path: &Path, comments: &[&str]) {
         let mut info = vec![0x10, 0x00, 0x10, 0x00, 0, 0, 0, 0, 0, 0];
         let packed: u64 = (44_100 << 44) | (1 << 41) | (15 << 36);
         info.extend_from_slice(&packed.to_be_bytes());

@@ -241,7 +241,8 @@ fn track_uri(track_id: &str) -> Result<SpotifyUri> {
 }
 
 /// librespot's event as ours, or `None` for the ones the state has no use for. A denied audio
-/// key is `Refused`; any other unavailability names the track.
+/// key is `Refused` and one refused for now is `Throttled`. Any other unavailability names the
+/// track.
 fn translate(event: PlayerEvent) -> Option<PlaybackEvent> {
     let millis = |position_ms: u32| Duration::from_millis(position_ms as u64);
     let track_id = |uri: SpotifyUri| uri.to_id().ok();
@@ -297,6 +298,11 @@ fn translate(event: PlayerEvent) -> Option<PlaybackEvent> {
             Some(PlaybackEvent::Ended { id: track_id(uri) })
         }
         PlayerEvent::Unavailable { denied: true, .. } => Some(PlaybackEvent::Refused),
+        PlayerEvent::Unavailable {
+            throttled: true,
+            track_id: uri,
+            ..
+        } => Some(PlaybackEvent::Throttled { id: track_id(uri) }),
         PlayerEvent::Unavailable { track_id: uri, .. } => {
             Some(PlaybackEvent::Unavailable { id: track_id(uri) })
         }

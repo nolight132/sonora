@@ -6,14 +6,38 @@ use gpui::{
     Window, div, relative,
 };
 use i18n::t;
-use music::Track;
-use state::{Origin, Playback, PlaybackState};
+use music::{Album, Track};
+use state::{Origin, Playback};
 use ui::{
     ActiveTheme as _, Artwork, Button, ExplicitBadge, LEADING, Pin, Pinnable as _, TableState,
     Text, upper,
 };
 
 use crate::shared::tracks::{self, TrackSource};
+
+/// One copyright line, with a © in front unless the provider already led it with © or ℗.
+pub(crate) fn copyright_notice(text: &str) -> SharedString {
+    match text.starts_with(['©', '℗']) {
+        true => SharedString::from(text.to_owned()),
+        false => t!("song-copyright", notice = text),
+    }
+}
+
+/// The notices an album page prints under its tracks: the provider's copyright lines, or the
+/// label behind ℗ when the provider names only that. Empty when it names neither.
+pub(crate) fn copyright_notices(album: &Album) -> Vec<SharedString> {
+    if !album.copyrights.is_empty() {
+        return album
+            .copyrights
+            .iter()
+            .map(|line| copyright_notice(line))
+            .collect();
+    }
+    match album.label.trim() {
+        "" => Vec::new(),
+        label => vec![t!("album-label", label = label)],
+    }
+}
 
 pub(crate) fn release_date_label(value: &str) -> SharedString {
     let parts: Vec<_> = value.split('-').collect();
@@ -222,20 +246,19 @@ impl RenderOnce for HeroPlayButton {
         if self.shuffled {
             return div().flex().child(self.shuffle_button(cx));
         }
-        let state = {
+        let playing = {
             let playback = self.playback.read(cx);
             let current = playback.track().and_then(|track| track.id.as_deref());
             current
                 .filter(|current| self.listing.holds(current, cx))
-                .map(|_| playback.apparent())
+                .and_then(|_| playback.control())
         };
-        let (label, icon, blocked) = match &state {
-            Some(PlaybackState::Playing) => (t!("play-pause"), "icons/pause.svg", false),
-            Some(PlaybackState::Paused) => (t!("play-resume"), "icons/play.svg", false),
-            Some(PlaybackState::Loading) => (t!("play-loading"), "icons/play.svg", true),
-            _ => (self.label, "icons/play.svg", false),
+        let (label, icon) = match playing {
+            Some(true) => (t!("play-pause"), "icons/pause.svg"),
+            Some(false) => (t!("play-resume"), "icons/play.svg"),
+            None => (self.label, "icons/play.svg"),
         };
-        let disabled = self.listing.first(cx).is_none() || blocked;
+        let disabled = self.listing.first(cx).is_none();
         let listing = self.listing;
         let from = self.from;
         let playback = self.playback;
@@ -247,11 +270,9 @@ impl RenderOnce for HeroPlayButton {
                 .primary()
                 .disabled(disabled)
                 .on_click(move |_, _, cx| {
-                    playback.update(cx, |playback, cx| match &state {
-                        Some(PlaybackState::Playing) => playback.pause(cx),
-                        Some(PlaybackState::Paused) => playback.resume(cx),
-                        Some(PlaybackState::Loading) => {}
-                        _ => {
+                    playback.update(cx, |playback, cx| match playing {
+                        Some(_) => playback.toggle_play(cx),
+                        None => {
                             let queued = listing.queue(cx);
                             let from = from.clone().or_else(|| listing.whence(cx));
                             playback.start_any(queued, from, cx)

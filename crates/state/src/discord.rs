@@ -1,11 +1,13 @@
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient, activity};
 use gpui::{App, AppContext as _, Context, Entity, Global, Task};
+use music::artwork::{ArtworkQuery, ArtworkSearch};
 use music::{MediaKind, MusicProvider, Track};
 use tokio::sync::watch;
 
-use crate::{AppSettings, Cover, DiscordName, Io, Playback, Session, Shelf};
+use crate::{AppSettings, Cover, DiscordName, Io, Playback, Session, Shelf, join};
 
 const APPLICATION_ID: &str = "1547350467904806923";
 const RETRY_DELAY: Duration = Duration::from_secs(3);
@@ -110,6 +112,15 @@ struct Discord {
     cover: Entity<Cover>,
     sender: watch::Sender<Shown>,
     timing: Timing,
+    io: Io,
+    artwork: ArtworkSearch,
+    /// Covers found by name, and the queries that found nothing, so neither is asked twice.
+    found: HashMap<ArtworkQuery, Option<String>>,
+    /// The query the last presence had no cover for, taken by `look_up` once it is published.
+    wanted: Option<ArtworkQuery>,
+    /// The query last sent to the search. A failed one is not retried until another was asked.
+    asked: Option<ArtworkQuery>,
+    lookup: Option<Task<()>>,
     _worker: Task<()>,
 }
 
@@ -143,6 +154,12 @@ impl Discord {
             cover,
             sender,
             timing: Timing::default(),
+            io,
+            artwork: ArtworkSearch::new(),
+            found: HashMap::new(),
+            wanted: None,
+            asked: None,
+            lookup: None,
             _worker,
         }
     }
@@ -156,9 +173,42 @@ impl Discord {
             }
             changed
         });
+        self.look_up(cx);
+    }
+
+    /// Searches for the cover the last presence went without, then publishes again with it.
+    /// Replacing the previous task throws away the answer for a track that is no longer playing.
+    fn look_up(&mut self, cx: &mut Context<Self>) {
+        let Some(query) = self.wanted.take() else {
+            return;
+        };
+        if self.asked.as_ref() == Some(&query) {
+            return;
+        }
+        self.asked = Some(query.clone());
+
+        let search = self.artwork.clone();
+        let io = self.io.clone();
+        self.lookup = Some(cx.spawn(async move |this, cx| {
+            let wanted = query.clone();
+            let found = join(io.spawn(async move { search.find(&wanted).await })).await;
+
+            this.update(cx, |this, cx| {
+                this.lookup = None;
+                match found {
+                    Ok(cover) => {
+                        this.found.insert(query, cover);
+                        this.publish(cx);
+                    }
+                    Err(error) => log::warn!("discord: cannot look up the artwork: {error:#}"),
+                }
+            })
+            .ok();
+        }));
     }
 
     fn shown(&mut self, cx: &App) -> Shown {
+        self.wanted = None;
         let playback = self.playback.read(cx);
         let Some(track) = playback.track() else {
             self.timing.reset();
@@ -215,11 +265,13 @@ impl Discord {
         });
         let duration = track.duration.as_secs() as i64;
         let public_art = provider.is_some_and(|provider| provider.public_art());
+        let lookup = !track.id.as_deref().is_some_and(music::is_local_id)
+            || settings.artwork_for_local_files();
         Shown::On(Box::new(Presence {
             source: named,
             details: fit_text(&track.name).unwrap_or_else(anonymous_details),
             state: fit_text(&track.artists),
-            image: self.artwork(track, public_art, cx),
+            image: self.artwork(track, public_art, lookup, cx),
             image_text: fit_text(&track.album),
             started_at,
             ends_at: started_at
@@ -229,20 +281,40 @@ impl Discord {
         }))
     }
 
-    /// Cover art for the track, but only from a provider whose art is public. Discord fetches
-    /// the image through its own proxy, so a path on disk is unreachable and a self-hosted url
-    /// would hand over the credentials that fetch it.
-    fn artwork(&self, track: &Track, public_art: bool, cx: &App) -> Option<String> {
-        if !public_art {
-            return None;
+    /// Cover art for the track. The provider's own art is used only when it is public, since
+    /// Discord fetches the image through its own proxy, so a path on disk is unreachable and a
+    /// self-hosted url would hand over the credentials that fetch it. Without it, and when
+    /// `lookup` allows, the cover is one found by name, and a search not yet made is left in
+    /// `wanted` for `look_up`.
+    fn artwork(
+        &mut self,
+        track: &Track,
+        public_art: bool,
+        lookup: bool,
+        cx: &App,
+    ) -> Option<String> {
+        let own = public_art
+            .then(|| {
+                track
+                    .album_id
+                    .as_deref()
+                    .and_then(|album| self.cover.read(cx).large_for(album))
+                    .map(str::to_owned)
+                    .or_else(|| track.cover.clone())
+                    .filter(|cover| cover.starts_with("https://"))
+            })
+            .flatten();
+        if own.is_some() || !lookup {
+            return own;
         }
-        let album = track.album_id.as_deref()?;
-        self.cover
-            .read(cx)
-            .large_for(album)
-            .map(str::to_owned)
-            .or_else(|| track.cover.clone())
-            .filter(|cover| cover.starts_with("https://"))
+        let query = ArtworkQuery::for_track(track)?;
+        match self.found.get(&query) {
+            Some(found) => found.clone(),
+            None => {
+                self.wanted = Some(query);
+                None
+            }
+        }
     }
 }
 

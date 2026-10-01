@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use opensubsonic::data::{AlbumId3, ArtistId3, Child};
+use opensubsonic::data::{AlbumId3, ArtistId3, Child, RecordLabel};
 
 use crate::{Album, ArtistRef, Playlist, ReleaseType, SavedArtist, Track, UserProfile};
 
@@ -42,6 +42,7 @@ pub fn album(source: AlbumId3, cover: Option<String>, cover_large: Option<String
         source.display_artist,
     );
     let year = source.year.unwrap_or(0);
+    let label = labels(source.record_labels.as_deref());
     Album {
         id: source.id,
         name: source.name,
@@ -49,17 +50,38 @@ pub fn album(source: AlbumId3, cover: Option<String>, cover_large: Option<String
         artist_refs,
         cover,
         cover_large,
-        release_type: ReleaseType::Album,
+        release_type: release_type(source.release_types.as_deref(), source.is_compilation),
         year,
         track_count: source.song_count.unwrap_or(0).max(0) as u32,
         release_date: match year {
             0 => String::new(),
             _ => year.to_string(),
         },
-        label: String::new(),
+        label,
         copyrights: Vec::new(),
         added_at: None,
     }
+}
+
+/// The record labels an OpenSubsonic server lists for an album, joined into one credit. A
+/// server without the extension lists none, which leaves the label empty.
+pub fn labels(labels: Option<&[RecordLabel]>) -> String {
+    labels
+        .unwrap_or_default()
+        .iter()
+        .map(|label| label.name.trim())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The kind of release an OpenSubsonic server lists for an album. A server without the extension
+/// lists no types, which leaves every album an album unless it is flagged as a compilation.
+pub fn release_type(types: Option<&[String]>, compilation: Option<bool>) -> ReleaseType {
+    ReleaseType::from_musicbrainz(
+        types.unwrap_or_default().iter().map(String::as_str),
+        compilation.unwrap_or(false),
+    )
 }
 
 pub fn playlist(
@@ -100,6 +122,7 @@ pub fn profile(username: String) -> UserProfile {
     UserProfile {
         id: username.clone(),
         display_name: username,
+        avatar: None,
     }
 }
 

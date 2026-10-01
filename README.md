@@ -1,6 +1,19 @@
 <div align="center">
 
-# Sonora
+<img src="./.github/readme-icon.svg" alt="" width="60" height="60">
+
+<h1>Sonora</h1>
+
+
+<p align="center">
+  <a href="https://sonorahq.org/changelog">Changelog</a>
+  ·
+  <a href="https://sonorahq.org/docs">Docs</a>
+  ·
+  <a href="https://sonorahq.org/docs/roadmap">Roadmap</a>
+  ·
+  <a href="https://sonorahq.org/faq">FAQ</a>
+</p>
 
 [![Build](https://img.shields.io/github/actions/workflow/status/sonorahq/sonora/release.yml?style=flat-square&label=build)](https://github.com/sonorahq/sonora/actions/workflows/release.yml)
 [![License](https://img.shields.io/github/license/sonorahq/sonora?style=flat-square&label=license)](./COPYING)
@@ -187,20 +200,21 @@ AI-assisted proofreading and translation of human-written text are permitted.
 
 | Language | Translated | Coverage |
 | --- | --- | --- |
-| English (`en-US`) | 724/724 | 100% |
-| Deutsch (`de`) | 633/724 | 87% |
-| Español (`es`) | 693/724 | 96% |
-| Français (`fr`) | 633/724 | 87% |
-| Italiano (`it`) | 611/724 | 84% |
-| Bahasa Indonesia (`id`) | 611/724 | 84% |
-| 日本語 (`ja`) | 611/724 | 84% |
-| Русский (`ru`) | 713/724 | 98% |
-| Українська (`uk`) | 713/724 | 98% |
-| Polski (`pl`) | 713/724 | 98% |
-| Português (Brasil) (`pt-BR`) | 611/724 | 84% |
-| 简体中文 (`zh-CN`) | 611/724 | 84% |
-| Türkçe (`tr`) | 611/724 | 84% |
-| Shqip (`sq`) | 720/724 | 99% |
+| English (`en-US`) | 749/749 | 100% |
+| Deutsch (`de`) | 628/749 | 84% |
+| Español (`es`) | 690/749 | 92% |
+| Français (`fr`) | 749/749 | 100% |
+| Italiano (`it`) | 605/749 | 81% |
+| Bahasa Indonesia (`id`) | 605/749 | 81% |
+| 日本語 (`ja`) | 605/749 | 81% |
+| Русский (`ru`) | 711/749 | 95% |
+| Українська (`uk`) | 711/749 | 95% |
+| Polski (`pl`) | 711/749 | 95% |
+| Čeština (`cs`) | 743/749 | 99% |
+| Português (Brasil) (`pt-BR`) | 605/749 | 81% |
+| 简体中文 (`zh-CN`) | 605/749 | 81% |
+| Türkçe (`tr`) | 605/749 | 81% |
+| Shqip (`sq`) | 714/749 | 95% |
 
 <!-- i18n:end -->
 

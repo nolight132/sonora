@@ -191,7 +191,7 @@ fn assumed() -> Option<ThemeKind> {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ThemeOverrides {
     pub background: Option<String>,
     pub foreground: Option<String>,
@@ -225,6 +225,142 @@ pub struct ThemeOverrides {
     pub table_active_border: Option<String>,
     pub radius: Option<f32>,
     pub font_size: Option<f32>,
+}
+
+impl ThemeOverrides {
+    /// Applies valid values from `overlay` and keeps the remaining values.
+    pub fn merged(mut self, overlay: &Self) -> Self {
+        macro_rules! apply_color {
+            ($($field:ident),+ $(,)?) => {
+                $(
+                    if overlay.$field.as_deref().is_some_and(|value| parse_color(value).is_some()) {
+                        self.$field = overlay.$field.clone();
+                    }
+                )+
+            };
+        }
+
+        apply_color!(
+            background,
+            foreground,
+            border,
+            muted,
+            overlay,
+            overlay_foreground,
+            muted_foreground,
+            secondary,
+            secondary_hover,
+            secondary_active,
+            primary,
+            primary_foreground,
+            primary_hover,
+            danger,
+            danger_foreground,
+            danger_hover,
+            popover,
+            popover_foreground,
+            progress_bar,
+            selection,
+            sidebar,
+            sidebar_accent,
+            sidebar_border,
+            title_bar_border,
+            table_head,
+            table_head_foreground,
+            table_row_border,
+            table_hover,
+            table_active,
+            table_active_border,
+        );
+        self.radius = overlay.radius.or(self.radius);
+        self.font_size = overlay.font_size.or(self.font_size);
+        self
+    }
+
+    /// Reports whether a field is one of the color tokens a theme file may set. Radius and font
+    /// size are left out because the Appearance pickers own them.
+    pub fn is_color(field: &str) -> bool {
+        matches!(
+            field,
+            "background"
+                | "foreground"
+                | "border"
+                | "muted"
+                | "overlay"
+                | "overlay_foreground"
+                | "muted_foreground"
+                | "secondary"
+                | "secondary_hover"
+                | "secondary_active"
+                | "primary"
+                | "primary_foreground"
+                | "primary_hover"
+                | "danger"
+                | "danger_foreground"
+                | "danger_hover"
+                | "popover"
+                | "popover_foreground"
+                | "progress_bar"
+                | "selection"
+                | "sidebar"
+                | "sidebar_accent"
+                | "sidebar_border"
+                | "title_bar_border"
+                | "table_head"
+                | "table_head_foreground"
+                | "table_row_border"
+                | "table_hover"
+                | "table_active"
+                | "table_active_border"
+        )
+    }
+
+    /// Returns the first color field whose value is not hexadecimal RGB or RGBA.
+    pub fn invalid_color(&self) -> Option<&'static str> {
+        macro_rules! check {
+            ($($field:ident),+ $(,)?) => {
+                $(
+                    if self.$field.as_deref().is_some_and(|value| parse_color(value).is_none()) {
+                        return Some(stringify!($field));
+                    }
+                )+
+            };
+        }
+
+        check!(
+            background,
+            foreground,
+            border,
+            muted,
+            overlay,
+            overlay_foreground,
+            muted_foreground,
+            secondary,
+            secondary_hover,
+            secondary_active,
+            primary,
+            primary_foreground,
+            primary_hover,
+            danger,
+            danger_foreground,
+            danger_hover,
+            popover,
+            popover_foreground,
+            progress_bar,
+            selection,
+            sidebar,
+            sidebar_accent,
+            sidebar_border,
+            title_bar_border,
+            table_head,
+            table_head_foreground,
+            table_row_border,
+            table_hover,
+            table_active,
+            table_active_border,
+        );
+        None
+    }
 }
 
 /// What a control wears when it takes its colours from a cover rather than
@@ -309,7 +445,7 @@ impl Theme {
             muted: rgb(0x262626).into(),
             overlay: rgba(0x0000008c).into(),
             overlay_foreground: rgb(0xfafafa).into(),
-            muted_foreground: rgb(0x737373).into(),
+            muted_foreground: rgb(0x909090).into(),
             secondary: rgb(0x171717).into(),
             secondary_hover: rgba(0x36363666).into(),
             secondary_active: rgba(0x4d4d4d66).into(),
@@ -328,7 +464,7 @@ impl Theme {
             sidebar_border: rgb(0x262626).into(),
             title_bar_border: rgb(0x262626).into(),
             table_head: rgba(0x171717cc).into(),
-            table_head_foreground: rgb(0x525252).into(),
+            table_head_foreground: rgb(0x8a8a8a).into(),
             table_row_border: rgba(0x262626b3).into(),
             table_hover: rgba(0x3b3b3b66).into(),
             table_active: rgba(0x1e40af33).into(),
@@ -352,7 +488,7 @@ impl Theme {
             muted: rgb(0xe5e5e5).into(),
             overlay: rgba(0x0000008c).into(),
             overlay_foreground: rgb(0xfafafa).into(),
-            muted_foreground: rgb(0x737373).into(),
+            muted_foreground: rgb(0x606060).into(),
             secondary: rgb(0xf5f5f5).into(),
             secondary_hover: rgba(0xd5d5d566).into(),
             secondary_active: rgba(0xb7b7b766).into(),
@@ -371,7 +507,7 @@ impl Theme {
             sidebar_border: rgb(0xd4d4d4).into(),
             title_bar_border: rgb(0xd4d4d4).into(),
             table_head: rgba(0xf5f5f5e6).into(),
-            table_head_foreground: rgb(0x737373).into(),
+            table_head_foreground: rgb(0x666666).into(),
             table_row_border: rgba(0xd4d4d4b3).into(),
             table_hover: rgba(0xe8e8e866).into(),
             table_active: rgba(0x2563eb1f).into(),

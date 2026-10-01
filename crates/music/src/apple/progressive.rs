@@ -277,6 +277,11 @@ impl Media {
         Ok(())
     }
 
+    /// Waits until the download has ended, whether it finished or broke.
+    pub async fn finished(&self) {
+        self.0.finished().await;
+    }
+
     /// A cursor over the whole track.
     pub fn reader(&self) -> Reader<Cenc> {
         self.0.reader()

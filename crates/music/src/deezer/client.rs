@@ -3,7 +3,7 @@
 //! account — profile, favorites, playlists — plus the `media.deezer.com/v1/get_url` call that
 //! hands out the encrypted stream urls.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
@@ -17,8 +17,9 @@ use tokio::time::Instant;
 use crate::deezer::{decrypt, wire};
 use crate::engine::Loudness;
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, HomeFeed, MediaKind, MusicApi, Playlist,
-    PlaylistDetail, SavedArtist, Track, UserProfile, distinct_covers, escape,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, HomeFeed, MediaKind, MusicApi,
+    Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, UserProfile, distinct_covers,
+    escape,
 };
 
 const GATEWAY: &str = "https://www.deezer.com/ajax/gw-light.php";
@@ -35,6 +36,10 @@ const UPLOAD_FORMAT: &str = "MP3_MISC";
 const LIBRARY_PAGE: u32 = 2000;
 
 const PORTRAIT_LIMIT: usize = 24;
+/// How many related artists lend their albums to a thin rail, and how many albums each
+/// lends.
+const SIMILAR_ARTISTS: usize = 6;
+const SIMILAR_RELEASES: usize = 2;
 
 /// The public api allows fifty calls per five seconds from one address, so calls leave one
 /// at a time this far apart. A call above the limit waits for its slot instead of being
@@ -351,6 +356,60 @@ impl DeezerClient {
         Ok(())
     }
 
+    /// Up to `SUGGESTIONS` of the artist's own albums without the album the page is already
+    /// showing. One more is asked for, since the page's album may be among them.
+    async fn more_from_artist(&self, album_id: &str, artist_id: &str) -> Result<Vec<Album>> {
+        let page = self
+            .public(&format!(
+                "/artist/{}/albums?limit={}",
+                escape::component(artist_id),
+                SUGGESTIONS + 1
+            ))
+            .await
+            .with_context(|| format!("cannot load more from artist {artist_id}"))?;
+        Ok(page
+            .get("data")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(wire::album)
+            .filter(|album| album.id != album_id)
+            .take(SUGGESTIONS)
+            .collect())
+    }
+
+    /// Up to `SUGGESTIONS` artists Deezer lists as related, for the rail's artists tab.
+    async fn similar_artists(&self, artist_id: &str) -> Result<Vec<SavedArtist>> {
+        let page = self
+            .public(&format!(
+                "/artist/{}/related?limit={SUGGESTIONS}",
+                escape::component(artist_id)
+            ))
+            .await
+            .with_context(|| format!("cannot load artists related to {artist_id}"))?;
+        Ok(page
+            .get("data")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|artist| {
+                Some(SavedArtist {
+                    id: artist.get("id").and_then(wire::id)?,
+                    name: artist.get("name").and_then(Value::as_str)?.to_owned(),
+                    cover: artist
+                        .get("picture_big")
+                        .or_else(|| artist.get("picture_medium"))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    added_at: None,
+                })
+            })
+            .take(SUGGESTIONS)
+            .collect())
+    }
+
     /// The full gateway record of one track: metadata plus the `TRACK_TOKEN` playback needs.
     /// A region-locked track comes with a `FALLBACK` record of another release of the same
     /// song, and that one is what plays.
@@ -470,6 +529,7 @@ impl MusicApi for DeezerClient {
         Ok(UserProfile {
             id: session.user_id.clone(),
             display_name: session.user_name.clone(),
+            avatar: None,
         })
     }
 
@@ -719,6 +779,69 @@ impl MusicApi for DeezerClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         Ok(self.album(album_id).await?.tracks)
+    }
+
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let Some(artist_id) = artist_id else {
+            return Ok(AlbumCatalogue::default());
+        };
+        let (more_by, similar) = tokio::join!(
+            self.more_from_artist(album_id, artist_id),
+            self.similar_artists(artist_id),
+        );
+        // Nothing read at all is an error rather than an empty rail, so the catalog does not
+        // keep the empty answer for the rest of the session.
+        let (more_by, similar) = match (more_by, similar) {
+            (Err(error), Err(_)) => return Err(error.context("cannot read any recommendations")),
+            pair => pair,
+        };
+        if let Err(error) = &more_by {
+            log::warn!("deezer: cannot read more from this artist: {error:#}");
+        }
+        if let Err(error) = &similar {
+            log::warn!("deezer: cannot read related artists: {error:#}");
+        }
+        let (more_by, similar) = (more_by.unwrap_or_default(), similar.unwrap_or_default());
+        let mut seen = HashSet::new();
+        let mut liked: Vec<Album> = more_by
+            .into_iter()
+            .filter(|album| seen.insert(album.id.clone()))
+            .collect();
+        // One artist at a time, so a thin rail never holds more than one slot of the
+        // quota while a search waits for its own.
+        if liked.len() < SUGGESTIONS && !similar.is_empty() {
+            for artist in similar.iter().take(SIMILAR_ARTISTS) {
+                if liked.len() >= SUGGESTIONS {
+                    break;
+                }
+                match self.more_from_artist(album_id, &artist.id).await {
+                    Ok(releases) => {
+                        for album in releases.into_iter().take(SIMILAR_RELEASES) {
+                            if liked.len() >= SUGGESTIONS {
+                                break;
+                            }
+                            if seen.insert(album.id.clone()) {
+                                liked.push(album);
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "deezer: cannot load albums by similar artist {}: {error:#}",
+                            artist.id
+                        );
+                    }
+                }
+            }
+        }
+        Ok(AlbumCatalogue {
+            also_like: liked,
+            similar,
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {

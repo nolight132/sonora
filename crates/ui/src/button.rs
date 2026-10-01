@@ -7,7 +7,7 @@ use gpui::{
 use crate::glass::{blurring, frost};
 use crate::metrics::Text;
 use crate::theme::ActiveTheme as _;
-use crate::tooltip::{Perch, Tooltip};
+use crate::tooltip::{Perch, Tipped as _};
 
 const FADED: f32 = 0.55;
 /// How much of a white tint a frosted ghost or outline button shows when hovered
@@ -343,7 +343,7 @@ impl RenderOnce for Button {
             })
             .when(interactive, |this| this.cursor_pointer())
             .when_some(tooltip.filter(|_| interactive), |this, (key, perch)| {
-                this.tooltip(Tooltip::build(key, perch))
+                this.tip(key, perch)
             })
             .when_some(hovered, |this, style| this.hover(move |_| style))
             .when_some(pressed, |this, style| this.active(move |_| style))

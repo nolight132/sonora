@@ -17,6 +17,7 @@ use crate::menu::Menu;
 use crate::metrics::{snapped, text_width};
 use crate::pin::{Pin, Pinnable};
 use crate::popup::Popup;
+use crate::skeleton::Skeleton;
 use crate::theme::ActiveTheme as _;
 use crate::{Filter, SortAxis};
 
@@ -36,6 +37,11 @@ const GRIP: Pixels = px(9.);
 /// from behind the head is already drawn rather than popping in as the head lifts.
 const OVERSCAN: usize = 2;
 const OVERSCAN_ABOVE: usize = 1;
+/// How tall a skeleton bar stands against its row.
+const SKELETON_BAR: f32 = 0.3;
+/// How far a skeleton bar reaches across its cell, stepped by row and column so the column
+/// edges do not line up into a grid.
+const SKELETON_REACH: [f32; 5] = [0.6, 0.85, 0.45, 0.7, 0.55];
 
 pub const ROW_GROUP: &str = "table-row";
 
@@ -67,6 +73,15 @@ impl<F> Cell<F> {
             .h_full()
             .px(PADDING)
     }
+}
+
+/// The room a table holds while its source loads with nothing to show yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pending {
+    /// The source knows how many rows are coming.
+    Rows(usize),
+    /// The count is unknown, so the skeletons fill the viewport.
+    Screen,
 }
 
 pub trait TableSource: 'static {
@@ -127,6 +142,12 @@ pub trait TableSource: 'static {
 
     fn is_loading(&self, _cx: &App) -> bool {
         false
+    }
+
+    /// The skeleton rows to draw while the source has no rows yet, so the page keeps the
+    /// height it is about to have. `None` leaves the table empty while it waits.
+    fn pending(&self, _cx: &App) -> Option<Pending> {
+        None
     }
 }
 
@@ -697,8 +718,82 @@ impl<S: TableSource> TableState<S> {
         scroll.set_offset(point(offset.x, offset.y - delta));
     }
 
-    fn height(&self, head: Pixels, row: Pixels) -> Pixels {
-        head + row * self.delegate.row_count() as f32
+    fn height(&self, head: Pixels, row: Pixels, count: usize) -> Pixels {
+        head + row * count as f32
+    }
+
+    /// How many skeleton rows stand in for a source still loading its first rows, and zero
+    /// once it has rows or asks for none.
+    fn placeholders(&self, row: Pixels, cx: &App) -> usize {
+        if self.delegate.row_count() > 0 {
+            return 0;
+        }
+        match self.delegate.source.pending(cx) {
+            None => 0,
+            Some(Pending::Rows(count)) => count,
+            Some(Pending::Screen) => (self.viewport.height / row).ceil().max(0.) as usize,
+        }
+    }
+
+    /// The skeleton rows in the virtualised window, one bar per column, laid out like the
+    /// rows that will replace them.
+    fn skeletons(
+        &self,
+        head: Pixels,
+        row_height: Pixels,
+        count: usize,
+        cx: &App,
+    ) -> Vec<AnyElement> {
+        let theme = cx.theme();
+        let first = self.viewport.first(head, row_height);
+        let last = (first + self.viewport.rows(row_height)).min(count);
+        let bar = row_height * SKELETON_BAR;
+
+        (first..last)
+            .map(|display| {
+                div()
+                    .id(("skeleton", display))
+                    .absolute()
+                    .top(head + row_height * display as f32)
+                    .left_0()
+                    .w_full()
+                    .h(row_height)
+                    .flex()
+                    .items_center()
+                    .border_b_1()
+                    .border_color(theme.table_row_border)
+                    .children(
+                        self.delegate
+                            .columns
+                            .iter()
+                            .enumerate()
+                            .map(|(ix, column)| {
+                                let inner = self.delegate.inner_width(ix);
+                                let skeleton = match column.spec.width {
+                                    Width::Thumb => Skeleton::new().size(theme.metrics.thumb),
+                                    _ => Skeleton::new()
+                                        .w(inner
+                                            * SKELETON_REACH[(display + ix) % SKELETON_REACH.len()])
+                                        .h(bar),
+                                };
+                                div()
+                                    .w(inner + PADDING * 2.)
+                                    .flex_none()
+                                    .h_full()
+                                    .px(PADDING)
+                                    .flex()
+                                    .items_center()
+                                    .map(|this| match column.spec.align {
+                                        TextAlign::Right => this.justify_end(),
+                                        TextAlign::Center => this.justify_center(),
+                                        _ => this,
+                                    })
+                                    .child(skeleton)
+                            }),
+                    )
+                    .into_any_element()
+            })
+            .collect()
     }
 
     pub fn delegate(&self) -> &TableDelegate<S> {
@@ -1117,7 +1212,8 @@ impl<S: TableSource> Render for TableState<S> {
         let metrics = cx.theme().metrics;
         let row = snapped(metrics.row, window);
         let head = snapped(metrics.header, window);
-        let height = self.height(head, row);
+        let placeholders = self.placeholders(row, cx);
+        let height = self.height(head, row, self.delegate.row_count().max(placeholders));
         let pinned = snapped(self.viewport.top.clamp(Pixels::ZERO, height - head), window);
         let top = unpinned(self.corners, pinned);
         // Nothing passes behind the head, so it needs nothing behind it either: on a
@@ -1181,7 +1277,10 @@ impl<S: TableSource> Render for TableState<S> {
                             .left_0()
                             .right_0()
                             .h(height)
-                            .children(self.rows(head, row, cx)),
+                            .children(match placeholders {
+                                0 => self.rows(head, row, cx),
+                                count => self.skeletons(head, row, count, cx),
+                            }),
                     ),
             )
             .child(

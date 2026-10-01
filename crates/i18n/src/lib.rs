@@ -192,6 +192,7 @@ mod tests {
             (Language::Russian, ["1 трек", "2 трека", "5 треков"]),
             (Language::Ukrainian, ["1 трек", "2 треки", "5 треків"]),
             (Language::Polish, ["1 utwór", "2 utwory", "5 utworów"]),
+            (Language::Czech, ["1 skladba", "2 skladby", "5 skladeb"]),
         ];
 
         for (language, expected) in cases {

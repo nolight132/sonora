@@ -9,6 +9,7 @@ use crate::{Io, Library, LibraryEvent, Session, SessionEvent, join};
 pub struct ArtistDetail {
     id: Option<String>,
     artist: Option<Arc<Artist>>,
+    appears_on: Vec<Album>,
     loading: bool,
     error: Option<String>,
     session: Entity<Session>,
@@ -70,6 +71,7 @@ impl ArtistDetail {
         Self {
             id: None,
             artist: None,
+            appears_on: Vec::new(),
             loading: false,
             error: None,
             session,
@@ -102,6 +104,11 @@ impl ArtistDetail {
             .as_ref()
             .map(|artist| artist.albums.as_slice())
             .unwrap_or_default()
+    }
+
+    /// What the artist guests on, filled in behind the overview.
+    pub fn appears_on(&self) -> &[Album] {
+        &self.appears_on
     }
 
     pub fn is_loading(&self) -> bool {
@@ -213,7 +220,7 @@ impl ArtistDetail {
         }));
     }
 
-    /// Puts the catalogue over the overview. Either list replaces what the overview carried,
+    /// Puts the catalogue over the overview. Every list replaces what the overview carried,
     /// and an empty one leaves that part of the page alone.
     fn absorb(&mut self, catalogue: &ArtistCatalogue) {
         let Some(artist) = self.artist.as_mut() else {
@@ -229,6 +236,9 @@ impl ArtistDetail {
         if !catalogue.top_tracks.is_empty() {
             artist.top_tracks = catalogue.top_tracks.clone();
         }
+        if !catalogue.appears_on.is_empty() {
+            self.appears_on = catalogue.appears_on.clone();
+        }
     }
 
     fn clear(&mut self) {
@@ -242,6 +252,7 @@ impl ArtistDetail {
         }
         self.id = None;
         self.artist = None;
+        self.appears_on.clear();
         self.loading = false;
         self.filling = false;
         self.error = None;

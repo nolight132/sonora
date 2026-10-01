@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use tokio::sync::mpsc::UnboundedSender;
 use tray_icon::menu::{
     CheckMenuItem, Icon as MenuIcon, IconMenuItem, Menu, MenuEvent, MenuId, MenuItem,
@@ -14,8 +15,15 @@ const PNG: &[u8] = match cfg!(target_os = "macos") {
 };
 const MENU_ON_CLICK: bool = cfg!(target_os = "macos");
 
+/// The tray icon and its menu. The status item is built the first time it goes into the tray, so
+/// a Sonora started with the icon off never shows it, not even for a frame.
 pub struct Icon {
-    icon: TrayIcon,
+    /// The Sonora logo the status item is built with.
+    logo: tray_icon::Icon,
+    menu: Menu,
+    icon: Option<TrayIcon>,
+    /// The last caption, for the tooltip of a status item built after it was shown.
+    tooltip: String,
     caption: IconMenuItem,
     toggle: MenuItem,
     previous: MenuItem,
@@ -36,8 +44,8 @@ impl Icon {
             }
         };
         let (width, height) = image.dimensions();
-        let icon = match tray_icon::Icon::from_rgba(image.into_raw(), width, height) {
-            Ok(icon) => icon,
+        let logo = match tray_icon::Icon::from_rgba(image.into_raw(), width, height) {
+            Ok(logo) => logo,
             Err(error) => {
                 log::warn!("tray: cannot build the tray icon: {error:#}");
                 return None;
@@ -70,23 +78,6 @@ impl Icon {
             return None;
         }
 
-        let built = TrayIconBuilder::new()
-            .with_icon(icon)
-            .with_icon_as_template(true)
-            .with_tooltip(TOOLTIP)
-            .with_menu(Box::new(menu))
-            .with_menu_on_left_click(MENU_ON_CLICK)
-            .build();
-        let icon = match built {
-            Ok(icon) => icon,
-            Err(error) => {
-                log::warn!("tray: cannot place the tray icon: {error:#}");
-                return None;
-            }
-        };
-        #[cfg(target_os = "macos")]
-        keep_cover(&icon);
-
         let menus = sender.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             if let Some(event) = translate(&event.id) {
@@ -108,7 +99,10 @@ impl Icon {
         }));
 
         Some(Self {
-            icon,
+            logo,
+            menu,
+            icon: None,
+            tooltip: TOOLTIP.to_owned(),
             caption,
             toggle,
             previous,
@@ -120,10 +114,46 @@ impl Icon {
         })
     }
 
+    /// Whether there is a tray to bring Sonora back from, which Windows and macOS always have.
+    pub fn hosted() -> bool {
+        true
+    }
+
+    /// Puts the icon in the tray, or takes it out. The status item stays alive once built, so the
+    /// menu and its handlers survive a round trip.
+    pub fn place(&mut self, placed: bool) -> Result<()> {
+        match &self.icon {
+            Some(icon) => icon
+                .set_visible(placed)
+                .context("cannot show or hide the status item")?,
+            None if placed => self.icon = Some(self.build()?),
+            None => {}
+        }
+        Ok(())
+    }
+
+    /// Builds the status item, which puts it in the tray.
+    fn build(&self) -> Result<TrayIcon> {
+        let icon = TrayIconBuilder::new()
+            .with_icon(self.logo.clone())
+            .with_icon_as_template(true)
+            .with_tooltip(&self.tooltip)
+            .with_menu(Box::new(self.menu.clone()))
+            .with_menu_on_left_click(MENU_ON_CLICK)
+            .build()
+            .context("cannot build the status item")?;
+        #[cfg(target_os = "macos")]
+        keep_cover(&icon);
+        Ok(icon)
+    }
+
     pub fn show(&mut self, shown: &Shown) {
         // the status notifier hosts read the caption off the tooltip themselves; here it has to
         // be pushed, or hovering the icon only ever says Sonora
-        if let Err(error) = self.icon.set_tooltip(Some(&shown.caption)) {
+        self.tooltip.clone_from(&shown.caption);
+        if let Some(icon) = &self.icon
+            && let Err(error) = icon.set_tooltip(Some(&shown.caption))
+        {
             log::warn!("tray: cannot set the tooltip: {error:#}");
         }
         self.caption.set_text(&shown.caption);

@@ -238,6 +238,35 @@ impl Landed {
     }
 }
 
+/// What a playlist change puts in: tracks already named, or every track of an album, which
+/// the provider is asked for only once the change runs.
+#[derive(Clone, Debug)]
+pub enum Addition {
+    Tracks(Vec<String>),
+    Album(String),
+}
+
+impl Addition {
+    /// Whether there is nothing to add. An album always counts as something, since its
+    /// tracks are not known until it is read.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Tracks(ids) if ids.is_empty())
+    }
+
+    /// The track ids to add, reading an album's tracks from `client` first.
+    async fn resolve(self, client: &Arc<dyn MusicApi>) -> anyhow::Result<Vec<String>> {
+        match self {
+            Self::Tracks(ids) => Ok(ids),
+            Self::Album(id) => Ok(client
+                .album_tracks(&id)
+                .await?
+                .into_iter()
+                .filter_map(|track| track.id)
+                .collect()),
+        }
+    }
+}
+
 struct PlaylistMutation {
     action: &'static str,
     done: &'static str,
@@ -794,6 +823,7 @@ impl Library {
             priming: [None, None],
         };
         library.held_mut(Shelf::Streaming).state = LibraryState::Loading;
+        library.held_mut(Shelf::Local).shape = Shape::Catalog;
         library.prime(Shelf::Streaming, cx);
         match library.session.read(cx).client_of(Shelf::Local).is_some() {
             true => library.load(Shelf::Local, cx),
@@ -1343,10 +1373,11 @@ impl Library {
         }
     }
 
+    /// Creates a playlist called `name` and fills it with `addition`, which may be empty.
     pub fn create_playlist(
         &mut self,
         name: String,
-        tracks: Vec<String>,
+        addition: Addition,
         shelf: Shelf,
         cx: &mut Context<Self>,
     ) {
@@ -1360,6 +1391,7 @@ impl Library {
                 shelf,
             },
             move |client| async move {
+                let tracks = addition.resolve(&client).await?;
                 let id = client.create_playlist(&name).await?;
                 for track in &tracks {
                     client.add_track_to_playlist(&id, track).await?;
@@ -1432,21 +1464,26 @@ impl Library {
         track_id: String,
         cx: &mut Context<Self>,
     ) {
-        self.add_tracks_to_playlist(playlist_id, vec![track_id], cx);
+        self.add_tracks_to_playlist(playlist_id, Addition::Tracks(vec![track_id]), cx);
     }
 
+    /// Adds `addition` to a playlist. An album leaves out the tracks the playlist is known to
+    /// hold already, so adding it a second time adds only what it was missing. Named tracks
+    /// always go in, since adding one again is how a listener asks for a second copy.
     pub fn add_tracks_to_playlist(
         &mut self,
         playlist_id: String,
-        track_ids: Vec<String>,
+        addition: Addition,
         cx: &mut Context<Self>,
     ) {
-        if track_ids.is_empty() {
+        if addition.is_empty() {
             return;
         }
         let added = playlist_id.clone();
-        let held = track_ids.clone();
-        let added_count = track_ids.len() as u32;
+        let known = match addition {
+            Addition::Album(_) => self.contents.get(&playlist_id).cloned().unwrap_or_default(),
+            Addition::Tracks(_) => HashSet::new(),
+        };
         let name = self
             .playlist(&playlist_id)
             .map(|playlist| playlist.name.clone());
@@ -1461,15 +1498,18 @@ impl Library {
                 invalidated: Some(playlist_id.clone()),
             },
             move |client| async move {
+                let mut track_ids = addition.resolve(&client).await?;
+                track_ids.retain(|id| !known.contains(id));
                 for track_id in &track_ids {
                     client.add_track_to_playlist(&playlist_id, track_id).await?;
                 }
-                Ok(())
+                Ok(track_ids)
             },
-            move |this, _, cx| {
+            move |this, track_ids, cx| {
+                let added_count = track_ids.len() as u32;
                 this.amend_playlist(&added, |playlist| playlist.track_count += added_count, cx);
                 if let Some(ids) = this.contents.get_mut(&added) {
-                    ids.extend(held);
+                    ids.extend(track_ids);
                 }
                 cx.emit(LibraryEvent::TrackAdded { playlist: added });
             },

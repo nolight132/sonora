@@ -5,6 +5,7 @@ use librespot_core::Session;
 use serde::Deserialize;
 
 use super::query;
+use crate::spotify::wire;
 use crate::{Album, AlbumDetail, ArtistRef, ReleaseType, Track};
 
 const PAGE_LIMIT: usize = 50;
@@ -83,6 +84,9 @@ struct Copyrights {
 #[derive(Deserialize)]
 struct Copyright {
     text: String,
+    /// `P` for the sound recording, `C` for the work.
+    #[serde(rename = "type", default)]
+    kind: String,
 }
 
 #[derive(Deserialize)]
@@ -218,7 +222,10 @@ fn album_from(album: &PathAlbum) -> Album {
             .copyright
             .items
             .iter()
-            .filter_map(|copyright| non_empty(&copyright.text).map(str::to_owned))
+            .filter_map(|copyright| {
+                let text = non_empty(&copyright.text)?;
+                Some(wire::copyright(copyright.kind == "P", text))
+            })
             .collect(),
         added_at: None,
     }

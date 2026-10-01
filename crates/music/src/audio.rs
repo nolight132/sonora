@@ -246,6 +246,9 @@ pub struct SmoothGain<I> {
     input: I,
     volume: Volume,
     tap: Option<Tap>,
+    /// Whether the tap hears the samples from before the gain. It is read once per frame so
+    /// every channel of a frame agrees.
+    unscaled: bool,
 
     current: f32,
     target: f32,
@@ -266,6 +269,7 @@ impl<I: Source> SmoothGain<I> {
             input,
             volume,
             tap: None,
+            unscaled: false,
             current: initial,
             target: initial,
             step: 0.0,
@@ -308,6 +312,7 @@ impl<I: Source> Iterator for SmoothGain<I> {
 
         if self.channel == 0 {
             self.resync();
+            self.unscaled = self.tap.as_ref().is_some_and(Tap::absolute);
             let requested = self.volume.get().max(0.0);
 
             if requested.to_bits() != self.target.to_bits() {
@@ -328,7 +333,10 @@ impl<I: Source> Iterator for SmoothGain<I> {
 
         let output = sample * self.current;
         if let Some(tap) = self.tap.as_mut() {
-            tap.push(output);
+            tap.push(match self.unscaled {
+                true => sample,
+                false => output,
+            });
         }
 
         self.channel += 1;

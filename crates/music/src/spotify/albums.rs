@@ -5,6 +5,7 @@ use librespot_core::Session;
 use librespot_protocol::extension_kind::ExtensionKind;
 use librespot_protocol::metadata::Album as AlbumMessage;
 use librespot_protocol::metadata::album::Type as AlbumType;
+use librespot_protocol::metadata::copyright::Type as CopyrightType;
 use protobuf::Message as _;
 
 use crate::spotify::{collection, collection2, pathfinder, wire};
@@ -178,7 +179,10 @@ fn album_from(uri: &str, album: &AlbumMessage) -> Album {
         copyrights: album
             .copyright
             .iter()
-            .filter_map(|copyright| non_empty(copyright.text.as_deref()).map(str::to_owned))
+            .filter_map(|copyright| {
+                let text = non_empty(copyright.text.as_deref())?;
+                Some(wire::copyright(copyright.type_() == CopyrightType::P, text))
+            })
             .collect(),
         added_at: None,
     }

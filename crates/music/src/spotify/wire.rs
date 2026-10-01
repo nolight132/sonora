@@ -139,6 +139,19 @@ pub fn playlists_from(rootlist: &RootList) -> Vec<models::Playlist> {
         .collect()
 }
 
+/// A copyright line as a release page prints it, led by ℗ for the sound recording or © for
+/// the work. Spotify keeps the symbol out of the text and names the kind beside it, so a
+/// line that already carries a symbol is left as it is.
+pub fn copyright(recording: bool, text: &str) -> String {
+    match text.starts_with(['©', '℗']) {
+        true => text.to_owned(),
+        false => match recording {
+            true => format!("℗ {text}"),
+            false => format!("© {text}"),
+        },
+    }
+}
+
 pub fn seconds(millis: i64) -> Option<i64> {
     (millis > 0).then_some(millis / 1_000)
 }

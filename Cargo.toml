@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.39.0"
+version = "0.42.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/sonorahq/sonora"
@@ -38,8 +38,8 @@ env_logger = "0.11"
 fastrand = "2.5"
 futures = "0.3"
 fluent-bundle = "0.16"
-gpui = { git = "https://github.com/sonorahq/gpui", rev = "2f121e7e3a38d115313074ae885139ba4b99b443" }
-gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "2f121e7e3a38d115313074ae885139ba4b99b443", features = [
+gpui = { git = "https://github.com/sonorahq/gpui", rev = "58cab2abf58257fef20a45cecda3784bfcac2286" }
+gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "58cab2abf58257fef20a45cecda3784bfcac2286", features = [
   "font-kit",
   "wayland",
   "x11",
@@ -59,6 +59,7 @@ windows = { version = "0.62", features = [
 windows-sys = { version = "0.61", features = [
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
+  "Win32_System_Power",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
@@ -78,11 +79,13 @@ jiff = { version = "0.2", default-features = false, features = [
 ] }
 kakasi = "0.1"
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 libc = "0.2"
 lofty = "0.25"
 log = "0.4"
 md-5 = "0.10"
 moka = { version = "0.12.15", features = ["future", "sync"] }
+mpris-server = "0.10"
 notify = "8.2"
 oauth2 = "5.0"
 open = "5.4"
@@ -113,7 +116,19 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSStatusItem",
   "NSWorkspace",
 ] }
-ashpd = { version = "0.13", default-features = false, features = ["async-io", "settings"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "CFString",
+] }
+objc2-io-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "pwr_mgt",
+] }
+ashpd = { version = "0.13", default-features = false, features = [
+  "async-io",
+  "inhibit",
+  "settings",
+] }
 reqwest = { version = "0.13", default-features = false, features = [
   "blocking",
   "form",
@@ -139,7 +154,7 @@ symphonia = { version = "0.5.5", default-features = false, features = ["mkv", "o
 tray-icon = { version = "0.24", default-features = false }
 unic-langid = { version = "0.9", features = ["macros"] }
 unicode-segmentation = "1.12"
-ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "3667184" }
+ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "f213c0b" }
 
 librespot-core = { version = "0.8.0", default-features = false, features = [
   "rustls-tls-native-roots",
@@ -165,12 +180,12 @@ tokio = { version = "1.53", features = [
 ] }
 
 [patch.crates-io]
-librespot-audio = { git = "https://github.com/sonorahq/librespot", rev = "e7eb953d5848fd97bacd00e6c0e33500765eaa63" }
-librespot-core = { git = "https://github.com/sonorahq/librespot", rev = "e7eb953d5848fd97bacd00e6c0e33500765eaa63" }
-librespot-metadata = { git = "https://github.com/sonorahq/librespot", rev = "e7eb953d5848fd97bacd00e6c0e33500765eaa63" }
-librespot-oauth = { git = "https://github.com/sonorahq/librespot", rev = "e7eb953d5848fd97bacd00e6c0e33500765eaa63" }
-librespot-playback = { git = "https://github.com/sonorahq/librespot", rev = "e7eb953d5848fd97bacd00e6c0e33500765eaa63" }
-librespot-protocol = { git = "https://github.com/sonorahq/librespot", rev = "e7eb953d5848fd97bacd00e6c0e33500765eaa63" }
+librespot-audio = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
+librespot-core = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
+librespot-metadata = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
+librespot-oauth = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
+librespot-playback = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
+librespot-protocol = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
 rodio = { git = "https://github.com/RustAudio/rodio", rev = "4aa22e85e5ad5565c45dfdda95051158eb6b56c3" }
 
 [profile.release]

@@ -1,7 +1,5 @@
-use std::rc::Rc;
-
 use gpui::prelude::*;
-use gpui::{AnyElement, App, Entity, Pixels, Point, RenderOnce, Window, div, px};
+use gpui::{AnyElement, App, Entity, Pixels, RenderOnce, Window, div, px};
 use music::Album;
 use state::Playback;
 use ui::Card;
@@ -11,8 +9,6 @@ use crate::shared::cards;
 pub(crate) const CARD_MIN: Pixels = px(130.);
 pub(crate) const CARD_MAX: Pixels = px(190.);
 const CARD_GAP: Pixels = px(32.);
-
-type ContextMenu = Rc<dyn Fn(Album, Point<Pixels>, &mut App)>;
 
 #[derive(Clone, Copy)]
 pub(crate) struct CardLayout {
@@ -79,7 +75,6 @@ pub(crate) struct AlbumGrid {
     layout: CardLayout,
     albums: Vec<(usize, Album)>,
     playback: Entity<Playback>,
-    on_context: Option<ContextMenu>,
 }
 
 impl AlbumGrid {
@@ -94,16 +89,7 @@ impl AlbumGrid {
             layout: CardLayout::new(available),
             albums: albums.into_iter().collect(),
             playback,
-            on_context: None,
         }
-    }
-
-    pub(crate) fn on_context(
-        mut self,
-        listener: impl Fn(Album, Point<Pixels>, &mut App) + 'static,
-    ) -> Self {
-        self.on_context = Some(Rc::new(listener));
-        self
     }
 }
 
@@ -114,16 +100,9 @@ impl RenderOnce for AlbumGrid {
             layout,
             albums,
             playback,
-            on_context,
         } = self;
         let cards = albums.into_iter().map(|(index, album)| {
-            let card = album_card(id, index, &album, &playback, layout.card, cx);
-            let Some(listener) = on_context.clone() else {
-                return card.into_any_element();
-            };
-
-            card.menu(move |event, _, cx| listener(album.clone(), event.position, cx))
-                .into_any_element()
+            album_card(id, index, &album, &playback, layout.card, cx).into_any_element()
         });
 
         div()

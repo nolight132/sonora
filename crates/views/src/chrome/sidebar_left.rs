@@ -15,9 +15,7 @@ use gpui::{Window, div, px};
 use router::{
     Destination, LibraryTab, NavEntry, Navigation, NavigationEvent, SettingsTab, navigate,
 };
-use state::{
-    AppSettings, Library, Origin, PinSort, Pins, Playback, PlaybackState, Session, Shelf, Sonora,
-};
+use state::{AppSettings, Library, Origin, PinSort, Pins, Playback, Session, Shelf, Sonora};
 
 use crate::shared::menus::{ItemMenu, item_menu};
 
@@ -234,16 +232,16 @@ impl SidebarLeft {
     fn ceiling(&self, window: &Window, cx: &Context<Self>) -> Pixels {
         let reserved = match self.overlays() {
             true => Pixels::ZERO,
-            false => SNUG + super::Chrome::sidebar_right(cx),
+            false => SNUG + super::Chrome::reserved_right(cx),
         };
 
         super::cap(MIN_WIDTH, MAX_WIDTH, reserved, window)
     }
 
     /// Flips into or out of the cramped state from the room the window leaves
-    /// beside a right sidebar of `right` pixels. This runs inside a render,
-    /// where a notify schedules nothing, so a flip asks for a full window
-    /// refresh instead. That effect lands once the draw is over.
+    /// once `right` pixels are held back for the right sidebar. This runs inside
+    /// a render, where a notify schedules nothing, so a flip asks for a full
+    /// window refresh instead. That effect lands once the draw is over.
     pub fn adapt(&mut self, right: Pixels, window: &Window, cx: &mut App) {
         self.width = ui::snapped(self.width, window);
 
@@ -475,10 +473,7 @@ impl SidebarLeft {
         };
 
         let origin = Origin::from(&pin);
-        let playing = matches!(
-            self.playback.read(cx).playing_from(&origin),
-            Some(PlaybackState::Playing)
-        );
+        let playing = self.playback.read(cx).playing_from(&origin) == Some(true);
 
         let card = Card::new(("pinned", index), pin.label())
             .cover(pin.cover.clone())
@@ -618,7 +613,7 @@ impl Render for SidebarLeft {
 
         let current = self.trail.read(cx).current();
         self.follow(&current);
-        self.adapt(super::Chrome::sidebar_right(cx), window, cx);
+        self.adapt(super::Chrome::reserved_right(cx), window, cx);
 
         if !cx.has_active_drag() {
             self.dropping = false;

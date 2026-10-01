@@ -2,9 +2,9 @@
 //!
 //! Nothing links webkit2gtk. GPUI talks to X11 or Wayland itself and the app has no GTK anywhere
 //! else, so the library is opened at runtime with `dlopen` and a system without it simply answers
-//! `supported() == false` — which is also what keeps the Flatpak runtime, which ships no
-//! webkitgtk, building and running unchanged. `dlsym` walks a handle's dependencies, so the one
-//! webkit2gtk handle resolves gtk, glib, gobject and soup too and no other soname is named here.
+//! `supported() == false`. The Flatpak builds on the GNOME runtime for the webkit2gtk-4.1 it
+//! ships. `dlsym` walks a handle's dependencies, so the one webkit2gtk handle resolves gtk, glib,
+//! gobject and soup too and no other soname is named here.
 //!
 //! GTK may be initialised once per process and only ever touched from the thread that did it, so
 //! one resident thread owns every sign-in window. It parks on a condvar while no window is up,

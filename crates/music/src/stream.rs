@@ -2,18 +2,21 @@
 //! response keeps filling the back, so playback starts after a short preroll instead of after
 //! the whole file.
 //!
-//! Every provider that streams a file over HTTP uses this. What differs between them is only
-//! what happens to the bytes, which is [`Body`]: Subsonic takes them as they come, Deezer
-//! decrypts each Blowfish stripe as it lands, and Apple Music indexes CENC fragments and hands
-//! each sample to a CDM the moment a reader asks for it. Everything else, the waiting and the
-//! seeking and what a broken connection does, is the same for all three and lives here.
+//! Every provider that streams a file over HTTP uses this. What differs between them is where
+//! the bytes come from, which is [`Source`], and what happens to them, which is [`Body`].
+//! Subsonic and YouTube Music take them as they come, Deezer decrypts each Blowfish stripe as
+//! it lands, and Apple Music indexes CENC fragments and hands each sample to a CDM the moment a
+//! reader asks for it. Everything else, the waiting and the seeking and what a broken
+//! connection does, is the same for all of them and lives here.
 
+use std::future::Future;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
+use bytes::Bytes;
 use tokio::sync::watch;
 
 /// How much has to be in before the decoder is let loose on the buffer. At any ordinary bitrate
@@ -73,6 +76,19 @@ pub struct Plain;
 
 impl Body for Plain {}
 
+/// Where the bytes of one track come from, in file order. A single response is one, and so is
+/// a provider that asks for the file a range at a time.
+pub trait Source: Send + 'static {
+    /// The next part of the body, or `None` once it has all arrived.
+    fn chunk(&mut self) -> impl Future<Output = Result<Option<Bytes>>> + Send;
+}
+
+impl Source for reqwest::Response {
+    async fn chunk(&mut self) -> Result<Option<Bytes>> {
+        Ok(reqwest::Response::chunk(self).await?)
+    }
+}
+
 struct Buffered<B> {
     /// The track so far, as a reader would see it.
     buf: Vec<u8>,
@@ -131,6 +147,12 @@ impl<B: Body> Stream<B> {
     /// of them are gone.
     pub fn new(response: reqwest::Response, body: B) -> Self {
         let total = response.content_length();
+        Self::pulling(response, total, body)
+    }
+
+    /// Starts pulling `source` into a buffer and returns at once, like [`new`](Self::new).
+    /// `total` is the body length when it is known up front.
+    pub fn pulling(source: impl Source, total: Option<u64>, body: B) -> Self {
         let shared = Arc::new(Shared {
             state: Mutex::new(Buffered {
                 buf: Vec::new(),
@@ -142,19 +164,33 @@ impl<B: Body> Stream<B> {
             filled: Condvar::new(),
         });
         let (progress, arrived) = watch::channel(0usize);
-        tokio::spawn(pump(response, Arc::downgrade(&shared), progress));
+        tokio::spawn(pump(source, Arc::downgrade(&shared), progress));
         Self { shared, arrived }
     }
 
     /// Starts the download and waits for the preroll, or for the whole body of a track shorter
     /// than that.
     pub async fn open(response: reqwest::Response, body: B) -> Result<Self> {
-        let mut stream = Self::new(response, body);
-        let wanted = stream.total().map_or(PREROLL, |total| {
+        Self::new(response, body).primed().await
+    }
+
+    /// Waits for the preroll, or for the whole body of a track shorter than that.
+    pub async fn primed(mut self) -> Result<Self> {
+        let wanted = self.total().map_or(PREROLL, |total| {
             usize::try_from(total).unwrap_or(usize::MAX).min(PREROLL)
         });
-        stream.wait_for(wanted).await?;
-        Ok(stream)
+        self.wait_for(wanted).await?;
+        Ok(self)
+    }
+
+    /// Waits until the download has ended, whether it finished or broke.
+    pub async fn finished(&self) {
+        let mut arrived = self.arrived.clone();
+        while !self.done() {
+            if arrived.changed().await.is_err() {
+                break;
+            }
+        }
     }
 
     /// Waits until `wanted` bytes have arrived, or the download ends. Nothing here blocks a
@@ -271,15 +307,15 @@ impl<B: Body> Stream<B> {
     }
 }
 
-/// Pulls the response body into the buffer, one chunk at a time, and stops as soon as nothing
-/// is left that could read it.
-async fn pump<B: Body>(
-    mut response: reqwest::Response,
+/// Pulls the body into the buffer, one chunk at a time, and stops as soon as nothing is left
+/// that could read it.
+async fn pump<S: Source, B: Body>(
+    mut source: S,
     weak: Weak<Shared<B>>,
     progress: watch::Sender<usize>,
 ) {
     loop {
-        let chunk = match response.chunk().await {
+        let chunk = match source.chunk().await {
             Ok(Some(chunk)) => chunk,
             Ok(None) => {
                 if let Some(shared) = weak.upgrade() {
@@ -289,9 +325,9 @@ async fn pump<B: Body>(
                 return;
             }
             Err(error) => {
-                log::warn!("playback: the stream broke: {error}");
+                log::warn!("playback: the stream broke: {error:#}");
                 if let Some(shared) = weak.upgrade() {
-                    shared.finish(Some(error.to_string()));
+                    shared.finish(Some(format!("{error:#}")));
                 }
                 progress.send_modify(|_| {});
                 return;
