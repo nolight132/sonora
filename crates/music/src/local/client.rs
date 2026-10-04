@@ -670,6 +670,7 @@ mod tests {
             albums: vec![],
             portraits: HashMap::new(),
             artists: vec![],
+            playlists: vec![],
         };
 
         let client = LocalClient::new(scanned, db.clone(), index);

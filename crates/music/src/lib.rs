@@ -60,6 +60,13 @@ pub const LOCAL_PLAYLIST_PREFIX: &str = "local-playlist:";
 /// rail never asks for or draws more than this many releases or artists.
 pub const SUGGESTIONS: usize = 10;
 
+#[derive(Clone, Copy, Default)]
+pub struct PlaylistImportSummary {
+    pub playlists: usize,
+    pub tracks: usize,
+    pub unmatched: usize,
+}
+
 pub fn is_local_id(id: &str) -> bool {
     id.starts_with(LOCAL_TRACK_PREFIX)
         || id.starts_with(LOCAL_ALBUM_PREFIX)
@@ -646,6 +653,11 @@ pub trait MusicProvider: Send + Sync {
     /// Reads an arbitrary file on disk as a track, for a provider whose tracks are files. Used
     /// by file-association opens, which may point outside any scanned folder.
     fn track_from_path(&self, _path: &Path) -> Option<Track> {
+        None
+    }
+    /// A summary of the playlist files the last scan found and imported, if this provider scans
+    /// playlists at all. `None` for every provider but the local library.
+    fn playlists_imported(&self) -> Option<PlaylistImportSummary> {
         None
     }
     fn sign_in_options(&self) -> Vec<SignIn>;
