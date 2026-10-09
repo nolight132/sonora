@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Sonora is packaged as a snap, for x86-64 and ARM64, alongside the AppImage and the Flatpak.
+
 ### Changed
 
 - On Windows, the minimize, maximize, restore and close buttons now use Windows' own icons, so
