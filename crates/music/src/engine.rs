@@ -813,11 +813,11 @@ fn audio_loop<F: Fetch>(
     let mut reported_at = Instant::now();
 
     loop {
-        // a track at another rate waits for the last one's tail to play out before the
+        // a track in another format waits for the last one's tail to play out before the
         // output reopens under it
         let refitting = current
             .as_ref()
-            .is_some_and(|held| !paced.fits(held.rate) && !paced.drained());
+            .is_some_and(|held| !paced.fits(held.rate, held.channels) && !paced.drained());
         // anything but decoding means waiting for work rather than spinning: no
         // track, a paused one, or a full queue. A restored track sits paused
         // with an empty queue, which the old condition mistook for decoding.
@@ -883,7 +883,7 @@ fn audio_loop<F: Fetch>(
                     written = 0;
                     current = Playing::open(fetch.as_ref(), &id, loaded, at, 0, normalise);
                     if let Some(held) = &current
-                        && paced.fit(held.rate).is_err()
+                        && paced.fit(held.rate, held.channels).is_err()
                     {
                         return;
                     }
@@ -979,7 +979,7 @@ fn audio_loop<F: Fetch>(
         if idle {
             continue;
         }
-        if paced.fit(held.rate).is_err() {
+        if paced.fit(held.rate, held.channels).is_err() {
             return;
         }
 

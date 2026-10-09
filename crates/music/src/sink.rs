@@ -255,9 +255,14 @@ impl Paced {
             return Ok(());
         }
 
+        let channels = samples.channels().get();
+        let rate = samples.sample_rate().get();
         self.output
             .sink()
             .append(Chunk::new(samples, &self.cue, &self.live));
+        // the output only joins the mixer now, so it reads this packet's format rather
+        // than the empty queue's placeholder
+        self.output.queued(rate, channels);
         Ok(())
     }
 
@@ -272,15 +277,16 @@ impl Paced {
         self.live.load(Ordering::Relaxed) == 0 || self.output.failed()
     }
 
-    /// Whether packets at `rate` can go out without the output reopening.
-    pub fn fits(&self, rate: u32) -> bool {
-        self.output.fits(rate)
+    /// Whether packets at `rate` and `channels` can go out without the output reopening.
+    pub fn fits(&self, rate: u32, channels: u16) -> bool {
+        self.output.fits(rate, channels)
     }
 
-    /// Reopens the output for packets at `rate` unless it fits already. Anything still queued
-    /// is dropped, so a caller that wants the tail heard waits for `drained` first.
-    pub fn fit(&mut self, rate: u32) -> Result<(), Gone> {
-        match self.output.fit(rate) {
+    /// Reopens the output for packets at `rate` and `channels` unless it fits already.
+    /// Anything still queued is dropped, so a caller that wants the tail heard waits for
+    /// `drained` first.
+    pub fn fit(&mut self, rate: u32, channels: u16) -> Result<(), Gone> {
+        match self.output.fit(rate, channels) {
             Ok(_) => Ok(()),
             Err(error) => {
                 log::error!("sink: cannot reopen the audio output: {error:#}");
