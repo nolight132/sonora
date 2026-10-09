@@ -6,7 +6,7 @@ use serde::Deserialize;
 use tokio::task::JoinSet;
 
 use crate::spotify::wire;
-use crate::{Contributor, Playlist, UserDetail, escape};
+use crate::{Contributor, Playlist, UserDetail, UserProfile, escape};
 
 const USER_PREFIX: &str = "spotify:user:";
 const PLAYLIST_PREFIX: &str = "spotify:playlist:";
@@ -75,6 +75,18 @@ pub async fn profile(session: &Session, user_id: &str) -> Result<UserDetail> {
         playlists,
         id,
     })
+}
+
+/// The signed-in account, named and pictured from its own profile. Signing in calls this, so a
+/// profile Spotify will not hand over falls back to the bare username rather than failing.
+pub async fn own(session: &Session) -> UserProfile {
+    let id = session.username();
+    let found = fetch(session, &id, 0).await.unwrap_or_default();
+    UserProfile {
+        display_name: found.label().unwrap_or(&id).to_owned(),
+        avatar: found.avatar(),
+        id,
+    }
 }
 
 pub async fn contributors(session: &Session, ids: HashSet<String>) -> HashMap<String, Contributor> {

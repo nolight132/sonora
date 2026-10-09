@@ -77,8 +77,7 @@ struct Session {
     /// The `sid` session cookie `deezer.ping` hands out; the `checkForm` token is bound to
     /// it, so every gateway call has to carry both.
     sid: String,
-    user_id: String,
-    user_name: String,
+    profile: UserProfile,
     /// The `checkForm` token every later gateway call carries.
     api_token: String,
     license_token: String,
@@ -129,8 +128,11 @@ impl DeezerClient {
                 arl: arl.to_owned(),
                 session: RwLock::new(Session {
                     sid: String::new(),
-                    user_id: String::new(),
-                    user_name: String::new(),
+                    profile: UserProfile {
+                        id: String::new(),
+                        display_name: String::new(),
+                        avatar: None,
+                    },
                     api_token: String::new(),
                     license_token: String::new(),
                 }),
@@ -141,7 +143,7 @@ impl DeezerClient {
         };
         client.ping().await?;
         client.refresh().await?;
-        if client.inner.session.read().await.user_id.is_empty() {
+        if client.inner.session.read().await.profile.id.is_empty() {
             bail!("the arl was refused; sign in to deezer.com again");
         }
         let secret = decrypt::secret(&client.inner.http).await;
@@ -178,26 +180,23 @@ impl DeezerClient {
     /// Pulls a fresh `checkForm` api token and license token from `deezer.getUserData`.
     async fn refresh(&self) -> Result<()> {
         let results = self.gw_raw("deezer.getUserData", "", json!({})).await?;
-        let user_id = wire::id(&results["USER"]["USER_ID"]).unwrap_or_default();
-        let user_name = wire::text(&results["USER"], &["BLOG_NAME"])
-            .unwrap_or("Deezer")
-            .to_owned();
+        let user = &results["USER"];
+        let profile = wire::profile(user);
         let api_token = wire::text(&results, &["checkForm"])
             .unwrap_or_default()
             .to_owned();
-        let license_token = wire::text(&results["USER"]["OPTIONS"], &["license_token"])
+        let license_token = wire::text(&user["OPTIONS"], &["license_token"])
             .unwrap_or_default()
             .to_owned();
         let mut session = self.inner.session.write().await;
-        session.user_id = user_id;
-        session.user_name = user_name;
+        session.profile = profile;
         session.api_token = api_token;
         session.license_token = license_token;
         Ok(())
     }
 
     async fn user_id(&self) -> String {
-        self.inner.session.read().await.user_id.clone()
+        self.inner.session.read().await.profile.id.clone()
     }
 
     /// A gateway call with the current api token. One retry with a refreshed token when the
@@ -529,12 +528,7 @@ impl MusicApi for DeezerClient {
     }
 
     async fn profile(&self) -> Result<UserProfile> {
-        let session = self.inner.session.read().await;
-        Ok(UserProfile {
-            id: session.user_id.clone(),
-            display_name: session.user_name.clone(),
-            avatar: None,
-        })
+        Ok(self.inner.session.read().await.profile.clone())
     }
 
     async fn artist(&self, artist_id: &str) -> Result<Artist> {
