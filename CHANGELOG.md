@@ -7,10 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Opening a file from a file manager now switches to the fullscreen player. It can be turned off
+  in Settings > Playback.
+- Sonora supports drag-and-drop from other programs, like file managers, into the queue. The line
+  shows the place in the queue where the files will land, the same one in-app drops use.
+
 ### Changed
 
 - On Windows, the minimize, maximize, restore and close buttons now use Windows' own icons, so
   they match other Windows apps.
+- Opening audio files from a file manager now starts a queue of just those files and plays the
+  first one, instead of adding them to what was already playing. The first file starts right away
+  without any delay, and any other files you selected queue up behind it. You can choose to keep
+  the current queue when opening a file in Settings > Playback.
 
 ### Fixed
 

@@ -31,8 +31,8 @@ const LEAST_SIZE: Size<Pixels> = size(px(480.), px(400.));
 const FIRST_SIZE: Size<Pixels> = size(px(920.), px(640.));
 /// Some file managers launch a fresh process per selected file instead of one with every path,
 /// so a multi-file "Open With" arrives here as several single-file hand-offs within milliseconds
-/// of each other. This is how long to wait for the burst to go quiet before acting on it, so
-/// they land as one batch instead of racing each other into the engine one at a time.
+/// of each other. The first one plays at once and the rest join its queue. This is the time window
+/// after every hand-off, so a burst is considered over once it has gone quiet this long.
 const OPEN_COALESCE: Duration = Duration::from_millis(250);
 
 fn main() {
@@ -184,11 +184,18 @@ fn main() {
         cx.spawn(async move |cx| {
             let mut pending: Vec<String> = Vec::new();
             loop {
-                match links.recv().await {
-                    Some(items) => pending.extend(items),
-                    None => break,
-                }
-                // Drain whatever else arrives in the same burst before acting on any of it.
+                let Some(items) = links.recv().await else {
+                    break;
+                };
+                let keep = cx.update(|cx| {
+                    Sonora::global(cx)
+                        .settings
+                        .read(cx)
+                        .keep_queue_on_file_open()
+                });
+                // Create the queue from the first arrived file(s).
+                let count = cx.update(|cx| follow(&items, false, keep, None, cx));
+                // Other tracks accumulate before the burst ends, then join the queue.
                 loop {
                     cx.background_executor().timer(OPEN_COALESCE).await;
                     let mut more = false;
@@ -200,8 +207,12 @@ fn main() {
                         break;
                     }
                 }
-                let batch = std::mem::take(&mut pending);
-                cx.update(|cx| follow(&batch, cx));
+                if !pending.is_empty() {
+                    let remaining = std::mem::take(&mut pending);
+                    cx.update(|cx| {
+                        follow(&remaining, true, keep, Some(count.saturating_sub(1)), cx)
+                    });
+                }
             }
         })
         .detach();
@@ -210,7 +221,18 @@ fn main() {
     });
 }
 
-fn follow(items: &[String], cx: &mut App) {
+/// Acts on one batch of arguments from the OS. When opening files, they may come in a burst of
+/// multiple batches. Files from the first batch start a new queue (unless the queue is set to be
+/// kept) and the first file is played. Tracks from the next batches are then added to the end of
+/// the queue. When opening a URL, a page it names is opened. Returns how many files it queued,
+/// which the next batch of the burst queues behind.
+fn follow(
+    items: &[String],
+    tail: bool,
+    keep_queue: bool,
+    gap: Option<usize>,
+    cx: &mut App,
+) -> usize {
     show_window(cx);
     let mut destination = None;
     let mut paths: Vec<PathBuf> = Vec::new();
@@ -222,11 +244,22 @@ fn follow(items: &[String], cx: &mut App) {
     }
     if let Some(destination) = destination {
         router::navigate(destination, cx);
+    } else if !paths.is_empty()
+        && Sonora::global(cx)
+            .settings
+            .read(cx)
+            .fullscreen_on_file_open()
+    {
+        router::navigate(router::Destination::Fullscreen, cx);
     }
+    let queued = paths.len();
     if !paths.is_empty() {
         let playback = Sonora::global(cx).playback.clone();
-        playback.update(cx, |playback, cx| playback.open_paths(paths, cx));
+        playback.update(cx, |playback, cx| {
+            playback.open_paths(paths, tail, keep_queue, gap, cx)
+        });
     }
+    queued
 }
 
 /// A bare filesystem path, or a `file://` URI decoded back into one — the two shapes an "Open

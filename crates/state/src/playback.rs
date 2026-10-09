@@ -426,7 +426,8 @@ pub struct Playback {
     stored: Duration,
     sleep: Option<Sleep>,
     sleep_task: Option<Task<()>>,
-    open: Option<Task<()>>,
+    /// The task still reading files, which the next batch waits for.
+    pending_open: Option<Task<()>>,
 }
 
 impl EventEmitter<PlaybackEvent> for Playback {}
@@ -522,7 +523,7 @@ impl Playback {
             stored: Duration::ZERO,
             sleep: None,
             sleep_task: None,
-            open: None,
+            pending_open: None,
         };
         // Start the local engine at startup so files can play before the first scan.
         if let Some(factory) = playback.session.read(cx).local_playback() {
@@ -876,29 +877,71 @@ impl Playback {
             .update(cx, |queue, cx| queue.append_last_all(tracks, origin, cx));
     }
 
-    /// Opens paths handed in from the OS (a file-association launch or hand-off). A single file
-    /// plays right away, since picking one is a request to hear it now; several play next,
-    /// right after whatever is already playing, whichever provider it came from — or start right
-    /// away if nothing is.
-    pub fn open_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        if paths.is_empty() {
-            return;
-        }
-        self.resolve_paths(paths, cx);
+    /// Opens paths handed in from the OS (a file-association launch or hand-off). Files arrive in
+    /// bursts, because some file managers launch Sonora once per selected file. The first batch of
+    /// a burst creates a new queue, unless `keep_queue` is on, when the files join the queue as
+    /// manually added tracks instead. Later batches follow with the `tail` flag and already added
+    /// tracks count as `gap` - they queue at the back of what the first batch set up.
+    pub fn open_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        tail: bool,
+        keep_queue: bool,
+        gap: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        let (placement, reshuffle, play_next) = match (tail, keep_queue) {
+            (false, false) => (None, false, false),
+            (false, true) => (Some(QueuePlacement::Next), false, true),
+            (true, false) => (Some(QueuePlacement::Last), true, false),
+            (true, true) => (
+                Some(QueuePlacement::Gap(gap.unwrap_or_default())),
+                false,
+                false,
+            ),
+        };
+        let pending_open = self.pending_open.take();
+        self.resolve_paths(paths, placement, reshuffle, play_next, pending_open, cx);
     }
 
-    fn resolve_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+    /// Queues paths dropped on the queue at `gap` upcoming tracks in.
+    pub fn insert_paths(&mut self, paths: Vec<PathBuf>, gap: usize, cx: &mut Context<Self>) {
+        let pending_open = self.pending_open.take();
+        self.resolve_paths(
+            paths,
+            Some(QueuePlacement::Gap(gap)),
+            false,
+            false,
+            pending_open,
+            cx,
+        );
+    }
+
+    /// Reads `paths` as tracks, creates a new queue or puts them in the existing one, then plays
+    /// the first playable track. It waits for the previous batch, if it hasn't completed yet,
+    /// so tracks reach the queue in the order the file manager passes them.
+    fn resolve_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        placement: Option<QueuePlacement>,
+        reshuffle: bool,
+        play_next: bool,
+        pending_open: Option<Task<()>>,
+        cx: &mut Context<Self>,
+    ) {
         let provider = self.session.read(cx).local_provider();
+        let origin = Origin::local();
         let io = Io::global(cx);
-        self.open = Some(cx.spawn(async move |this, cx| {
+        self.pending_open = Some(cx.spawn(async move |this, cx| {
+            if let Some(prev_pending_open) = pending_open {
+                prev_pending_open.await;
+            }
             let loaded = join(io.spawn(async move {
                 let mut tracks = Vec::new();
                 for path in paths {
                     match provider.track_from_path(&path) {
                         Some(track) => tracks.push(track),
-                        None => {
-                            log::warn!("local: cannot open {}", path.display());
-                        }
+                        None => log::warn!("local: cannot open {}", path.display()),
                     }
                 }
                 anyhow::Ok(tracks)
@@ -907,11 +950,32 @@ impl Playback {
 
             this.update(cx, |this, cx| match loaded {
                 Ok(tracks) if tracks.is_empty() => {}
-                Ok(mut tracks) if tracks.len() == 1 => {
-                    this.play_next(tracks.remove(0), cx);
-                    this.next(cx);
-                }
-                Ok(tracks) => this.play_next_all(tracks, None, cx),
+                Ok(tracks) => match placement {
+                    Some(QueuePlacement::Next) => {
+                        let playable = tracks.iter().any(|track| track.playable);
+                        this.play_next_all(tracks, Some(origin), cx);
+                        if play_next && playable {
+                            this.next(cx);
+                        }
+                    }
+                    Some(QueuePlacement::End) => this.enqueue_all(tracks, Some(origin), cx),
+                    Some(QueuePlacement::Last) => {
+                        this.play_last_all(tracks, Some(origin), cx);
+                        if reshuffle {
+                            this.queue.update(cx, |queue, cx| queue.reshuffle(cx));
+                        }
+                    }
+                    Some(QueuePlacement::Gap(gap)) => {
+                        this.insert_all(tracks, gap, Some(origin), cx)
+                    }
+                    None => {
+                        let index = tracks
+                            .iter()
+                            .position(|track| track.playable)
+                            .unwrap_or_default();
+                        this.begin(tracks, index, Some(origin), cx)
+                    }
+                },
                 Err(error) => log::warn!("playback: cannot open files: {error:#}"),
             })
             .ok();

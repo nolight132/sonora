@@ -80,9 +80,9 @@ struct Held {
 }
 
 impl Held {
-    fn empty() -> Self {
+    fn empty(shape: Shape) -> Self {
         Self {
-            shape: Shape::Saved,
+            shape,
             state: LibraryState::Empty,
             awaited: Vec::new(),
             expected: HashMap::new(),
@@ -92,8 +92,8 @@ impl Held {
         }
     }
 
-    fn clear(&mut self) {
-        *self = Self::empty();
+    fn clear(&mut self, shape: Shape) {
+        *self = Self::empty(shape);
     }
 
     fn ready(&self) -> Option<&Ready> {
@@ -760,7 +760,7 @@ impl Library {
                 if !session.read(cx).authenticated() {
                     this.pin_targets_task = None;
                     this.pin_targets = None;
-                    this.held_mut(Shelf::Streaming).clear();
+                    this.held_mut(Shelf::Streaming).clear(Shape::Saved);
                     cx.notify();
                     return;
                 }
@@ -782,7 +782,7 @@ impl Library {
                 this.pending_albums.clear();
                 this.pending_artists.clear();
                 this.pending_library.clear();
-                this.held_mut(Shelf::Streaming).clear();
+                this.held_mut(Shelf::Streaming).clear(Shape::Saved);
                 cx.notify();
             }
             SessionEvent::Reconnected => {
@@ -795,7 +795,7 @@ impl Library {
                 match session.read(cx).client_of(Shelf::Local) {
                     Some(_) => this.load(Shelf::Local, cx),
                     None => {
-                        this.held_mut(Shelf::Local).clear();
+                        this.held_mut(Shelf::Local).clear(Shape::Catalog);
                         cx.notify();
                     }
                 }
@@ -804,7 +804,7 @@ impl Library {
         .detach();
 
         let mut library = Self {
-            shelves: [Held::empty(), Held::empty()],
+            shelves: [Held::empty(Shape::Saved), Held::empty(Shape::Catalog)],
             session,
             io,
             playlist_task: None,
@@ -823,7 +823,6 @@ impl Library {
             priming: [None, None],
         };
         library.held_mut(Shelf::Streaming).state = LibraryState::Loading;
-        library.held_mut(Shelf::Local).shape = Shape::Catalog;
         library.prime(Shelf::Streaming, cx);
         match library.session.read(cx).client_of(Shelf::Local).is_some() {
             true => library.load(Shelf::Local, cx),
