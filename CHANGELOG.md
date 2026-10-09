@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Audio no longer crackles on tracks a device has to resample, like a 44.1 kHz track on a 192 kHz
+  device. The output used to rebuild its resampler at every decoded chunk, losing the filter
+  state and splicing the waveform; it now keeps one resampler for as long as a track's format
+  does not change.
+
 ## [0.42.2] - 2026-10-07
 
 ### Added

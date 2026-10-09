@@ -44,6 +44,10 @@ pub struct Chain {
     pub spectrum: Spectrum,
 }
 
+/// One engine's chain as the mixer sees it: the player's queue, the equalizer, and then the
+/// volume ramp with the spectrum tap.
+type ChainSource = SmoothGain<Equalized<rodio::queue::SourcesQueueOutput>>;
+
 /// One open stream on an output device, with the mixer the engines' chains play into.
 struct Device {
     id: String,
@@ -168,6 +172,13 @@ pub struct Output {
     chain: Chain,
     sink: Arc<rodio::Player>,
     device: Arc<Device>,
+    /// A fresh chain that has not joined the mixer yet. It waits for `queued`, which is called
+    /// once its first packet is in the queue, so the mixer reads that packet's format instead
+    /// of the empty queue's placeholder.
+    pending: Option<ChainSource>,
+    /// The rate and channel count the chain in the mixer was pinned to. The mixer reads a
+    /// chain's format once, when it joins, so a packet in another format needs a fresh chain.
+    format: Option<(u32, u16)>,
     /// Set when `fit` could not reopen the device, so the engine reports the output gone.
     broken: bool,
 }
@@ -177,31 +188,52 @@ impl Output {
     /// sample through the equalizer and then the volume ramp before it reaches the mixer.
     pub fn open(chain: Chain) -> Result<Self> {
         let device = Device::shared(None)?;
-        let sink = attach(&chain, &device);
+        let (sink, source) = attach(&chain);
         Ok(Self {
             chain,
             sink: Arc::new(sink),
             device,
+            pending: Some(source),
+            format: None,
             broken: false,
         })
+    }
+
+    /// The first packet of a fresh chain is queued, so the chain joins the mixer now: the
+    /// mixer reads a chain's format when it wraps it, and a queued packet is what tells it
+    /// the track's rate and channel count. Joining before the first packet would pin the
+    /// chain to the empty queue's placeholder, and every sample would be resampled and
+    /// re-channelled from there.
+    pub fn queued(&mut self, rate: u32, channels: u16) {
+        let Some(source) = self.pending.take() else {
+            return;
+        };
+        self.format = Some((rate, channels));
+        self.device.add(source);
     }
 
     pub fn sink(&self) -> &Arc<rodio::Player> {
         &self.sink
     }
 
-    /// Whether a track at `rate` can go out as the output stands, without `fit` reopening it.
-    pub fn fits(&self, rate: u32) -> bool {
-        self.device.live() && self.device.fits(rate)
+    /// Whether packets at `rate` and `channels` can go out as the output stands, without
+    /// `fit` reopening it. A chain is pinned to the format of its first packet, so anything
+    /// else needs a fresh chain; before that packet any rate the device takes fits.
+    pub fn fits(&self, rate: u32, channels: u16) -> bool {
+        self.device.live()
+            && match self.format {
+                Some((open_rate, open_channels)) => (open_rate, open_channels) == (rate, channels),
+                None => self.device.fits(rate),
+            }
     }
 
-    /// Moves this output onto a shared stream at `rate` unless it `fits` already, keeping the
-    /// player paused if it was. The stream reopens when it runs at another rate, which closes
-    /// it under the other engines. Whatever this output had queued is dropped and any clone of
-    /// `sink` goes stale, so callers do this before a track and take `sink` again when it
-    /// returns true.
-    pub fn fit(&mut self, rate: u32) -> Result<bool> {
-        if self.fits(rate) {
+    /// Moves this output onto a shared stream for packets at `rate` and `channels` unless it
+    /// `fits` already, keeping the player paused if it was. The stream reopens when it runs at
+    /// another rate, which closes it under the other engines. Whatever this output had queued
+    /// is dropped and any clone of `sink` goes stale, so callers do this before a track and
+    /// take `sink` again when it returns true.
+    pub fn fit(&mut self, rate: u32, channels: u16) -> Result<bool> {
+        if self.fits(rate, channels) {
             return Ok(false);
         }
         let paused = self.sink.is_paused();
@@ -212,12 +244,14 @@ impl Output {
                 return Err(error);
             }
         };
-        let sink = attach(&self.chain, &device);
+        let (sink, source) = attach(&self.chain);
         if paused {
             sink.pause();
         }
         self.sink = Arc::new(sink);
         self.device = device;
+        self.pending = Some(source);
+        self.format = None;
         self.broken = false;
         Ok(true)
     }
@@ -349,8 +383,13 @@ impl<I: Source> Iterator for SmoothGain<I> {
 }
 
 impl<I: Source> Source for SmoothGain<I> {
+    /// The mixer wraps every source it is given in a resampling iterator, and reads the span
+    /// length to bound how much of it one conversion pass covers. Reporting a span makes that
+    /// iterator start a pass per span and rebuild its resampler each time, losing the
+    /// fractional read position and splicing the waveform. One endless pass over the queue
+    /// keeps the resampler intact for as long as the chain plays.
     fn current_span_len(&self) -> Option<usize> {
-        self.input.current_span_len()
+        None
     }
 
     fn channels(&self) -> NonZero<u16> {
@@ -463,14 +502,15 @@ fn ident(device: &cpal::Device) -> String {
         .unwrap_or_else(|_| "unknown".to_owned())
 }
 
-/// A fresh player whose chain plays into `device`.
-fn attach(chain: &Chain, device: &Device) -> rodio::Player {
+/// A fresh player and its chain, not yet in the mixer. The caller queues the first packet and
+/// then hands the chain to `Output::queued`, so the mixer reads that packet's format.
+fn attach(chain: &Chain) -> (rodio::Player, ChainSource) {
     let applied = chain.volume.get();
     let tap = chain.spectrum.attach();
     let (sink, source) = rodio::Player::new();
     let equalized = Equalized::new(source, chain.equalizer.clone());
-    device.add(SmoothGain::new(equalized, chain.volume.clone(), applied, RAMP).with_tap(tap));
-    sink
+    let source = SmoothGain::new(equalized, chain.volume.clone(), applied, RAMP).with_tap(tap);
+    (sink, source)
 }
 
 /// The device's config at `rate` in the default's channels and sample format, if the device

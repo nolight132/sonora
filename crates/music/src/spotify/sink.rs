@@ -36,7 +36,7 @@ impl Sink for OutputSink {
     /// follows it, before the first packet of a play.
     fn start(&mut self) -> SinkResult<()> {
         self.paced
-            .fit(SAMPLE_RATE)
+            .fit(SAMPLE_RATE, NUM_CHANNELS as u16)
             .and_then(|()| self.paced.play())
             .map_err(|error| SinkError::OnWrite(error.to_string()))
     }
