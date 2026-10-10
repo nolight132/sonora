@@ -70,3 +70,13 @@ required:
     problem or anything audio related
   - the GPU and its graphics driver, for a rendering fault, a blank window or a window that
     will not draw
+
+# How hard .github/triage/duplicates.sh looks for an issue that already reports the new one.
+# `scan` is how many issues it reads the title of, newest first, open and closed alike, so
+# anything older than that is invisible and the number is what to raise when the repository
+# outgrows it. `shortlist` is how many of those get read in full, and `report` is the most the
+# comment ever lists.
+duplicates:
+  scan: 300
+  shortlist: 6
+  report: 3
