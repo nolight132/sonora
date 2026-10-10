@@ -37,6 +37,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Refresh Quick picks while keeping the other Home shelves steady until you leave the page. Failed
+  refreshes show a notification.
 - Press F11 or double-click the fullscreen view to make the window fill the whole screen. Turn on
   Use OS fullscreen in settings to have the fullscreen button do the same.
 - AIFF files in a local library now show up and play, including `.aif` and `.aifc`. Opening one
