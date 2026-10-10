@@ -1,4 +1,5 @@
 mod aside;
+mod devices;
 mod player_bar;
 mod sidebar_left;
 mod sidebar_right;

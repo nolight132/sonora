@@ -1,13 +1,18 @@
 use gpui::prelude::*;
 use gpui::{App, Entity, SharedString, div};
 use i18n::t;
-use state::{Playback, Queue, Repeat, Sonora};
+use state::{Playback, Queue, Repeat, Sonora, Steered};
 use ui::{ActiveTheme as _, Button};
 
 use crate::shared::ambient;
 
 pub(crate) const NOTCH: f32 = 0.05;
 const STEP: f32 = 0.004;
+
+/// The other device playback is on, which the player shows instead of this app's own.
+pub(crate) fn steered(cx: &App) -> Option<Steered> {
+    Sonora::global(cx).devices.read(cx).steered()
+}
 
 pub(crate) fn volume_icon(level: f32) -> &'static str {
     match level {
@@ -76,8 +81,11 @@ pub(crate) fn transport(
 
 pub(crate) fn toggle(playback: &Entity<Playback>, big: bool, frosted: bool, cx: &App) -> Button {
     let held = playback.read(cx);
-    let playing = held.wants_playing();
-    let idle = held.track().is_none();
+    let steered = steered(cx);
+    let playing = steered
+        .as_ref()
+        .map_or_else(|| held.wants_playing(), |steered| steered.playing);
+    let idle = held.track().is_none() && steered.is_none();
     let playback = playback.clone();
 
     let (id, icon, tooltip) = match playing {
@@ -145,7 +153,7 @@ fn repeat(playback: &Entity<Playback>, frosted: bool, cx: &App) -> Button {
 }
 
 fn previous(playback: &Entity<Playback>, frosted: bool, cx: &App) -> Button {
-    let enabled = playback.read(cx).has_previous(cx);
+    let enabled = steered(cx).is_some() || playback.read(cx).has_previous(cx);
     let playback = playback.clone();
 
     Button::new("previous")
@@ -161,7 +169,7 @@ fn previous(playback: &Entity<Playback>, frosted: bool, cx: &App) -> Button {
 }
 
 fn next(playback: &Entity<Playback>, queue: &Entity<Queue>, frosted: bool, cx: &App) -> Button {
-    let enabled = queue.read(cx).has_next();
+    let enabled = steered(cx).is_some() || queue.read(cx).has_next();
     let playback = playback.clone();
 
     Button::new("next")

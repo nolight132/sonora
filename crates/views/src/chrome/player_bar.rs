@@ -17,8 +17,9 @@ use ui::{
 };
 
 use crate::chrome::SidebarRight;
+use crate::chrome::devices::DevicePicker;
 use crate::shared::menus::ItemMenu;
-use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
+use crate::shared::transport::{NOTCH, like, moved, percent, steered, transport, volume_icon};
 
 const SEEK_MAX: f32 = 560.;
 const VOLUME_WIDTH: f32 = 110.;
@@ -31,6 +32,7 @@ pub(crate) struct PlayerBar {
     queue: Entity<Queue>,
     settings: Entity<AppSettings>,
     track_menu: ItemMenu,
+    devices: Entity<DevicePicker>,
     context_menu: Option<(music::Track, Point<Pixels>)>,
     seek: ScrubberState,
     volume: ScrubberState,
@@ -45,7 +47,9 @@ impl PlayerBar {
     pub fn new(playback: Entity<Playback>, queue: Entity<Queue>, cx: &mut Context<Self>) -> Self {
         let library = Sonora::global(cx).library.clone();
         let settings = Sonora::global(cx).settings.clone();
+        let devices = Sonora::global(cx).devices.clone();
         cx.observe(&playback, |_, _, cx| cx.notify()).detach();
+        cx.observe(&devices, |_, _, cx| cx.notify()).detach();
         cx.observe(&queue, |_, _, cx| cx.notify()).detach();
         cx.observe(&library, |_, _, cx| cx.notify()).detach();
         cx.observe(&settings, |_, _, cx| cx.notify()).detach();
@@ -58,6 +62,7 @@ impl PlayerBar {
             queue,
             settings,
             track_menu: ItemMenu::new(playlist_scrollbar, cx),
+            devices: cx.new(DevicePicker::new),
             context_menu: None,
             seek: ScrubberState::new("seek"),
             volume: ScrubberState::new("volume"),
@@ -213,6 +218,7 @@ impl PlayerBar {
             .flex_none()
             .items_center()
             .gap_1()
+            .child(self.devices.clone())
             .child(button(
                 "player-lyrics",
                 "icons/mic-vocal.svg",
@@ -242,7 +248,10 @@ impl PlayerBar {
         let muted = theme.muted_foreground;
         let artwork = ui::snapped(theme.metrics.row, window);
         let artists = theme.text(ui::Text::Small);
-        let track = self.playback.read(cx).track().cloned();
+        let track = match steered(cx) {
+            Some(steered) => steered.track,
+            None => self.playback.read(cx).track().cloned(),
+        };
         let cover = track.as_ref().and_then(|track| track.cover.clone());
         let explicit = track.as_ref().is_some_and(|track| track.explicit);
         let like = like(track.clone(), cx);
@@ -370,13 +379,24 @@ impl Render for PlayerBar {
         };
 
         let playback = self.playback.read(cx);
-        let seekable = playback.track().is_some();
-        let progress = self.pending.unwrap_or_else(|| playback.progress());
-        let elapsed = playback.position();
-        let total = playback
-            .track()
-            .map(|track| track.duration)
-            .unwrap_or(Duration::ZERO);
+        let (seekable, elapsed, total, progress) = match steered(cx) {
+            Some(steered) => (
+                !steered.duration.is_zero(),
+                steered.position,
+                steered.duration,
+                steered.position.as_secs_f32() / steered.duration.as_secs_f32().max(1.),
+            ),
+            None => (
+                playback.track().is_some(),
+                playback.position(),
+                playback
+                    .track()
+                    .map(|track| track.duration)
+                    .unwrap_or(Duration::ZERO),
+                playback.progress(),
+            ),
+        };
+        let progress = self.pending.unwrap_or(progress);
         let clock_width = clock_text
             * match total.as_secs() >= 3600 {
                 true => CLOCK_LONG,

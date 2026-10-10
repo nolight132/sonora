@@ -4550,6 +4550,7 @@ dependencies = [
  "fastrand",
  "flate2",
  "futures",
+ "gethostname",
  "http",
  "jiff",
  "kakasi",
