@@ -25,23 +25,25 @@ const VIEW_PAGE: usize = 100;
 const VIEW_PAGES: usize = 10;
 
 /// The whole discography and the appears-on view of one artist, once a library id has been
-/// turned into the catalog's. The artist page itself holds only the first ten albums and ten
-/// singles. A discography that cannot be read leaves those on the page.
+/// turned into the catalog's. The artist page itself holds only the first ten releases of each
+/// view. A discography that cannot be read leaves those on the page.
 pub(crate) async fn artist_catalogue(
     client: &AppleClient,
     artist_id: &str,
 ) -> Result<ArtistCatalogue> {
     let artist_id = client.catalog_artist(artist_id).await?;
     let path = client.catalog(&format!("/artists/{}", escape::component(&artist_id)));
-    let (answered, albums, singles) = tokio::join!(
+    let views = wire::DISCOGRAPHY
+        .iter()
+        .map(|name| whole_view(client, &artist_id, name));
+    let (answered, views) = tokio::join!(
         client.get(&path, &[("views", "appears-on-albums"), ALBUM_ARTISTS]),
-        whole_view(client, &artist_id, "full-albums"),
-        whole_view(client, &artist_id, "singles"),
+        futures::future::try_join_all(views),
     );
     let answered = answered?;
-    let albums = match (albums, singles) {
-        (Ok(albums), Ok(singles)) => albums.into_iter().chain(singles).collect(),
-        (Err(error), _) | (_, Err(error)) => {
+    let albums = match views {
+        Ok(views) => views.into_iter().flatten().collect(),
+        Err(error) => {
             log::warn!("apple: cannot read the discography of {artist_id}: {error:#}");
             Vec::new()
         }

@@ -1456,7 +1456,10 @@ impl MusicApi for AppleClient {
             .get(
                 &self.catalog(&format!("/artists/{}", escape::component(&id))),
                 &[
-                    ("views", "top-songs,full-albums,singles"),
+                    (
+                        "views",
+                        "top-songs,full-albums,live-albums,compilation-albums,singles",
+                    ),
                     ("include[songs]", "artists,albums"),
                     ALBUM_ARTISTS,
                     ("extend", "artistBio"),
