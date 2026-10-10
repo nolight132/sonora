@@ -1,6 +1,7 @@
 use gpui::prelude::*;
 use gpui::{
-    App, Div, MouseButton, Pixels, StyleRefinement, Window, WindowControlArea, div, px, svg,
+    App, Div, Font, FontFallbacks, MouseButton, Pixels, StyleRefinement, Window, WindowControlArea,
+    div, font, px, svg,
 };
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use gpui::{CursorStyle, Decorations, ResizeEdge};
@@ -10,6 +11,10 @@ use crate::theme::ActiveTheme as _;
 const SYSTEM_ACTS: bool = cfg!(target_os = "windows");
 const BUTTON: Pixels = px(20.);
 const GLYPH: Pixels = px(16.);
+const CAPTION_GLYPH: Pixels = px(10.);
+const CAPTION_NUDGE: Pixels = px(1.);
+const CAPTION_FONT: &str = "Segoe Fluent Icons";
+const CAPTION_FONT_FALLBACK: &str = "Segoe MDL2 Assets";
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 const RESIZE_EDGE: Pixels = px(5.);
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -30,6 +35,15 @@ impl Control {
             Self::Maximize => "icons/window-maximize.svg",
             Self::Restore => "icons/window-restore.svg",
             Self::Close => "icons/window-close.svg",
+        }
+    }
+
+    fn caption_glyph(self) -> &'static str {
+        match self {
+            Self::Minimize => "\u{E921}",
+            Self::Maximize => "\u{E922}",
+            Self::Restore => "\u{E923}",
+            Self::Close => "\u{E8BB}",
         }
     }
 
@@ -212,20 +226,38 @@ impl RenderOnce for WindowControls {
                             })
                         })
                     })
-                    .child(
-                        svg()
-                            .path(icons::path(control.icon()))
-                            .id("glyph")
-                            .size(GLYPH)
-                            .flex_none()
-                            .text_color(theme.muted_foreground)
-                            .group_hover(control.id(), move |style| {
-                                style.text_color(match danger {
-                                    true => theme.danger_foreground,
-                                    false => theme.foreground,
+                    .map(|this| match is_windows {
+                        true => this.child(
+                            div()
+                                .font(caption_font())
+                                .text_size(CAPTION_GLYPH)
+                                .line_height(CAPTION_GLYPH)
+                                .relative()
+                                .top(CAPTION_NUDGE)
+                                .text_color(theme.muted_foreground)
+                                .group_hover(control.id(), move |style| {
+                                    style.text_color(match danger {
+                                        true => theme.danger_foreground,
+                                        false => theme.foreground,
+                                    })
                                 })
-                            }),
-                    )
+                                .child(control.caption_glyph()),
+                        ),
+                        false => this.child(
+                            svg()
+                                .path(icons::path(control.icon()))
+                                .id("glyph")
+                                .size(GLYPH)
+                                .flex_none()
+                                .text_color(theme.muted_foreground)
+                                .group_hover(control.id(), move |style| {
+                                    style.text_color(match danger {
+                                        true => theme.danger_foreground,
+                                        false => theme.foreground,
+                                    })
+                                }),
+                        ),
+                    })
                     .when(!control.system(), |this| {
                         this.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .on_click(move |_, window, cx| {
@@ -240,6 +272,15 @@ impl RenderOnce for WindowControls {
             }));
         controls.style().refine(&overrides);
         controls
+    }
+}
+
+fn caption_font() -> Font {
+    Font {
+        fallbacks: Some(FontFallbacks::from_fonts(vec![
+            CAPTION_FONT_FALLBACK.to_owned(),
+        ])),
+        ..font(CAPTION_FONT)
     }
 }
 

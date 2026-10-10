@@ -245,7 +245,7 @@ fn track_uri(track_id: &str) -> Result<SpotifyUri> {
 /// track.
 fn translate(event: PlayerEvent) -> Option<PlaybackEvent> {
     let millis = |position_ms: u32| Duration::from_millis(position_ms as u64);
-    let track_id = |uri: SpotifyUri| uri.to_id().ok();
+    let track_id = |uri: SpotifyUri| Some(uri.to_id());
 
     match event {
         PlayerEvent::Loading {

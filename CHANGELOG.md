@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Fullscreen lyrics grow with a large window, up to twice their size, so they no longer look
   small on a big screen. Small windows keep the size they had.
+- On Windows, the minimize, maximize, restore and close buttons now use Windows' own icons, so
+  they match other Windows apps.
 
 ### Fixed
 
@@ -26,6 +28,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the next one or doing nothing.
 - The fullscreen controls blur away as they hide, instead of leaving the top of the seek bar cut
   off for the last moment.
+- Signing in to Spotify on Windows on ARM no longer fails with "Spotify turned down the
+  sign-in".
 
 ## [0.42.2] - 2026-10-07
 

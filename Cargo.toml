@@ -182,12 +182,12 @@ tokio = { version = "1.53", features = [
 time = { version = "0.3.55", features = ["parsing"] }
 
 [patch.crates-io]
-librespot-audio = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
-librespot-core = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
-librespot-metadata = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
-librespot-oauth = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
-librespot-playback = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
-librespot-protocol = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }
+librespot-audio = { git = "https://github.com/sonorahq/librespot", rev = "f5da0664e93b601cafa48ea41b5f08153b3c4f31" }
+librespot-core = { git = "https://github.com/sonorahq/librespot", rev = "f5da0664e93b601cafa48ea41b5f08153b3c4f31" }
+librespot-metadata = { git = "https://github.com/sonorahq/librespot", rev = "f5da0664e93b601cafa48ea41b5f08153b3c4f31" }
+librespot-oauth = { git = "https://github.com/sonorahq/librespot", rev = "f5da0664e93b601cafa48ea41b5f08153b3c4f31" }
+librespot-playback = { git = "https://github.com/sonorahq/librespot", rev = "f5da0664e93b601cafa48ea41b5f08153b3c4f31" }
+librespot-protocol = { git = "https://github.com/sonorahq/librespot", rev = "f5da0664e93b601cafa48ea41b5f08153b3c4f31" }
 rodio = { git = "https://github.com/RustAudio/rodio", rev = "4aa22e85e5ad5565c45dfdda95051158eb6b56c3" }
 
 [profile.release]

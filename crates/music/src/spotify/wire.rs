@@ -89,7 +89,11 @@ pub fn playlist_from(id: &str, content: &RootList, username: &str) -> models::Pl
         owner: owner.to_owned(),
         owner_id: content.owner_username().to_owned(),
         owned: owner == username,
-        collaborative: content.attributes.collaborative(),
+        collaborative: content.attributes.collaborative()
+            || content
+                .capabilities
+                .as_ref()
+                .is_some_and(|permissions| permissions.can_edit_items()),
         blend: blend(&content.attributes),
         public: false,
         cover: playlist_cover(&content.attributes),
@@ -128,7 +132,13 @@ pub fn playlists_from(rootlist: &RootList) -> Vec<models::Playlist> {
                     .unwrap_or_default()
                     .to_owned(),
                 owned: false,
-                collaborative: meta.is_some_and(|meta| meta.attributes.collaborative()),
+                collaborative: meta.is_some_and(|meta| {
+                    meta.attributes.collaborative()
+                        || meta
+                            .capabilities
+                            .as_ref()
+                            .is_some_and(|permissions| permissions.can_edit_items())
+                }),
                 blend: meta.is_some_and(|meta| blend(&meta.attributes)),
                 public: item.attributes.public(),
                 cover: meta.and_then(|meta| playlist_cover(&meta.attributes)),
