@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Sonora no longer freezes for a moment every second when your audio output cannot be opened.
+  It waits quietly and picks the output up as soon as it works.
 - The queue's "From" line and the pause button on album, playlist and artist cards and pins now
   follow the track that is playing, so an album you queue after another one shows as the source
   once it starts. When radio takes over, the queue names the song the radio comes from.

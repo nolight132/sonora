@@ -33,6 +33,9 @@ struct Card {
     close: Handler,
     never: SharedString,
     silence: Handler,
+    /// A link right under the detail, such as the release notes.
+    link: Option<Button>,
+    /// What the card is about, in a row of its own above the never-again button.
     actions: Vec<Button>,
 }
 
@@ -93,13 +96,12 @@ impl AppNotice {
             silence: Box::new(move |_, _, cx| {
                 silence.update(cx, |requirements, cx| requirements.silence(requirement, cx));
             }),
-            actions: vec![
-                Button::new(SharedString::from(format!("{id}-help")))
-                    .outline()
-                    .small()
-                    .label(t!("requirement-help"))
-                    .on_click(|_, _, cx| cx.open_url(INSTALL)),
-            ],
+            link: Some(link(
+                SharedString::from(format!("{id}-help")),
+                t!("requirement-help"),
+                INSTALL.to_owned(),
+            )),
+            actions: Vec::new(),
         }
     }
 
@@ -129,20 +131,14 @@ impl AppNotice {
         let install = self.updates.clone();
         let silence = self.updates.clone();
         let settings = self.settings.clone();
+        let notes = (!page.is_empty())
+            .then(|| link(SharedString::from("update-notes"), t!("update-notes"), page));
         let mut actions = Vec::new();
-        if !page.is_empty() {
-            actions.push(
-                Button::new("update-notes")
-                    .ghost()
-                    .small()
-                    .label(t!("update-notes"))
-                    .on_click(move |_, _, cx| cx.open_url(&page)),
-            );
-        }
         actions.push(
             Button::new("update-later")
                 .outline()
                 .small()
+                .icon("icons/rotate-ccw-clock.svg")
                 .label(t!("update-later"))
                 .on_click(move |_, _, cx| {
                     later.update(cx, |updates, cx| updates.dismiss(cx));
@@ -177,6 +173,7 @@ impl AppNotice {
                 settings.update(cx, |settings, cx| settings.set_check_updates(false, cx));
                 silence.update(cx, |updates, cx| updates.dismiss(cx));
             }),
+            link: notes,
             actions,
         })
     }
@@ -209,8 +206,8 @@ impl Render for AppNotice {
     }
 }
 
-/// Draws one card: icon, title and a close button on top, the detail under them, and the
-/// card's own actions after its never-again button at the bottom.
+/// Draws one card: icon, title and a close button on top, then the detail with its link, the
+/// card's own actions, and the never-again button at the very bottom.
 fn card_element(card: Card, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let Card {
@@ -221,6 +218,7 @@ fn card_element(card: Card, cx: &App) -> AnyElement {
         close,
         never,
         silence,
+        link,
         actions,
     } = card;
 
@@ -278,21 +276,36 @@ fn card_element(card: Card, cx: &App) -> AnyElement {
                     .child(detail),
             )
         })
+        .when_some(link, |this, link| this.child(div().flex().child(link)))
+        .when(!actions.is_empty(), |this| {
+            this.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_2()
+                    .children(actions),
+            )
+        })
         .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .justify_end()
-                .gap_2()
-                .child(
-                    Button::new(SharedString::from(format!("{id}-never")))
-                        .ghost()
-                        .small()
-                        .label(never)
-                        .on_click(silence),
-                )
-                .children(actions),
+            div().flex().child(
+                Button::new(SharedString::from(format!("{id}-never")))
+                    .ghost()
+                    .small()
+                    .icon("icons/x.svg")
+                    .label(never)
+                    .on_click(silence),
+            ),
         )
         .into_any_element()
+}
+
+/// A link-style button that opens `url`, with the external-link arrow after its label.
+fn link(id: SharedString, label: SharedString, url: String) -> Button {
+    Button::new(id)
+        .ghost()
+        .small()
+        .label(label)
+        .trailing("icons/external-link.svg")
+        .on_click(move |_, _, cx| cx.open_url(&url))
 }

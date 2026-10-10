@@ -471,6 +471,12 @@ pub fn available() -> bool {
     cpal::default_host().default_output_device().is_some()
 }
 
+/// Whether a stream on the default device opens right now. The stream is the shared one, so it
+/// closes again at once unless an output already plays on it.
+pub fn openable() -> bool {
+    available() && Device::shared(None).is_ok()
+}
+
 /// Whether the last attempt to open the output failed, so whatever plays is not heard. On Linux
 /// ALSA always names a default device, so this rather than `available` is what tells that the
 /// sound cannot get out.

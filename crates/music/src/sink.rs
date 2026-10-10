@@ -331,11 +331,16 @@ impl Paced {
 /// device has gone, a Bluetooth headset that dropped its link, has nothing to reopen on and
 /// nothing else asks the system again, so without the watch playback stays silent until the app
 /// restarts. The watch ends when the engine listening on `notify` is gone.
+///
+/// A device that is present is not enough: ALSA always names a default one, and without the
+/// sound server's plugin it never opens. Reporting it anyway would restart the engine every poll,
+/// and dropping librespot's player joins its thread on the main one, so the watch waits until a
+/// stream actually opens.
 pub fn watch_for_output(notify: UnboundedSender<()>) {
     std::thread::spawn(move || {
         while !notify.is_closed() {
             std::thread::sleep(WATCH_POLL);
-            if !crate::audio::available() {
+            if !crate::audio::openable() {
                 continue;
             }
             log::info!("sink: an output device is available again, reopening");
