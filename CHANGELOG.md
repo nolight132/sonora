@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Fullscreen lyrics grow with a large window, up to twice their size, so they no longer look
+  small on a big screen. Small windows keep the size they had.
+
 ### Fixed
 
 - YouTube Music and Apple Music artist pages now list the artist's whole discography instead

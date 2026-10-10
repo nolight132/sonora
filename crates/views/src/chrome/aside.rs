@@ -4,9 +4,9 @@ use gpui::prelude::*;
 
 use gpui::{
     Animation, AnimationExt as _, App, Bounds, Context, Div, DragMoveEvent, Entity, FontWeight,
-    MouseDownEvent, Pixels, Point, Render, ScrollHandle, ScrollStrategy, SharedString,
+    MouseDownEvent, Pixels, Point, Render, ScrollHandle, ScrollStrategy, SharedString, Size,
     SpringConfig, SpringState, Task, UniformListScrollHandle, Window, div, ease_in_out, px,
-    relative, svg, uniform_list,
+    relative, size, svg, uniform_list,
 };
 use i18n::t;
 use music::{Shape, Track, Voice};
@@ -42,6 +42,11 @@ const REVEAL: f32 = 0.6;
 const ACTIVE_VERSE_GROWTH: Pixels = px(2.);
 const FULLSCREEN_VERSE_GROWTH: Pixels = px(3.);
 const LYRICS_HORIZONTAL_INSET_REM: f32 = 1.5;
+// The largest window fullscreen lyrics keep their own size in. A larger one grows them by its
+// share of this one, so a verse keeps its size relative to the window.
+const LYRICS_FRAME: Size<Pixels> = size(px(1152.), px(648.));
+// the most a large window grows fullscreen lyrics by
+const LYRICS_FRAME_MOST: f32 = 2.;
 const PINNED_SHARE: f32 = 0.25;
 const PIN: f32 = 0.3;
 // how far a row falls behind, in verse sizes
@@ -980,7 +985,10 @@ impl Aside {
         let karaoke_effects = karaoke_lyrics && effects();
         let scale = match self.titled {
             true => self.settings.read(cx).panel_lyrics_scale(),
-            false => self.settings.read(cx).fullscreen_lyrics_scale(),
+            false => {
+                self.settings.read(cx).fullscreen_lyrics_scale()
+                    * lyrics_frame_scale(window.viewport_size())
+            }
         };
         let lane_size = theme.text(Text::Body) * scale;
         let sung = Sung {
@@ -2265,6 +2273,14 @@ fn lifted(row: Div, sung: Sung) -> Div {
         true => row,
         false => row.layer_scale(sung.lift).layer_scale_origin(sung.from),
     }
+}
+
+/// How much a window grows fullscreen lyrics past `LYRICS_FRAME`. The tighter of its width and
+/// height decides, and a window no larger than the frame, stacked layouts included, keeps 1.
+fn lyrics_frame_scale(viewport: Size<Pixels>) -> f32 {
+    (viewport.width / LYRICS_FRAME.width)
+        .min(viewport.height / LYRICS_FRAME.height)
+        .clamp(1., LYRICS_FRAME_MOST)
 }
 
 fn active_verse_size(verse: Pixels) -> Pixels {
