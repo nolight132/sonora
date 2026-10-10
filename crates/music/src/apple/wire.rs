@@ -21,6 +21,15 @@ use crate::{
 pub const ART: u32 = 600;
 pub const HERO: u32 = 1200;
 
+/// The artist views that together make up a discography, in the order the page lists them.
+/// Apple keeps live albums and compilations out of `full-albums`, so each needs its own view.
+pub const DISCOGRAPHY: [&str; 4] = [
+    "full-albums",
+    "live-albums",
+    "compilation-albums",
+    "singles",
+];
+
 /// The catalog resource behind a library row, when it was included.
 pub fn catalog(value: &Value) -> Option<&Value> {
     value.pointer("/relationships/catalog/data/0")
@@ -360,9 +369,9 @@ pub fn artist(value: &Value) -> Option<Artist> {
             .or_else(|| text(attributes, "artistBio")),
         monthly_listeners: None,
         top_tracks: view(value, "top-songs").iter().filter_map(song).collect(),
-        albums: view(value, "full-albums")
+        albums: DISCOGRAPHY
             .iter()
-            .chain(view(value, "singles").iter())
+            .flat_map(|name| view(value, name))
             .filter_map(album)
             .collect(),
     })
