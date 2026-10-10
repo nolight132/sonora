@@ -70,14 +70,19 @@ pub async fn prepare(http: &reqwest::Client, adam_id: &str, user_token: &str) ->
     // One exchange at a time, held until the license is in. Preloading the next track while
     // this one licenses is the ordinary case, and the CDM cannot have two challenges open.
     let licensing = widevine::licensing().await;
-    let challenge = tokio::task::spawn_blocking(move || Cdm::open()?.challenge(&init))
-        .await
-        .context("the widevine challenge task failed")??;
+    // The lease is held across the license request, so the challenge and its license reach
+    // the same CDM host.
+    let (cdm, challenge) = tokio::task::spawn_blocking(move || -> Result<(Cdm, Vec<u8>)> {
+        let cdm = Cdm::open()?;
+        let challenge = cdm.challenge(&init)?;
+        Ok((cdm, challenge))
+    })
+    .await
+    .context("the widevine challenge task failed")??;
 
     log::info!("apple: requesting license");
     let license = license(http, &challenge, &resolved, adam_id, &bearer, user_token).await?;
     let cdm = tokio::task::spawn_blocking(move || -> Result<Cdm> {
-        let cdm = Cdm::open()?;
         cdm.accept(&license)?;
         Ok(cdm)
     })
@@ -87,6 +92,7 @@ pub async fn prepare(http: &reqwest::Client, adam_id: &str, user_token: &str) ->
     log::info!("apple: license accepted");
 
     media.license(cdm, resolved.key_id.clone())?;
+    media.release_when_downloaded();
     media.prime().await?;
     Ok(Loaded {
         media,

@@ -58,6 +58,15 @@ impl Navigation {
         self.arrive(cx);
     }
 
+    /// Replaces the current page without leaving its stale destination in navigation history.
+    pub fn replace(&mut self, destination: Destination, cx: &mut Context<Self>) {
+        if self.current() == destination {
+            return;
+        }
+        self.trail[self.at] = destination;
+        self.arrive(cx);
+    }
+
     pub fn forward(&mut self, cx: &mut Context<Self>) {
         if !self.can_go_forward() {
             return;

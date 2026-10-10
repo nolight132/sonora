@@ -7,12 +7,18 @@ use futures::AsyncReadExt as _;
 use gpui::http_client::{AsyncBody, HttpClient};
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageFormat, RgbaImage};
+use tokio::sync::Semaphore;
 
 pub(crate) const TILES: usize = 4;
 
 const TILE: u32 = 256;
 const SIDE: u32 = TILE * 2;
 const COLUMNS: u32 = 2;
+
+/// Lets one mosaic decode or compose at a time. A library of playlists without art asks for
+/// all of them at once, and each decode briefly holds a full-size cover. Fetches wait outside
+/// it, so one stalled download does not hold up every other playlist.
+static BUILDS: Semaphore = Semaphore::const_new(1);
 
 fn path(id: &str, stamp: u32) -> PathBuf {
     dirs::cache_dir()
@@ -53,18 +59,30 @@ pub(crate) async fn build(
     let mut tiles = Vec::with_capacity(TILES);
     for url in covers.iter().take(TILES) {
         let bytes = fetch(&http, url).await?;
-        tiles.push(image::load_from_memory(&bytes).context("cannot decode a cover")?);
+        let _turn = BUILDS.acquire().await.context("cannot queue a mosaic")?;
+        tiles.push(tokio::task::spawn_blocking(move || tile(&bytes)).await??);
     }
 
-    let canvas = compose(&tiles);
     let path = path(id, stamp);
-    let parent = path.parent().context("cannot place the mosaic")?;
-    fs::create_dir_all(parent).context("cannot create the mosaic cache")?;
-    canvas
-        .save_with_format(&path, ImageFormat::Png)
-        .context("cannot write the mosaic")?;
+    tokio::task::spawn_blocking(move || {
+        let canvas = compose(&tiles);
+        let parent = path.parent().context("cannot place the mosaic")?;
+        fs::create_dir_all(parent).context("cannot create the mosaic cache")?;
+        canvas
+            .save_with_format(&path, ImageFormat::Png)
+            .context("cannot write the mosaic")?;
 
-    Ok(located(&path))
+        Ok(located(&path))
+    })
+    .await?
+}
+
+/// Decodes a cover and cuts it down to one tile, so the full-size frame is gone before the
+/// next cover is fetched.
+fn tile(bytes: &[u8]) -> Result<DynamicImage> {
+    let cover = image::load_from_memory(bytes).context("cannot decode a cover")?;
+
+    Ok(cover.resize_to_fill(TILE, TILE, FilterType::Triangle))
 }
 
 fn compose(tiles: &[DynamicImage]) -> RgbaImage {

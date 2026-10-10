@@ -96,37 +96,6 @@ impl LocalClient {
         });
         tracks
     }
-
-    /// Every artist in the scan, one per distinct artist string, sorted by name.
-    fn artists(&self) -> Vec<SavedArtist> {
-        let scanned = self.scanned.read().unwrap();
-        let mut artists: Vec<SavedArtist> = Vec::new();
-        for track in &scanned.tracks {
-            if let Some(known) = artists.iter_mut().find(|known| known.name == track.artists) {
-                known.added_at = known.added_at.max(track.added_at);
-                continue;
-            }
-            artists.push(SavedArtist {
-                id: wire::artist_id(&track.artists),
-                name: track.artists.clone(),
-                cover: scanned
-                    .portraits
-                    .get(&track.artists)
-                    .cloned()
-                    .or_else(|| {
-                        scanned
-                            .albums
-                            .iter()
-                            .find(|album| album.artists == track.artists)
-                            .and_then(|album| album.cover.clone())
-                    })
-                    .or_else(|| track.cover.clone()),
-                added_at: track.added_at,
-            });
-        }
-        artists.sort_by_key(|artist| artist.name.to_lowercase());
-        artists
-    }
 }
 
 fn playlist_from(id: String, name: String, modified_at: i64, tracks: &[Track]) -> Playlist {
@@ -176,36 +145,54 @@ impl MusicApi for LocalClient {
     }
 
     async fn artist(&self, artist_id: &str) -> Result<Artist> {
-        let name = wire::artist_name_from_id(artist_id)
-            .ok_or_else(|| anyhow!("{artist_id} is not a local artist id"))?;
         let scanned = self.scanned.read().unwrap();
+        let artist = scanned
+            .artists
+            .iter()
+            .find(|artist| artist.id == artist_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("cannot find local artist {artist_id}"))?;
         Ok(Artist {
-            name: name.to_owned(),
-            cover_large: scanned.portraits.get(name).cloned(),
+            name: artist.name,
+            cover_large: artist.cover,
             biography: None,
             monthly_listeners: None,
             top_tracks: scanned
                 .tracks
                 .iter()
-                .filter(|track| track.artists == name)
+                .filter(|track| {
+                    track
+                        .artist_refs
+                        .iter()
+                        .any(|artist_ref| artist_ref.id.as_deref() == Some(artist_id))
+                })
                 .cloned()
                 .collect(),
             albums: scanned
                 .albums
                 .iter()
-                .filter(|album| album.artists == name)
+                .filter(|album| {
+                    album
+                        .artist_refs
+                        .iter()
+                        .any(|artist_ref| artist_ref.id.as_deref() == Some(artist_id))
+                })
                 .cloned()
                 .collect(),
         })
     }
 
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
-        let name = wire::artist_name_from_id(artist_id)
-            .ok_or_else(|| anyhow!("{artist_id} is not a local artist id"))?;
         let scanned = self.scanned.read().unwrap();
+        let artist = scanned
+            .artists
+            .iter()
+            .find(|artist| artist.id == artist_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("cannot find local artist {artist_id}"))?;
         Ok(ArtistProfile {
-            name: name.to_owned(),
-            cover_large: scanned.portraits.get(name).cloned(),
+            name: artist.name,
+            cover_large: artist.cover,
             biography: None,
         })
     }
@@ -215,8 +202,7 @@ impl MusicApi for LocalClient {
         Ok(ids
             .into_iter()
             .filter_map(|id| {
-                let name = wire::artist_name_from_id(&id)?;
-                let portrait = scanned.portraits.get(name)?;
+                let portrait = scanned.portraits.get(&id)?;
                 Some((id.clone(), portrait.clone()))
             })
             .collect())
@@ -364,11 +350,15 @@ impl MusicApi for LocalClient {
 
     async fn saved_artists(&self) -> Result<Vec<SavedArtist>> {
         let starred = self.store.starred(Starred::Artists)?;
-        let known = self.artists();
+        let scanned = self.scanned.read().unwrap();
         Ok(starred
             .into_iter()
             .filter_map(|(id, added_at)| {
-                let mut artist = known.iter().find(|artist| artist.id == id).cloned()?;
+                let mut artist = scanned
+                    .artists
+                    .iter()
+                    .find(|artist| artist.id == id)
+                    .cloned()?;
                 artist.added_at = Some(added_at);
                 Some(artist)
             })
@@ -376,7 +366,7 @@ impl MusicApi for LocalClient {
     }
 
     async fn all_artists(&self) -> Result<Vec<SavedArtist>> {
-        Ok(self.artists())
+        Ok(self.scanned.read().unwrap().artists.clone())
     }
 
     async fn set_artist_saved(&self, artist_id: &str, saved: bool) -> Result<()> {
@@ -582,7 +572,7 @@ impl MusicApi for LocalClient {
             });
         }
 
-        let mut artists = self.artists();
+        let mut artists = self.scanned.read().unwrap().artists.clone();
         if !artists.is_empty() {
             fastrand::shuffle(&mut artists);
             sections.push(GenreSection {
@@ -679,6 +669,7 @@ mod tests {
             tracks,
             albums: vec![],
             portraits: HashMap::new(),
+            artists: vec![],
         };
 
         let client = LocalClient::new(scanned, db.clone(), index);

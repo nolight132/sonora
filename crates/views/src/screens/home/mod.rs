@@ -10,7 +10,7 @@ use gpui::{
 use i18n::t;
 use music::GenreItem;
 use state::{Home, Network, Playback, SessionState, Sonora};
-use ui::{ActiveTheme as _, Mode, Popup, Scrollbar, Scroller};
+use ui::{ActiveTheme as _, Lazy, Mode, Popup, Scrollbar, Scroller};
 
 use crate::shared::cells;
 use crate::shared::picks::{Picks, Shape};
@@ -191,7 +191,10 @@ impl Render for HomeView {
             }))
         });
 
-        let picks = self.quick_picks(available, cx);
+        let view = cx.entity();
+        let picks = Lazy::new("home-quick-picks", move |_, cx| {
+            view.update(cx, |this, cx| this.quick_picks(available, cx))
+        });
         let sections = self.home.read(cx).sections();
         let feeding = self.home.read(cx).is_feeding();
         let width = self.width;

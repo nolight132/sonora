@@ -16,8 +16,16 @@ cc.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 flate2.workspace = true
+libc.workspace = true
 log.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_System_Console",
+  "Win32_System_Threading",
+] }

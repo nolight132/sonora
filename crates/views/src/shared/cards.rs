@@ -23,7 +23,7 @@ pub(crate) fn album_card(
 ) -> Card {
     let cover = album.cover_large.clone().or_else(|| album.cover.clone());
     let origin = Origin::album(album.id.clone()).named(album.name.clone());
-    let playing = playback.read(cx).playing_from(&origin) == Some(true);
+    let playing = playback.read(cx).playing_from(&origin, cx) == Some(true);
     let pin = album.pin();
     let opened = SharedString::from(album.id.clone());
     let toggled = playback.clone();
@@ -59,7 +59,7 @@ pub(crate) fn playlist_card(
     cx: &App,
 ) -> Card {
     let origin = Origin::playlist(playlist.id.clone()).named(playlist.name.clone());
-    let playing = playback.read(cx).playing_from(&origin) == Some(true);
+    let playing = playback.read(cx).playing_from(&origin, cx) == Some(true);
     let pin = playlist.pin();
     let opened = SharedString::from(playlist.id.clone());
     let toggled = playback.clone();
@@ -379,7 +379,7 @@ pub(crate) fn artist_card(
     cx: &App,
 ) -> Card {
     let origin = Origin::artist(artist.id.clone()).named(artist.name.clone());
-    let playing = playback.read(cx).playing_from(&origin) == Some(true);
+    let playing = playback.read(cx).playing_from(&origin, cx) == Some(true);
     let pin = artist.pin();
     let opened = SharedString::from(artist.id.clone());
     let toggled = playback.clone();

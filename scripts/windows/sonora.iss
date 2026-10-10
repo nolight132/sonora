@@ -145,6 +145,36 @@ Root: HKA; Subkey: "Software\Classes\Sonora.wav\DefaultIcon"; ValueType: string;
 Root: HKA; Subkey: "Software\Classes\Sonora.wav\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}\SupportedTypes"; ValueType: string; ValueName: ".wav"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Sonora\Capabilities\FileAssociations"; ValueType: string; ValueName: ".wav"; ValueData: "Sonora.wav"; Flags: uninsdeletevalue
+; .aiff
+Root: HKA; Subkey: "Software\Classes\.aiff"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.aiff\OpenWithProgids"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.aiff\OpenWithProgids"; ValueType: string; ValueName: "Sonora.aiff"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Sonora.aiff"; ValueType: string; ValueName: ""; ValueData: "AIFF Audio"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Sonora.aiff"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
+Root: HKA; Subkey: "Software\Classes\Sonora.aiff\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKA; Subkey: "Software\Classes\Sonora.aiff\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}\SupportedTypes"; ValueType: string; ValueName: ".aiff"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Sonora\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aiff"; ValueData: "Sonora.aiff"; Flags: uninsdeletevalue
+; .aif
+Root: HKA; Subkey: "Software\Classes\.aif"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.aif\OpenWithProgids"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.aif\OpenWithProgids"; ValueType: string; ValueName: "Sonora.aif"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Sonora.aif"; ValueType: string; ValueName: ""; ValueData: "AIFF Audio"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Sonora.aif"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
+Root: HKA; Subkey: "Software\Classes\Sonora.aif\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKA; Subkey: "Software\Classes\Sonora.aif\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}\SupportedTypes"; ValueType: string; ValueName: ".aif"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Sonora\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aif"; ValueData: "Sonora.aif"; Flags: uninsdeletevalue
+; .aifc
+Root: HKA; Subkey: "Software\Classes\.aifc"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.aifc\OpenWithProgids"; Flags: uninsdeletekeyifempty
+Root: HKA; Subkey: "Software\Classes\.aifc\OpenWithProgids"; ValueType: string; ValueName: "Sonora.aifc"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\Sonora.aifc"; ValueType: string; ValueName: ""; ValueData: "AIFF-C Audio"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Sonora.aifc"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
+Root: HKA; Subkey: "Software\Classes\Sonora.aifc\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKA; Subkey: "Software\Classes\Sonora.aifc\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\{#AppExeName}\SupportedTypes"; ValueType: string; ValueName: ".aifc"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Sonora\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aifc"; ValueData: "Sonora.aifc"; Flags: uninsdeletevalue
 ; .webm
 Root: HKA; Subkey: "Software\Classes\.webm"; Flags: uninsdeletekeyifempty
 Root: HKA; Subkey: "Software\Classes\.webm\OpenWithProgids"; Flags: uninsdeletekeyifempty

@@ -480,7 +480,7 @@ impl SearchView {
                 state::Origin::playlist(list.id.clone()).named(list.name.clone())
             }
         };
-        let playing = self.playback.read(cx).playing_from(&origin) == Some(true);
+        let playing = self.playback.read(cx).playing_from(&origin, cx) == Some(true);
         let play: Play = Box::new(move |_, _, cx| {
             me.update(cx, |this, cx| {
                 this.playback

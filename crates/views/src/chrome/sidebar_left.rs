@@ -473,7 +473,7 @@ impl SidebarLeft {
         };
 
         let origin = Origin::from(&pin);
-        let playing = self.playback.read(cx).playing_from(&origin) == Some(true);
+        let playing = self.playback.read(cx).playing_from(&origin, cx) == Some(true);
 
         let card = Card::new(("pinned", index), pin.label())
             .cover(pin.cover.clone())

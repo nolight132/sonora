@@ -191,11 +191,13 @@ impl Render for TitleBar {
             false => Pixels::ZERO,
         };
         let content = self.options.content.clone();
+        let window_fullscreen = window.is_fullscreen();
         let settings = self.settings.read(cx);
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        let controls = matches!(window.window_decorations(), Decorations::Client { .. });
+        let controls =
+            matches!(window.window_decorations(), Decorations::Client { .. }) && !window_fullscreen;
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-        let controls = settings.window_controls();
+        let controls = settings.window_controls() && !window_fullscreen;
         let decorated = cfg!(not(target_os = "macos")) && controls;
         let leading = decorated && settings.controls_on_left();
         #[cfg(not(target_os = "macos"))]
@@ -203,7 +205,7 @@ impl Render for TitleBar {
         #[cfg(target_os = "macos")]
         let traffic_light = false;
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        let radius = crate::chrome::window_radius(settings);
+        let radius = crate::chrome::window_radius(settings, cx, window);
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         let radius: Option<Pixels> = None;
 
@@ -238,6 +240,7 @@ impl Render for TitleBar {
                                 window.zoom_window();
                             }
                         }
+                        2 if !SYSTEM_ZOOMS => titlebar_double_click(window),
                         _ => {}
                     },
                 ),
@@ -313,4 +316,13 @@ fn window_controls(leading: bool, traffic_light: bool) -> AnyElement {
         true => TrafficLightControls::new(leading).into_any_element(),
         false => WindowControls::new(leading).into_any_element(),
     }
+}
+
+/// Runs the title bar's double-click action. macOS performs the action set in System Settings;
+/// the window zooms everywhere else, since there is no such preference.
+fn titlebar_double_click(window: &Window) {
+    #[cfg(target_os = "macos")]
+    window.titlebar_double_click();
+    #[cfg(not(target_os = "macos"))]
+    window.zoom_window();
 }

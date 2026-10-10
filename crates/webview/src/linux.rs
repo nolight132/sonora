@@ -208,15 +208,34 @@ thread_local! {
     static LIVE: RefCell<Vec<Live>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Whether webkit2gtk is installed. The first call loads the library, around 60ms, and starts the
-/// GTK thread with it, so that reaching a display is behind us before anyone clicks. A screen
-/// deciding whether to offer a cookie sign-in at all is the moment that can afford both.
+/// Whether webkit2gtk is installed. The first call starts this executable again with
+/// [`crate::PROBE`] and waits for its answer, around 60ms, so the library and its GTK thread only
+/// load into this process once a window actually opens. Loading them costs about 50 MiB.
 pub(crate) fn supported() -> bool {
-    let Some(api) = api() else {
-        return false;
-    };
-    gtk(api);
-    true
+    static INSTALLED: OnceLock<bool> = OnceLock::new();
+    *INSTALLED.get_or_init(|| {
+        let probed = std::process::Command::new("/proc/self/exe")
+            .arg(crate::PROBE)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        match probed {
+            Ok(status) => status.success(),
+            Err(error) => {
+                log::warn!("webview: cannot look for webkit2gtk in a child: {error}");
+                api().is_some()
+            }
+        }
+    })
+}
+
+/// Answers a [`crate::PROBE`] launch with whether webkit2gtk loads, or none for any other launch.
+pub(crate) fn probed() -> Option<bool> {
+    std::env::args()
+        .nth(1)
+        .filter(|argument| argument == crate::PROBE)?;
+    Some(api().is_some())
 }
 
 impl Window {

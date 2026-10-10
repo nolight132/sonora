@@ -261,7 +261,7 @@ pub enum Repeat {
     One,
 }
 
-/// What kind of collection the queue was started from.
+/// What kind of collection a queued track came from.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Whence {
@@ -273,9 +273,9 @@ pub enum Whence {
     Local,
 }
 
-/// The collection the queue was started from, so its page can show a pause button and a
-/// restart resumes it. Two origins are the same collection when kind and id match; the name is
-/// only for display.
+/// The collection a queued track came from. While one of its tracks plays, its page shows a pause
+/// button and the queue names it. Two origins are the same collection when kind and id match, and
+/// the name is only for display.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Origin {
     pub whence: Whence,
@@ -343,13 +343,19 @@ impl From<&Pin> for Origin {
     }
 }
 
+/// A station the queue was started from, and the continuation its next stretch is fetched with.
+#[derive(Clone, PartialEq)]
+struct Station {
+    origin: Origin,
+    next: String,
+}
+
 /// Everything the UI knows about what is playing, and the only thing that drives an engine.
 /// Holds one engine for the streaming provider and one for local files, a `Queue` for what
 /// comes next, and a clock for the position between the engine's reports. Views act through
 /// its methods; the engine answers through `on_backend_event`; nothing else touches a `Player`.
 pub struct Playback {
     state: PlaybackState,
-    origin: Option<Origin>,
     /// The last position the engine reported, or the one asked of it.
     position: Duration,
     clock: LiveClock,
@@ -368,8 +374,8 @@ pub struct Playback {
     radio: bool,
     /// The track the current similar-tracks suggestions were drawn from.
     seeded: Option<String>,
-    /// Where the station the queue is playing goes on from, while the provider has more of it.
-    station: Option<String>,
+    /// The station the queue is playing, while the provider has more of it.
+    station: Option<Station>,
     /// The fetch of the station's next stretch; done once it lands, so one runs at a time.
     topping: Option<Task<()>>,
     /// Continuations in a row that brought no track the queue had not already heard.
@@ -474,7 +480,6 @@ impl Playback {
 
         let mut playback = Self {
             state: PlaybackState::Idle,
-            origin: None,
             position: Duration::ZERO,
             clock: LiveClock::new(),
             track: None,
@@ -751,10 +756,13 @@ impl Playback {
             .await;
 
             this.update(cx, |this, cx| match loaded {
-                Ok((tracks, next)) if this.origin.as_ref() == Some(&origin) => {
-                    this.station = next;
+                Ok((tracks, next)) if this.origin(cx) == Some(&origin) => {
+                    this.station = next.map(|next| Station {
+                        origin: origin.clone(),
+                        next,
+                    });
                     this.queue
-                        .update(cx, |queue, cx| queue.extend_context(tracks, cx));
+                        .update(cx, |queue, cx| queue.extend_context(tracks, origin, cx));
                 }
                 Ok(_) => {}
                 Err(error) => {
@@ -802,28 +810,40 @@ impl Playback {
         Toasts::linked(Outcome::Done, "toast-next-track", name, target, cx);
     }
 
-    pub fn enqueue_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+    /// Queues `tracks` from `origin` after the ones queued by hand, or starts playing them when
+    /// nothing is queued. `origin` is `None` for tracks the user picked one by one.
+    pub fn enqueue_all(
+        &mut self,
+        tracks: Vec<Track>,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
         if tracks.is_empty() {
             return;
         }
         if self.queue.read(cx).current().is_none() {
-            self.begin(tracks, 0, None, cx);
+            self.begin(tracks, 0, origin, cx);
             return;
         }
         self.queue
-            .update(cx, |queue, cx| queue.append_all(tracks, cx));
+            .update(cx, |queue, cx| queue.append_all(tracks, origin, cx));
     }
 
-    pub fn play_next_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+    pub fn play_next_all(
+        &mut self,
+        tracks: Vec<Track>,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
         if tracks.is_empty() {
             return;
         }
         if self.queue.read(cx).current().is_none() {
-            self.begin(tracks, 0, None, cx);
+            self.begin(tracks, 0, origin, cx);
             return;
         }
         self.queue
-            .update(cx, |queue, cx| queue.prepend_all(tracks, cx));
+            .update(cx, |queue, cx| queue.prepend_all(tracks, origin, cx));
     }
 
     /// Queues a track after everything already lined up, or starts playing it when nothing is.
@@ -839,16 +859,21 @@ impl Playback {
         Toasts::linked(Outcome::Done, "toast-last-track", name, target, cx);
     }
 
-    pub fn play_last_all(&mut self, tracks: Vec<Track>, cx: &mut Context<Self>) {
+    pub fn play_last_all(
+        &mut self,
+        tracks: Vec<Track>,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
         if tracks.is_empty() {
             return;
         }
         if self.queue.read(cx).current().is_none() {
-            self.begin(tracks, 0, None, cx);
+            self.begin(tracks, 0, origin, cx);
             return;
         }
         self.queue
-            .update(cx, |queue, cx| queue.append_last_all(tracks, cx));
+            .update(cx, |queue, cx| queue.append_last_all(tracks, origin, cx));
     }
 
     /// Opens paths handed in from the OS (a file-association launch or hand-off). A single file
@@ -886,52 +911,61 @@ impl Playback {
                     this.play_next(tracks.remove(0), cx);
                     this.next(cx);
                 }
-                Ok(tracks) => this.play_next_all(tracks, cx),
+                Ok(tracks) => this.play_next_all(tracks, None, cx),
                 Err(error) => log::warn!("playback: cannot open files: {error:#}"),
             })
             .ok();
         }));
     }
 
-    pub fn insert_all(&mut self, tracks: Vec<Track>, gap: usize, cx: &mut Context<Self>) {
+    pub fn insert_all(
+        &mut self,
+        tracks: Vec<Track>,
+        gap: usize,
+        origin: Option<Origin>,
+        cx: &mut Context<Self>,
+    ) {
         if tracks.is_empty() {
             return;
         }
         if self.queue.read(cx).current().is_none() {
-            self.begin(tracks, 0, None, cx);
+            self.begin(tracks, 0, origin, cx);
             return;
         }
-        self.queue
-            .update(cx, |queue, cx| queue.insert_upcoming(gap, tracks, cx));
+        self.queue.update(cx, |queue, cx| {
+            queue.insert_upcoming(gap, tracks, origin, cx)
+        });
     }
 
-    /// Fetches a pinned collection and inserts it `gap` tracks ahead, or at the end.
+    /// Fetches a pinned collection and inserts it `gap` tracks ahead, or at the end. A pinned
+    /// song goes in on its own, without an origin.
     pub fn enqueue_pin(&mut self, pin: &Pin, gap: Option<usize>, cx: &mut Context<Self>) {
         let placement = QueuePlacement::Gap(gap.unwrap_or(usize::MAX));
         let id = pin.id.clone();
+        let origin = Some(Origin::from(pin));
 
         match pin.kind {
             PinKind::Song => {
                 let track = id.clone();
-                self.enqueue_from("track", &id, placement, cx, move |client| {
+                self.enqueue_from("track", &id, None, placement, cx, move |client| {
                     Box::pin(async move { client.track(&track).await.map(|track| vec![track]) })
                 });
             }
             PinKind::Album => {
                 let album = id.clone();
-                self.enqueue_from("album", &id, placement, cx, move |client| {
+                self.enqueue_from("album", &id, origin, placement, cx, move |client| {
                     Box::pin(async move { client.album_tracks(&album).await })
                 });
             }
             PinKind::Playlist => {
                 let playlist = id.clone();
-                self.enqueue_from("playlist", &id, placement, cx, move |client| {
+                self.enqueue_from("playlist", &id, origin, placement, cx, move |client| {
                     Box::pin(async move { client.playlist_tracks(&playlist).await })
                 });
             }
             PinKind::Artist => {
                 let artist = id.clone();
-                self.enqueue_from("artist", &id, placement, cx, move |client| {
+                self.enqueue_from("artist", &id, origin, placement, cx, move |client| {
                     Box::pin(
                         async move { client.artist(&artist).await.map(|found| found.top_tracks) },
                     )
@@ -940,26 +974,27 @@ impl Playback {
         }
     }
 
-    pub fn enqueue_album(&mut self, album: &str, cx: &mut Context<Self>) {
-        let id = album.to_owned();
-        let album = album.to_owned();
-        self.enqueue_from("album", &id, QueuePlacement::End, cx, move |client| {
-            Box::pin(async move { client.album_tracks(&album).await })
-        });
+    pub fn enqueue_album(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_album_at(origin, QueuePlacement::End, cx);
     }
 
-    pub fn play_album_next(&mut self, album: &str, cx: &mut Context<Self>) {
-        let id = album.to_owned();
-        let album = album.to_owned();
-        self.enqueue_from("album", &id, QueuePlacement::Next, cx, move |client| {
-            Box::pin(async move { client.album_tracks(&album).await })
-        });
+    pub fn play_album_next(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_album_at(origin, QueuePlacement::Next, cx);
     }
 
-    pub fn play_album_last(&mut self, album: &str, cx: &mut Context<Self>) {
-        let id = album.to_owned();
-        let album = album.to_owned();
-        self.enqueue_from("album", &id, QueuePlacement::Last, cx, move |client| {
+    pub fn play_album_last(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_album_at(origin, QueuePlacement::Last, cx);
+    }
+
+    fn enqueue_album_at(
+        &mut self,
+        origin: Origin,
+        placement: QueuePlacement,
+        cx: &mut Context<Self>,
+    ) {
+        let id = origin.id.clone();
+        let album = origin.id.clone();
+        self.enqueue_from("album", &id, Some(origin), placement, cx, move |client| {
             Box::pin(async move { client.album_tracks(&album).await })
         });
     }
@@ -988,52 +1023,59 @@ impl Playback {
         });
     }
 
-    pub fn play_artist_next(&mut self, artist: &str, cx: &mut Context<Self>) {
-        let id = artist.to_owned();
-        let artist = artist.to_owned();
-        self.enqueue_from("artist", &id, QueuePlacement::Next, cx, move |client| {
+    pub fn play_artist_next(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_artist_at(origin, QueuePlacement::Next, cx);
+    }
+
+    pub fn enqueue_artist(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_artist_at(origin, QueuePlacement::End, cx);
+    }
+
+    pub fn play_artist_last(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_artist_at(origin, QueuePlacement::Last, cx);
+    }
+
+    fn enqueue_artist_at(
+        &mut self,
+        origin: Origin,
+        placement: QueuePlacement,
+        cx: &mut Context<Self>,
+    ) {
+        let id = origin.id.clone();
+        let artist = origin.id.clone();
+        self.enqueue_from("artist", &id, Some(origin), placement, cx, move |client| {
             Box::pin(async move { client.artist(&artist).await.map(|found| found.top_tracks) })
         });
     }
 
-    pub fn enqueue_artist(&mut self, artist: &str, cx: &mut Context<Self>) {
-        let id = artist.to_owned();
-        let artist = artist.to_owned();
-        self.enqueue_from("artist", &id, QueuePlacement::End, cx, move |client| {
-            Box::pin(async move { client.artist(&artist).await.map(|found| found.top_tracks) })
-        });
+    pub fn enqueue_playlist(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_playlist_at(origin, QueuePlacement::End, cx);
     }
 
-    pub fn play_artist_last(&mut self, artist: &str, cx: &mut Context<Self>) {
-        let id = artist.to_owned();
-        let artist = artist.to_owned();
-        self.enqueue_from("artist", &id, QueuePlacement::Last, cx, move |client| {
-            Box::pin(async move { client.artist(&artist).await.map(|found| found.top_tracks) })
-        });
+    pub fn play_playlist_next(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_playlist_at(origin, QueuePlacement::Next, cx);
     }
 
-    pub fn enqueue_playlist(&mut self, playlist: &str, cx: &mut Context<Self>) {
-        let id = playlist.to_owned();
-        let playlist = playlist.to_owned();
-        self.enqueue_from("playlist", &id, QueuePlacement::End, cx, move |client| {
-            Box::pin(async move { client.playlist_tracks(&playlist).await })
-        });
+    pub fn play_playlist_last(&mut self, origin: Origin, cx: &mut Context<Self>) {
+        self.enqueue_playlist_at(origin, QueuePlacement::Last, cx);
     }
 
-    pub fn play_playlist_next(&mut self, playlist: &str, cx: &mut Context<Self>) {
-        let id = playlist.to_owned();
-        let playlist = playlist.to_owned();
-        self.enqueue_from("playlist", &id, QueuePlacement::Next, cx, move |client| {
-            Box::pin(async move { client.playlist_tracks(&playlist).await })
-        });
-    }
-
-    pub fn play_playlist_last(&mut self, playlist: &str, cx: &mut Context<Self>) {
-        let id = playlist.to_owned();
-        let playlist = playlist.to_owned();
-        self.enqueue_from("playlist", &id, QueuePlacement::Last, cx, move |client| {
-            Box::pin(async move { client.playlist_tracks(&playlist).await })
-        });
+    fn enqueue_playlist_at(
+        &mut self,
+        origin: Origin,
+        placement: QueuePlacement,
+        cx: &mut Context<Self>,
+    ) {
+        let id = origin.id.clone();
+        let playlist = origin.id.clone();
+        self.enqueue_from(
+            "playlist",
+            &id,
+            Some(origin),
+            placement,
+            cx,
+            move |client| Box::pin(async move { client.playlist_tracks(&playlist).await }),
+        );
     }
 
     fn play_playlist_of(&mut self, origin: Origin, cx: &mut Context<Self>) {
@@ -1067,11 +1109,13 @@ impl Playback {
     }
 
     /// Fetches tracks for the queue on the tokio runtime and places them on arrival. One fetch
-    /// at a time; a second request while one runs is dropped.
+    /// at a time; a second request while one runs is dropped. The tracks keep `origin` as the
+    /// collection they were queued from.
     fn enqueue_from<F>(
         &mut self,
         source: &'static str,
         id: &str,
+        origin: Option<Origin>,
         placement: QueuePlacement,
         cx: &mut Context<Self>,
         tracks: F,
@@ -1093,10 +1137,10 @@ impl Playback {
                     Ok(tracks) => {
                         let queued = this.queue.read(cx).current().is_some();
                         match placement {
-                            QueuePlacement::Next => this.play_next_all(tracks, cx),
-                            QueuePlacement::End => this.enqueue_all(tracks, cx),
-                            QueuePlacement::Last => this.play_last_all(tracks, cx),
-                            QueuePlacement::Gap(gap) => this.insert_all(tracks, gap, cx),
+                            QueuePlacement::Next => this.play_next_all(tracks, origin, cx),
+                            QueuePlacement::End => this.enqueue_all(tracks, origin, cx),
+                            QueuePlacement::Last => this.play_last_all(tracks, origin, cx),
+                            QueuePlacement::Gap(gap) => this.insert_all(tracks, gap, origin, cx),
                         }
                         if queued && let Some(key) = placement.toast(source) {
                             Toasts::show(Outcome::Done, key, cx);
@@ -1112,14 +1156,16 @@ impl Playback {
         }));
     }
 
-    pub fn origin(&self) -> Option<&Origin> {
-        self.origin.as_ref()
+    /// The collection the current track was queued from. `None` when the user added it on its
+    /// own.
+    pub fn origin<'a>(&self, cx: &'a App) -> Option<&'a Origin> {
+        self.queue.read(cx).origin()
     }
 
-    /// What a play button for `origin` shows, read like `control`. `None` when the queue came
-    /// from somewhere else, so pressing it starts `origin` afresh.
-    pub fn playing_from(&self, origin: &Origin) -> Option<bool> {
-        match self.origin.as_ref() == Some(origin) {
+    /// What a play button for `origin` shows, read like `control`. `None` when the current track
+    /// came from somewhere else, so pressing it starts `origin` afresh.
+    pub fn playing_from(&self, origin: &Origin, cx: &App) -> Option<bool> {
+        match self.origin(cx) == Some(origin) {
             true => self.control(),
             false => None,
         }
@@ -1133,20 +1179,8 @@ impl Playback {
         self.dry = 0;
     }
 
-    /// Forgets the collection the queue came from. Radio calls this as it takes over, so a page
-    /// or a card only shows itself as playing while one of its own tracks is.
-    fn leave_origin(&mut self, cx: &mut Context<Self>) {
-        self.leave_station();
-        if self.origin.take().is_none() {
-            return;
-        }
-        self.settings
-            .update(cx, |settings, cx| settings.set_resume_origin(None, cx));
-        cx.notify();
-    }
-
-    /// Hands a fetched collection to the queue, remembers where it came from for resuming, and
-    /// plays the chosen track.
+    /// Hands a fetched collection to the queue, every track tagged with `origin`, and plays the
+    /// chosen one.
     fn begin(
         &mut self,
         tracks: Vec<Track>,
@@ -1156,15 +1190,11 @@ impl Playback {
     ) {
         let Some(track) = self
             .queue
-            .update(cx, |queue, cx| queue.start(tracks, index, cx))
+            .update(cx, |queue, cx| queue.start(tracks, index, origin, cx))
         else {
             return;
         };
         self.leave_station();
-        self.origin = origin;
-        let stored = self.origin.clone();
-        self.settings
-            .update(cx, |settings, cx| settings.set_resume_origin(stored, cx));
         self.play(&track, cx);
     }
 
@@ -1191,8 +1221,12 @@ impl Playback {
             this.update(cx, |this, cx| match loaded {
                 Ok((tracks, next)) => {
                     let index = this.opener(&tracks, cx).unwrap_or_default();
+                    let station = next.map(|next| Station {
+                        origin: origin.clone(),
+                        next,
+                    });
                     this.begin(tracks, index, Some(origin), cx);
-                    this.station = next;
+                    this.station = station;
                 }
                 Err(error) if this.has_active_playback() => {
                     log::error!("playback: cannot load context: {error:#}");
@@ -1294,7 +1328,7 @@ impl Playback {
         else {
             return;
         };
-        self.leave_origin(cx);
+        self.leave_station();
         self.load_after(&track, Start::Pick, cx);
     }
 
@@ -1321,20 +1355,18 @@ impl Playback {
         if self.topping.is_some() || self.queue.read(cx).upcoming().len() >= RADIO_LOOKAHEAD {
             return;
         }
-        let Some(continuation) = self.station.clone() else {
+        let Some(station) = self.station.clone() else {
             return;
         };
-        let Some(seed) = self.origin.as_ref().map(|origin| origin.id.clone()) else {
-            return;
-        };
-        let Some(client) = self.client_for(&seed, cx) else {
+        let Some(client) = self.client_for(&station.origin.id, cx) else {
             return;
         };
 
         let heard = self.queue.read(cx).ids();
         let io = Io::global(cx);
         self.topping = Some(cx.spawn(async move |this, cx| {
-            let token = continuation.clone();
+            let seed = station.origin.id.clone();
+            let token = station.next.clone();
             let loaded = join(io.spawn(async move {
                 let (mut tracks, next) = client.track_radio(&seed, Some(&token)).await?;
                 unheard(&mut tracks, &heard);
@@ -1344,7 +1376,7 @@ impl Playback {
 
             this.update(cx, |this, cx| {
                 this.topping = None;
-                if this.station.as_ref() != Some(&continuation) {
+                if this.station.as_ref() != Some(&station) {
                     return;
                 }
                 match loaded {
@@ -1353,10 +1385,16 @@ impl Playback {
                             true => this.dry.saturating_add(1),
                             false => 0,
                         };
-                        this.station = next.filter(|_| this.dry < STATION_DRY_LIMIT);
+                        this.station =
+                            next.filter(|_| this.dry < STATION_DRY_LIMIT)
+                                .map(|next| Station {
+                                    origin: station.origin.clone(),
+                                    next,
+                                });
                         let idle = this.track.is_none() && !this.queue.read(cx).has_next();
-                        this.queue
-                            .update(cx, |queue, cx| queue.extend_context(tracks, cx));
+                        this.queue.update(cx, |queue, cx| {
+                            queue.extend_context(tracks, station.origin.clone(), cx)
+                        });
                         if idle {
                             this.follow_queue(Start::Segue, cx);
                         }
@@ -1397,7 +1435,10 @@ impl Playback {
         if held > 0 && self.queue.read(cx).len() >= RADIO_LOOKAHEAD {
             return;
         }
-        let Some(id) = self.seed(cx).and_then(|seed| seed.id) else {
+        let Some(seed) = self.seed(cx) else {
+            return self.forget_similar(cx);
+        };
+        let Some(id) = seed.id.clone() else {
             return self.forget_similar(cx);
         };
         if !self.stations(&id, cx) {
@@ -1412,6 +1453,7 @@ impl Playback {
 
         let queued = self.queue.read(cx).ids();
         self.seeded = Some(id.clone());
+        let origin = Origin::radio(id.clone()).named(seed.name);
         let io = Io::global(cx);
         self.suggest = Some(cx.spawn(async move |this, cx| {
             let loaded = join(io.spawn(async move {
@@ -1425,8 +1467,8 @@ impl Playback {
             this.update(cx, |this, cx| match loaded {
                 Ok(_) if !this.radio => {}
                 Ok(tracks) => this.queue.update(cx, |queue, cx| match held {
-                    0 => queue.suggest(tracks, cx),
-                    _ => queue.extend_similar(tracks, cx),
+                    0 => queue.suggest(tracks, origin, cx),
+                    _ => queue.extend_similar(tracks, origin, cx),
                 }),
                 Err(error) => {
                     this.seeded = None;
@@ -1517,6 +1559,7 @@ impl Playback {
             return self.next(cx);
         };
 
+        let origin = Origin::radio(id.clone()).named(seed.name.clone());
         let io = Io::global(cx);
         let heard = self.queue.read(cx).ids();
         self.fetch = Some(cx.spawn(async move |this, cx| {
@@ -1529,12 +1572,9 @@ impl Playback {
 
             this.update(cx, |this, cx| match loaded {
                 Ok(tracks) if !tracks.is_empty() => {
-                    this.queue.update(cx, |queue, cx| {
-                        for track in tracks {
-                            queue.append(track, cx);
-                        }
-                    });
-                    this.leave_origin(cx);
+                    this.queue
+                        .update(cx, |queue, cx| queue.append_all(tracks, Some(origin), cx));
+                    this.leave_station();
                     this.follow_queue(Start::Segue, cx);
                 }
                 Ok(_) => log::warn!("playback: radio returned no tracks"),
@@ -1552,13 +1592,13 @@ impl Playback {
     }
 
     /// The next playable track the queue has, dropping the ones that are not. Reaching the
-    /// suggestions means radio has taken over from whatever the queue was started from.
+    /// suggestions means radio has taken over from the station the queue was playing.
     fn playable_next(&mut self, cx: &mut Context<Self>) -> Option<Track> {
         loop {
             let suggested = self.queue.read(cx).next_is_suggested();
             let track = self.queue.update(cx, |queue, cx| queue.next(cx))?;
             if suggested {
-                self.leave_origin(cx);
+                self.leave_station();
             }
             if track.playable {
                 return Some(track);
@@ -1708,11 +1748,9 @@ impl Playback {
         };
 
         let at = Duration::from_secs_f32(resume.position.max(0.));
-        let origin = resume.origin.clone();
         let Some(track) = self.queue.update(cx, |queue, cx| queue.revive(resume, cx)) else {
             return;
         };
-        self.origin = origin;
         self.track = Some(track);
         self.state = PlaybackState::Paused;
         self.position = at;
@@ -1834,7 +1872,7 @@ impl Playback {
     /// The play button of a collection page: pauses or resumes when the queue came from it,
     /// starts it otherwise.
     pub fn toggle_origin(&mut self, origin: &Origin, cx: &mut Context<Self>) {
-        match self.playing_from(origin) {
+        match self.playing_from(origin, cx) {
             Some(_) => self.toggle_play(cx),
             None => self.play_origin(origin.clone(), cx),
         }
@@ -2384,7 +2422,6 @@ impl Playback {
             self.paused_at = None;
             self.refused = None;
             self.track = None;
-            self.origin = None;
             self.state = PlaybackState::Idle;
             self.position = Duration::ZERO;
             self.clock.reset(Duration::ZERO, false);

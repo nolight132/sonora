@@ -356,6 +356,7 @@ struct Appearance {
     battery_saver: String,
     theme_overrides: ThemeOverrides,
     fullscreen_controls_autohide: String,
+    os_fullscreen: bool,
 }
 
 /// A valid custom theme, identified by its filename stem.
@@ -598,7 +599,9 @@ impl Default for Appearance {
             transparency: ui::BACKDROP_TRANSPARENCY,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             server_side_decorations: true,
-            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+            #[cfg(target_os = "windows")]
+            window_rounding: Rounding::Rounded.id().to_owned(),
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             window_rounding: Rounding::Square.id().to_owned(),
             window_controls: true,
             #[cfg(not(target_os = "macos"))]
@@ -609,6 +612,7 @@ impl Default for Appearance {
             battery_saver: Saver::default().id().to_owned(),
             theme_overrides: ThemeOverrides::default(),
             fullscreen_controls_autohide: FullscreenControlsAutohide::Automatic.id().to_owned(),
+            os_fullscreen: false,
         }
     }
 }
@@ -984,6 +988,11 @@ impl AppSettings {
         self.values.appearance.blur_window
     }
 
+    /// Whether opening the fullscreen view also puts the window into OS fullscreen.
+    pub fn os_fullscreen(&self) -> bool {
+        self.values.appearance.os_fullscreen
+    }
+
     pub fn stillness(&self) -> Stillness {
         Stillness::from_id(&self.values.appearance.reduce_motion)
     }
@@ -1356,18 +1365,6 @@ impl AppSettings {
         self.schedule_state_save(cx);
     }
 
-    /// Saves quietly. Nothing renders from the stored copy, the live queue is the source of truth.
-    pub fn set_resume_origin(&mut self, origin: Option<crate::Origin>, cx: &mut Context<Self>) {
-        let Some(resume) = self.state.resume.as_mut() else {
-            return;
-        };
-        if resume.origin == origin {
-            return;
-        }
-        resume.origin = origin;
-        self.save_state_quietly(cx);
-    }
-
     /// Saves quietly, since playback calls this on every position tick.
     pub fn set_resume_position(&mut self, position: f32, cx: &mut Context<Self>) {
         let Some(resume) = self.state.resume.as_mut() else {
@@ -1622,6 +1619,11 @@ impl AppSettings {
 
     pub fn set_blur_window(&mut self, blur: bool, cx: &mut Context<Self>) {
         self.values.appearance.blur_window = blur;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_os_fullscreen(&mut self, value: bool, cx: &mut Context<Self>) {
+        self.values.appearance.os_fullscreen = value;
         self.schedule_save(cx);
     }
 
@@ -2359,16 +2361,14 @@ fn take(pinned: &mut Vec<Held>, slug: &str, pin: &Pin) -> bool {
     true
 }
 
-/// Carries position and origin over from the previous record. Position survives only while the
-/// same track is current, origin as long as the provider is the same. Another provider inherits
-/// nothing.
+/// Carries the position over from the previous record while the same track is current on the
+/// same provider.
 fn carry(previous: Option<&Resume>, next: &mut Resume) {
     let playing = |resume: &Resume| resume.current.as_ref().map(|stub| stub.id.clone());
     let same = previous.filter(|old| old.provider == next.provider);
     next.position = same
         .filter(|old| playing(old) == playing(next))
         .map_or(0., |old| old.position);
-    next.origin = same.and_then(|old| old.origin.clone());
 }
 
 /// Inserts or moves `pin` into the `gap`th slot among the pins of `slugs`. `None` or a gap past

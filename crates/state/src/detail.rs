@@ -104,6 +104,10 @@ impl Detail {
         .detach();
 
         cx.subscribe(&library, |this, _, event, cx| match event {
+            LibraryEvent::PlaylistGone(id) if this.id.as_deref() == Some(id.as_str()) => {
+                this.clear();
+                cx.notify();
+            }
             LibraryEvent::TrackAdded { playlist }
                 if this.id.as_deref() == Some(playlist.as_str()) =>
             {

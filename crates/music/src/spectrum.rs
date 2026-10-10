@@ -20,6 +20,11 @@ const KNEE: f32 = 0.6;
 const ATTACK: f32 = 0.9;
 const DECAY: f32 = 0.12;
 const IDLE_POLL: Duration = Duration::from_millis(4);
+/// How long the analyzer sleeps on an empty ring once it has been empty for `QUIET_AFTER` polls
+/// in a row. Paused or stopped, the tap stays silent for hours, and waking every few
+/// milliseconds through that buys nothing. The ring holds far more than this much audio.
+const QUIET_POLL: Duration = Duration::from_millis(50);
+const QUIET_AFTER: u32 = 250;
 
 /// The band levels of one channel, published by the analyzer thread and read by the UI.
 #[derive(Clone)]
@@ -213,16 +218,22 @@ fn analyze(mut consumer: rtrb::Consumer<f32>, format: Arc<Format>, spectrum: Spe
     let mut frame = vec![0f32; channels];
     let mut lane_index = 0usize;
     let mut buffer = vec![Complex32::default(); FFT_SIZE];
+    let mut empty = 0u32;
 
     loop {
         let sample = match consumer.pop() {
             Ok(sample) => sample,
             Err(PopError::Empty) if consumer.is_abandoned() => return,
             Err(PopError::Empty) => {
-                std::thread::sleep(IDLE_POLL);
+                empty = empty.saturating_add(1);
+                std::thread::sleep(match empty > QUIET_AFTER {
+                    true => QUIET_POLL,
+                    false => IDLE_POLL,
+                });
                 continue;
             }
         };
+        empty = 0;
 
         // A new track can bring a new format. Grouping the samples by the wrong channel
         // count stretches a window over several frames' worth of audio, so the levels move

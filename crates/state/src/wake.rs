@@ -97,6 +97,12 @@ impl Wake {
         self.apply(cx);
     }
 
+    /// Whether someone is likely watching the window, because it has focus or shows the
+    /// fullscreen view.
+    pub fn watched(&self) -> bool {
+        self.focused || self.fullscreen
+    }
+
     /// Works out what should be held now and hands it to the platform when it changed. Loading
     /// counts as playing so a track change or a rebuffer does not drop the lock.
     fn apply(&mut self, cx: &mut Context<Self>) {

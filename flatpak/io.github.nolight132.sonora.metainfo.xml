@@ -42,6 +42,7 @@
     <mediatype>audio/ogg</mediatype>
     <mediatype>audio/opus</mediatype>
     <mediatype>audio/x-wav</mediatype>
+    <mediatype>audio/x-aiff</mediatype>
     <mediatype>audio/webm</mediatype>
     <mediatype>audio/x-matroska</mediatype>
     <mediatype>audio/x-wavpack</mediatype>

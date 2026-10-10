@@ -1665,9 +1665,10 @@ impl Aside {
         Some(goal.clamp(Pixels::ZERO, handle.max_offset().y))
     }
 
-    // unnamed origins stay unlabelled
+    /// The name and page of the collection the current track was queued from. `None` for a track
+    /// added on its own or an origin without a name, so the header shows no source.
     fn playing_from(&self, cx: &App) -> Option<(SharedString, Destination)> {
-        let origin = self.playback.read(cx).origin()?;
+        let origin = self.playback.read(cx).origin(cx)?;
         let id = SharedString::from(origin.id.clone());
         let place = match origin.whence {
             Whence::Album => Destination::Album(id),
@@ -1683,7 +1684,8 @@ impl Aside {
                 Shape::Catalog => t!("nav-songs"),
             },
             Whence::Local => t!("nav-local"),
-            _ => origin.name.clone()?,
+            Whence::Radio => t!("queue-from-radio", name = origin.name.as_deref()?),
+            Whence::Album | Whence::Playlist | Whence::Artist => origin.name.clone()?,
         };
 
         Some((name, place))

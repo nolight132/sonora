@@ -108,6 +108,10 @@ impl crate::stream::Body for Striped {
         out.extend_from_slice(&self.pending);
         self.pending.clear();
     }
+
+    fn confidential(&self) -> bool {
+        true
+    }
 }
 
 /// Fetches the master secret from the web player's script bundle: two URL-encoded 8-byte hex

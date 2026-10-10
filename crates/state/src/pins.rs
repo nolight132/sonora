@@ -7,7 +7,7 @@ use gpui::{App, Context, Entity};
 use music::{PinTarget, PinTargetKind};
 use ui::{Pin, PinKind};
 
-use crate::library::{Library, Shelf};
+use crate::library::{Library, LibraryEvent, Shelf};
 use crate::session::Session;
 use crate::settings::AppSettings;
 
@@ -71,6 +71,19 @@ impl Pins {
         session: Entity<Session>,
         cx: &mut Context<Self>,
     ) -> Self {
+        cx.subscribe(&library, |this, _, event, cx| {
+            let LibraryEvent::PlaylistGone(id) = event else {
+                return;
+            };
+            let pin = Pin::new(PinKind::Playlist, id, "");
+            if let Some(slug) = this.session.read(cx).slug_for(id) {
+                this.settings
+                    .update(cx, |settings, cx| settings.unpin(slug, &pin, cx));
+            }
+            this.mirrored.retain(|_, held| !held.same(&pin));
+            this.changed(cx);
+        })
+        .detach();
         cx.observe(&library, |this, _, cx| {
             this.absorb(cx);
             let seen = this.fingerprint(cx);

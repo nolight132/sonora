@@ -224,7 +224,7 @@ impl Shelves {
                         let scroll = handle.clone();
                         let glide = glide.clone();
                         move |event: &ScrollWheelEvent, window, _| {
-                            if event.delta.precise() {
+                            if !sideways(event) {
                                 return;
                             }
                             glide.nudge(&scroll, window);
@@ -486,7 +486,7 @@ impl Rail {
                     .restrict_scroll_to_axis()
                     .track_scroll(&self.scroll)
                     .on_scroll_wheel(move |event: &ScrollWheelEvent, window, _| {
-                        if event.delta.precise() {
+                        if !sideways(event) {
                             return;
                         }
                         glided.nudge(&scrolled, window);
@@ -622,4 +622,10 @@ fn arrow(
 
 fn slot(kind: &'static str, place: usize) -> ElementId {
     ElementId::NamedInteger(SharedString::new_static(kind), place as u64)
+}
+
+/// Whether a wheel event should glide a rail. Only a notched wheel moving sideways does, since a
+/// trackpad scrolls the rail itself and a vertical notch belongs to the page.
+fn sideways(event: &ScrollWheelEvent) -> bool {
+    !event.delta.precise() && event.delta.pixel_delta(px(1.)).x != Pixels::ZERO
 }

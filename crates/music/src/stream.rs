@@ -1,6 +1,10 @@
-//! A track downloaded while it plays. The decoder reads from the front of one buffer while the
+//! A track downloaded while it plays. The decoder reads from the front of one spool while the
 //! response keeps filling the back, so playback starts after a short preroll instead of after
 //! the whole file.
+//!
+//! The spool is an unlinked file in the cache directory, so a track sits in the page cache
+//! rather than on the heap, and the kernel can drop it under pressure where it could never drop
+//! a buffer. Memory is the fallback for a system where no such file can be made.
 //!
 //! Every provider that streams a file over HTTP uses this. What differs between them is where
 //! the bytes come from, which is [`Source`], and what happens to them, which is [`Body`].
@@ -9,6 +13,7 @@
 //! reader asks for it. Everything else, the waiting and the seeking and what a broken
 //! connection does, is the same for all of them and lives here.
 
+use std::fs::File;
 use std::future::Future;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
@@ -19,7 +24,7 @@ use anyhow::{Result, bail};
 use bytes::Bytes;
 use tokio::sync::watch;
 
-/// How much has to be in before the decoder is let loose on the buffer. At any ordinary bitrate
+/// How much has to be in before the decoder is let loose on the spool. At any ordinary bitrate
 /// this is several seconds of audio, and the download outruns playback many times over, so the
 /// lead only grows from here.
 pub const PREROLL: usize = 256 * 1024;
@@ -29,7 +34,7 @@ pub const PREROLL: usize = 256 * 1024;
 /// output for the rest of the session.
 const PATIENCE: Duration = Duration::from_secs(20);
 
-/// The most one track may buffer. A long album side is tens of megabytes, so this is only a
+/// The most one track may spool. A long album side is tens of megabytes, so this is only a
 /// ceiling on what a wrong `Content-Length` or an endless body can cost.
 const CEILING: usize = 256 * 1024 * 1024;
 
@@ -37,9 +42,11 @@ const CEILING: usize = 256 * 1024 * 1024;
 ///
 /// Every method has an answer that suits a plain file, so a provider overrides only what it
 /// actually does differently. `feed` and `flush` run on the tokio task pulling the response;
-/// `limit`, `tail` and `ready` run on whichever thread is reading, under the buffer's lock.
+/// `limit`, `tail` and `ready` run on whichever thread is reading, under the spool's lock.
 pub trait Body: Send + 'static {
-    /// What to append for one chunk of the response. The default appends it unchanged.
+    /// What to append for one chunk of the response. `out` starts empty on every call, and
+    /// whatever is left in it goes onto the end of the spool. The default passes the chunk on
+    /// unchanged.
     fn feed(&mut self, chunk: &[u8], out: &mut Vec<u8>) {
         out.extend_from_slice(chunk);
     }
@@ -47,13 +54,13 @@ pub trait Body: Send + 'static {
     /// The response ended: append anything that was held back waiting for more.
     fn flush(&mut self, _out: &mut Vec<u8>) {}
 
-    /// How far into the buffer a read may be served. The default serves everything that has
+    /// How far into the spool a read may be served. The default serves everything that has
     /// arrived; a provider that must account for bytes before handing them over answers less.
     ///
-    /// The buffer is mutable because accounting for bytes can mean preparing them: an fMP4 has
+    /// The spool is mutable because accounting for bytes can mean preparing them: an fMP4 has
     /// its sample entry relabelled once its samples can be decrypted.
-    fn limit(&mut self, buf: &mut [u8], _complete: bool) -> usize {
-        buf.len()
+    fn limit(&mut self, spool: &mut Spool, _complete: bool) -> usize {
+        spool.len()
     }
 
     /// How much of the end of the track a read may have without waiting for it.
@@ -66,8 +73,14 @@ pub trait Body: Send + 'static {
     }
 
     /// Makes `range` readable, in place, before it is copied out. The default has nothing to do.
-    fn ready(&mut self, _buf: &mut [u8], _range: Range<usize>) -> io::Result<()> {
+    fn ready(&mut self, _spool: &mut Spool, _range: Range<usize>) -> io::Result<()> {
         Ok(())
+    }
+
+    /// Whether the spool will hold decrypted media, which has to stay in memory and never
+    /// reach a file, even an unlinked one whose pages get written back.
+    fn confidential(&self) -> bool {
+        false
     }
 }
 
@@ -89,9 +102,123 @@ impl Source for reqwest::Response {
     }
 }
 
+/// The bytes of one track that have arrived so far, as a reader would see them. They live in
+/// an unlinked file in the cache directory, which goes away with the last handle to it, or in
+/// memory when no such file can be made or written or the body is [`Body::confidential`].
+pub struct Spool {
+    len: usize,
+    store: Store,
+}
+
+enum Store {
+    File(File),
+    Memory(Vec<u8>),
+}
+
+impl Spool {
+    /// A spool on disk, or in memory sized for `total` when the disk will not have one.
+    fn new(total: Option<u64>) -> Self {
+        match spool_file() {
+            Ok(file) => Self {
+                len: 0,
+                store: Store::File(file),
+            },
+            Err(error) => {
+                log::warn!("playback: cannot spool to disk, buffering in memory: {error}");
+                Self::in_memory(total)
+            }
+        }
+    }
+
+    /// A spool in memory, with room reserved for `total` bytes when that is known.
+    pub(crate) fn in_memory(total: Option<u64>) -> Self {
+        let room = total.map_or(0, |total| usize::try_from(total).unwrap_or(CEILING));
+        Self {
+            len: 0,
+            store: Store::Memory(Vec::with_capacity(room.min(CEILING))),
+        }
+    }
+
+    /// How many bytes have arrived.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Fills `out` from position `at`. Asking for anything past what has arrived is an error.
+    pub fn read_at(&self, at: usize, out: &mut [u8]) -> io::Result<()> {
+        let end = self.check(at, out.len())?;
+        match &self.store {
+            Store::File(file) => read_exact_at(file, out, at as u64),
+            Store::Memory(held) => {
+                out.copy_from_slice(&held[at..end]);
+                Ok(())
+            }
+        }
+    }
+
+    /// A copy of `range`, which must lie within what has arrived.
+    pub fn bytes(&self, range: Range<usize>) -> io::Result<Vec<u8>> {
+        let mut out = vec![0; range.end.saturating_sub(range.start)];
+        self.read_at(range.start, &mut out)?;
+        Ok(out)
+    }
+
+    /// Overwrites the bytes at `at` with `bytes`, which must lie within what has arrived.
+    pub fn write_at(&mut self, at: usize, bytes: &[u8]) -> io::Result<()> {
+        let end = self.check(at, bytes.len())?;
+        match &mut self.store {
+            Store::File(file) => write_all_at(file, bytes, at as u64),
+            Store::Memory(held) => {
+                held[at..end].copy_from_slice(bytes);
+                Ok(())
+            }
+        }
+    }
+
+    /// Adds `bytes` to the end. A disk that stops taking them moves the spool into memory
+    /// rather than breaking the track.
+    pub(crate) fn append(&mut self, bytes: &[u8]) -> io::Result<()> {
+        if let Store::File(file) = &self.store {
+            match write_all_at(file, bytes, self.len as u64) {
+                Ok(()) => {
+                    self.len += bytes.len();
+                    return Ok(());
+                }
+                Err(error) => {
+                    log::warn!("playback: cannot spool to disk, buffering in memory: {error}");
+                    let mut held = vec![0; self.len];
+                    read_exact_at(file, &mut held, 0)?;
+                    self.store = Store::Memory(held);
+                }
+            }
+        }
+        if let Store::Memory(held) = &mut self.store {
+            held.extend_from_slice(bytes);
+            self.len = held.len();
+        }
+        Ok(())
+    }
+
+    /// The end of `len` bytes from `at`, when all of them have arrived.
+    fn check(&self, at: usize, len: usize) -> io::Result<usize> {
+        at.checked_add(len)
+            .filter(|end| *end <= self.len)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "a read runs past what has arrived",
+                )
+            })
+    }
+}
+
 struct Buffered<B> {
     /// The track so far, as a reader would see it.
-    buf: Vec<u8>,
+    spool: Spool,
     /// The body length the server announced, if it did.
     total: Option<u64>,
     /// The response finished, one way or the other.
@@ -114,10 +241,11 @@ impl<B: Body> Shared<B> {
 
     fn finish(&self, failed: Option<String>) {
         if let Ok(mut state) = self.state.lock() {
-            let Buffered { buf, body, .. } = &mut *state;
-            body.flush(buf);
+            let mut tail = Vec::new();
+            state.body.flush(&mut tail);
+            let spooled = state.spool.append(&tail);
             if state.failed.is_none() {
-                state.failed = failed;
+                state.failed = failed.or_else(|| spooled.err().map(|error| error.to_string()));
             }
             state.complete = true;
         }
@@ -132,6 +260,14 @@ pub struct Stream<B = Plain> {
     arrived: watch::Receiver<usize>,
 }
 
+/// A handle on a [`Stream`] that does not keep it alive, for background work that should stop
+/// once nothing else wants the track. The download stops when the last strong handle goes,
+/// whatever weak ones are left.
+pub struct WeakStream<B = Plain> {
+    shared: Weak<Shared<B>>,
+    arrived: watch::Receiver<usize>,
+}
+
 impl<B> Clone for Stream<B> {
     fn clone(&self) -> Self {
         Self {
@@ -142,7 +278,7 @@ impl<B> Clone for Stream<B> {
 }
 
 impl<B: Body> Stream<B> {
-    /// Starts pulling `response` into a buffer and returns at once. The download carries on in
+    /// Starts pulling `response` into a spool and returns at once. The download carries on in
     /// the background for as long as any reader or clone is alive; it stops on its own once all
     /// of them are gone.
     pub fn new(response: reqwest::Response, body: B) -> Self {
@@ -150,12 +286,15 @@ impl<B: Body> Stream<B> {
         Self::pulling(response, total, body)
     }
 
-    /// Starts pulling `source` into a buffer and returns at once, like [`new`](Self::new).
+    /// Starts pulling `source` into a spool and returns at once, like [`new`](Self::new).
     /// `total` is the body length when it is known up front.
     pub fn pulling(source: impl Source, total: Option<u64>, body: B) -> Self {
         let shared = Arc::new(Shared {
             state: Mutex::new(Buffered {
-                buf: Vec::new(),
+                spool: match body.confidential() {
+                    true => Spool::in_memory(total),
+                    false => Spool::new(total),
+                },
                 total,
                 complete: false,
                 failed: None,
@@ -167,7 +306,6 @@ impl<B: Body> Stream<B> {
         tokio::spawn(pump(source, Arc::downgrade(&shared), progress));
         Self { shared, arrived }
     }
-
     /// Starts the download and waits for the preroll, or for the whole body of a track shorter
     /// than that.
     pub async fn open(response: reqwest::Response, body: B) -> Result<Self> {
@@ -194,7 +332,7 @@ impl<B: Body> Stream<B> {
     }
 
     /// Waits until `wanted` bytes have arrived, or the download ends. Nothing here blocks a
-    /// thread: this is the async side of the same buffer the readers wait on.
+    /// thread: this is the async side of the same spool the readers wait on.
     pub async fn wait_for(&mut self, wanted: usize) -> Result<()> {
         loop {
             let arrived = *self.arrived.borrow_and_update();
@@ -238,7 +376,7 @@ impl<B: Body> Stream<B> {
         let state = self.shared.state.lock().ok()?;
         state
             .total
-            .or_else(|| state.complete.then_some(state.buf.len() as u64))
+            .or_else(|| state.complete.then_some(state.spool.len() as u64))
     }
 
     /// How much has arrived so far.
@@ -246,11 +384,11 @@ impl<B: Body> Stream<B> {
         self.shared
             .state
             .lock()
-            .map(|state| state.buf.len())
+            .map(|state| state.spool.len())
             .unwrap_or(0)
     }
 
-    /// Reaches the provider's own half of the buffer, and again on every chunk that lands,
+    /// Reaches the provider's own half of the spool, and again on every chunk that lands,
     /// until it answers something or the download ends. The third argument is whether the body
     /// is complete, so a question with no answer left can say so rather than wait.
     ///
@@ -259,20 +397,20 @@ impl<B: Body> Stream<B> {
     /// waiting: where in the file a position is, when the download has not reached it yet.
     pub fn awaiting<T>(
         &self,
-        mut read: impl FnMut(&mut B, &mut Vec<u8>, bool) -> Option<T>,
+        mut read: impl FnMut(&mut B, &mut Spool, bool) -> Option<T>,
     ) -> Option<T> {
         let mut state = self.shared.state.lock().ok()?;
         let deadline = Instant::now() + PATIENCE;
         loop {
             let Buffered {
-                buf,
+                spool,
                 body,
                 complete,
                 failed,
                 ..
             } = &mut *state;
             let (complete, broken) = (*complete, failed.is_some());
-            if let Some(found) = read(body, buf, complete) {
+            if let Some(found) = read(body, spool, complete) {
                 return Some(found);
             }
             if complete || broken {
@@ -287,11 +425,11 @@ impl<B: Body> Stream<B> {
         }
     }
 
-    /// Reaches the provider's own half of the buffer, for anything it keeps there.
-    pub fn with<T>(&self, read: impl FnOnce(&mut B, &mut Vec<u8>) -> T) -> Option<T> {
+    /// Reaches the provider's own half of the spool, for anything it keeps there.
+    pub fn with<T>(&self, read: impl FnOnce(&mut B, &mut Spool) -> T) -> Option<T> {
         let mut state = self.shared.state.lock().ok()?;
-        let Buffered { buf, body, .. } = &mut *state;
-        Some(read(body, buf))
+        let Buffered { spool, body, .. } = &mut *state;
+        Some(read(body, spool))
     }
 
     pub fn done(&self) -> bool {
@@ -305,15 +443,47 @@ impl<B: Body> Stream<B> {
     pub fn failed(&self) -> Option<String> {
         self.shared.state.lock().ok()?.failed.clone()
     }
+
+    pub fn downgrade(&self) -> WeakStream<B> {
+        WeakStream {
+            shared: Arc::downgrade(&self.shared),
+            arrived: self.arrived.clone(),
+        }
+    }
 }
 
-/// Pulls the body into the buffer, one chunk at a time, and stops as soon as nothing is left
+impl<B: Body> WeakStream<B> {
+    pub fn upgrade(&self) -> Option<Stream<B>> {
+        Some(Stream {
+            shared: self.shared.upgrade()?,
+            arrived: self.arrived.clone(),
+        })
+    }
+
+    /// Waits until the download has ended, whether it finished or broke, without keeping it
+    /// alive in the meantime. False when every strong handle went first.
+    pub async fn finished(&mut self) -> bool {
+        loop {
+            match self.upgrade() {
+                Some(stream) if stream.done() => return true,
+                Some(_) => {}
+                None => return false,
+            }
+            if self.arrived.changed().await.is_err() {
+                return self.upgrade().is_some_and(|stream| stream.done());
+            }
+        }
+    }
+}
+
+/// Pulls the body into the spool, one chunk at a time, and stops as soon as nothing is left
 /// that could read it.
 async fn pump<S: Source, B: Body>(
     mut source: S,
     weak: Weak<Shared<B>>,
     progress: watch::Sender<usize>,
 ) {
+    let mut staged = Vec::new();
     loop {
         let chunk = match source.chunk().await {
             Ok(Some(chunk)) => chunk,
@@ -340,14 +510,22 @@ async fn pump<S: Source, B: Body>(
             let Ok(mut state) = shared.state.lock() else {
                 return;
             };
-            let Buffered { buf, body, .. } = &mut *state;
-            if buf.len() + chunk.len() > CEILING {
+            let Buffered { spool, body, .. } = &mut *state;
+            if spool.len() + chunk.len() > CEILING {
                 drop(state);
                 shared.finish(Some(format!("the track is longer than {CEILING} bytes")));
                 return;
             }
-            body.feed(&chunk, buf);
-            buf.len()
+            staged.clear();
+            body.feed(&chunk, &mut staged);
+            if let Err(error) = spool.append(&staged) {
+                drop(state);
+                log::warn!("playback: cannot keep the track: {error}");
+                shared.finish(Some(format!("cannot keep the track: {error}")));
+                progress.send_modify(|_| {});
+                return;
+            }
+            spool.len()
         };
         shared.filled.notify_all();
         progress.send(filled).ok();
@@ -391,13 +569,13 @@ impl<B: Body> Reader<B> {
                 return self.presented(total as usize);
             }
             if state.complete {
-                return self.presented(state.buf.len());
+                return self.presented(state.spool.len());
             }
             let Ok((held, timed_out)) = self.shared.filled.wait_timeout(state, PATIENCE) else {
                 return 0;
             };
             if timed_out.timed_out() {
-                return self.presented(held.buf.len());
+                return self.presented(held.spool.len());
             }
             state = held;
         }
@@ -412,13 +590,13 @@ impl<B: Body> Read for Reader<B> {
         let mut state = self.shared.held()?;
         loop {
             let Buffered {
-                buf,
+                spool,
                 body,
                 complete,
                 total,
                 ..
             } = &mut *state;
-            let limit = self.presented(body.limit(buf, *complete));
+            let limit = self.presented(body.limit(spool, *complete));
             if self.at < limit {
                 // A read never crosses a splice: the bytes on either side of it are nowhere
                 // near each other in the file.
@@ -428,8 +606,8 @@ impl<B: Body> Read for Reader<B> {
                 };
                 let start = self.place(self.at) as usize;
                 let end = (start + wanted).min(self.place(limit) as usize);
-                body.ready(buf, start..end)?;
-                out[..end - start].copy_from_slice(&buf[start..end]);
+                body.ready(spool, start..end)?;
+                spool.read_at(start, &mut out[..end - start])?;
                 self.at += (end - start) as u64;
                 return Ok(end - start);
             }
@@ -477,15 +655,49 @@ impl<B: Body> Seek for Reader<B> {
     }
 }
 
+/// A file in Sonora's cache directory with no name, so nothing is left behind however the
+/// process ends.
+fn spool_file() -> io::Result<File> {
+    let folder = dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("sonora");
+    std::fs::create_dir_all(&folder)?;
+    tempfile::tempfile_in(folder)
+}
+
+#[cfg(unix)]
+fn read_exact_at(file: &File, out: &mut [u8], at: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, out, at)
+}
+
+#[cfg(unix)]
+fn write_all_at(file: &File, bytes: &[u8], at: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::write_all_at(file, bytes, at)
+}
+
+/// Every caller holds the spool's lock, so moving the shared cursor cannot race another read.
+#[cfg(not(unix))]
+fn read_exact_at(mut file: &File, out: &mut [u8], at: u64) -> io::Result<()> {
+    file.seek(SeekFrom::Start(at))?;
+    file.read_exact(out)
+}
+
+#[cfg(not(unix))]
+fn write_all_at(mut file: &File, bytes: &[u8], at: u64) -> io::Result<()> {
+    use std::io::Write as _;
+    file.seek(SeekFrom::Start(at))?;
+    file.write_all(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// A stream without a response behind it, so the buffer can be driven by hand.
+    /// A stream without a response behind it, so the spool can be driven by hand.
     fn stream<B: Body>(body: B, total: Option<u64>) -> Stream<B> {
         let shared = Arc::new(Shared {
             state: Mutex::new(Buffered {
-                buf: Vec::new(),
+                spool: Spool::in_memory(total),
                 total,
                 complete: false,
                 failed: None,
@@ -499,8 +711,10 @@ mod tests {
 
     fn feed<B: Body>(stream: &Stream<B>, chunk: &[u8]) {
         let mut state = stream.shared.state.lock().unwrap();
-        let Buffered { buf, body, .. } = &mut *state;
-        body.feed(chunk, buf);
+        let Buffered { spool, body, .. } = &mut *state;
+        let mut staged = Vec::new();
+        body.feed(chunk, &mut staged);
+        spool.append(&staged).unwrap();
     }
 
     fn finish<B: Body>(stream: &Stream<B>, failed: Option<String>) {
@@ -543,8 +757,8 @@ mod tests {
     struct Half;
 
     impl Body for Half {
-        fn limit(&mut self, buf: &mut [u8], _complete: bool) -> usize {
-            buf.len() / 2
+        fn limit(&mut self, spool: &mut Spool, _complete: bool) -> usize {
+            spool.len() / 2
         }
     }
 

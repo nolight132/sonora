@@ -26,6 +26,7 @@ input.workspace = true
 router.workspace = true
 ui.workspace = true
 views.workspace = true
+webview.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 sha2.workspace = true

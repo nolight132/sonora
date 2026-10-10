@@ -269,39 +269,59 @@ pub fn unlock(buf: &mut [u8], init: &Init) {
     }
 }
 
-/// Walks the one box at `at`, collecting the encrypted samples of a `moof`/`mdat` pair.
+/// The kind and total length of the box whose header starts `head`, which needs to be no
+/// longer than sixteen bytes. `None` means the header is incomplete or claims a size no box
+/// can have, so a caller can find where a box ends before it has the rest of the box.
+pub fn extent(head: &[u8]) -> Option<([u8; 4], usize)> {
+    let size = be32(head, 0)? as usize;
+    let kind: [u8; 4] = head.get(4..8)?.try_into().ok()?;
+    let total = match size {
+        1 => usize::try_from(be64(head, 8)?).ok()?,
+        0..8 => return None,
+        size => size,
+    };
+    (total >= 8).then_some((kind, total))
+}
+
+/// Walks the one box at the front of `window`, collecting the encrypted samples of a
+/// `moof`/`mdat` pair. `window` holds the file from byte `origin` on, so a fragment can be read
+/// without the rest of the file at hand, and every position in the answer is a file position.
 ///
-/// A fragment is only reported once both its `moof` and the `mdat` behind it have arrived
+/// A fragment is only reported once both its `moof` and the `mdat` behind it are in the window
 /// whole, so the samples it hands back always index into bytes that are there.
-pub fn read_fragment(data: &[u8], at: usize, tracks: &[Encrypted]) -> Step {
-    let Some(moof) = read(data, at) else {
+pub fn read_fragment(window: &[u8], origin: usize, tracks: &[Encrypted]) -> Step {
+    let Some(moof) = read(window, 0) else {
         return Step::Partial;
     };
     if &moof.kind != b"moof" {
-        return Step::Other { next: moof.end };
+        return Step::Other {
+            next: origin + moof.end,
+        };
     }
-    let Some(mdat) = read(data, moof.end) else {
+    let Some(mdat) = read(window, moof.end) else {
         return Step::Partial;
     };
     if &mdat.kind != b"mdat" {
         // A moof whose media is not the box behind it is not a shape Apple's assets use, and
         // skipping its samples is better than guessing where they live.
-        log::warn!("cenc: a moof at {at} is not followed by its mdat");
-        return Step::Other { next: moof.end };
+        log::warn!("cenc: a moof at {origin} is not followed by its mdat");
+        return Step::Other {
+            next: origin + moof.end,
+        };
     }
 
     let mut samples = Vec::new();
     let mut decode = None;
-    for (_, traf) in children(data, moof.body, moof.end)
+    for (_, traf) in children(window, moof.body, moof.end)
         .into_iter()
         .filter(|(_, bx)| &bx.kind == b"traf")
     {
-        decode = decode.or_else(|| decode_time(data, &traf));
-        samples.extend(read_traf(data, at, &mdat, &traf, tracks));
+        decode = decode.or_else(|| decode_time(window, &traf));
+        samples.extend(read_traf(window, origin, &mdat, &traf, tracks));
     }
     Step::Fragment {
         samples,
-        next: mdat.end,
+        next: origin + mdat.end,
         decode,
     }
 }
@@ -315,10 +335,11 @@ fn decode_time(data: &[u8], traf: &Bx) -> Option<u64> {
     }
 }
 
-/// The encrypted samples of one track fragment.
+/// The encrypted samples of one track fragment, read out of a window that starts at the
+/// fragment's `moof` and sits at `origin` in the file.
 fn read_traf(
     data: &[u8],
-    moof_at: usize,
+    origin: usize,
     mdat: &Bx,
     traf: &Bx,
     tracks: &[Encrypted],
@@ -344,9 +365,13 @@ fn read_traf(
     };
 
     // The sample data is offset from the enclosing moof, unless tfhd names a base of its own.
-    let base = tfhd.base.unwrap_or(moof_at as u64);
+    // That base is a file position, and the window starts at `origin`.
+    let base = match tfhd.base {
+        Some(base) => base.checked_sub(origin as u64),
+        None => Some(0),
+    };
     let Some(start) = base
-        .checked_add_signed(run.offset)
+        .and_then(|base| base.checked_add_signed(run.offset))
         .and_then(|start| usize::try_from(start).ok())
         .filter(|start| *start >= mdat.body && *start <= mdat.end)
     else {
@@ -377,7 +402,7 @@ fn read_traf(
         }
         if len > 0 {
             samples.push(Sample {
-                start: at,
+                start: origin + at,
                 len,
                 iv,
                 subs: subs.get(index).cloned().unwrap_or_default(),
@@ -678,7 +703,7 @@ mod tests {
             samples,
             next,
             decode,
-        } = read_fragment(&data, parsed.end, &parsed.tracks)
+        } = read_fragment(&data[parsed.end..], parsed.end, &parsed.tracks)
         else {
             panic!("the fragment is whole");
         };
@@ -709,12 +734,16 @@ mod tests {
         // The moof is whole but the mdat behind it is not.
         let cut = data.len() - 5;
         assert_eq!(
-            read_fragment(&data[..cut], parsed.end, &parsed.tracks),
+            read_fragment(&data[parsed.end..cut], parsed.end, &parsed.tracks),
             Step::Partial
         );
         // And a moof that is itself only half there.
         assert_eq!(
-            read_fragment(&data[..parsed.end + 12], parsed.end, &parsed.tracks),
+            read_fragment(
+                &data[parsed.end..parsed.end + 12],
+                parsed.end,
+                &parsed.tracks
+            ),
             Step::Partial
         );
     }

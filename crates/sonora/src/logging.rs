@@ -11,6 +11,13 @@ const FILTER: &str = "SONORA_LOG";
 const PREVIOUS: &str = "sonora.log.1";
 const LIMIT: u64 = 16 * 1024 * 1024;
 
+/// Logs to stderr only, for a process that is not the app, such as the Widevine host.
+pub fn console() {
+    env_logger::Builder::from_env(Env::default().default_filter_or(CONSOLE))
+        .format_timestamp(None)
+        .init();
+}
+
 pub fn init() {
     let console = env_logger::Builder::from_env(Env::default().default_filter_or(CONSOLE))
         .format_timestamp(None)

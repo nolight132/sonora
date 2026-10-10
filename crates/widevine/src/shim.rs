@@ -45,7 +45,7 @@ unsafe fn take(out: *mut u8, len: u32) -> Vec<u8> {
 /// A handle to the process Widevine module.
 ///
 /// The native host is a single global instance, so every `Shim` drives the same module and
-/// opening again re-initializes it. `crate::cdm` opens it once and keeps it for that reason.
+/// opening again re-initializes it. Only the host process in `crate::host` opens it, once.
 pub struct Shim {
     _priv: (),
 }
@@ -88,19 +88,10 @@ impl Shim {
         }
     }
 
-    /// Decrypts one CENC buffer with the loaded keys. `subsamples` is the clear and cipher byte
-    /// count of each subsample, and empty when the whole buffer is encrypted.
-    pub fn decrypt(
-        &self,
-        data: &[u8],
-        key_id: &[u8],
-        iv: &[u8],
-        subsamples: &[(u32, u32)],
-    ) -> Result<Vec<u8>> {
-        let subs: Vec<u32> = subsamples
-            .iter()
-            .flat_map(|&(clear, cipher)| [clear, cipher])
-            .collect();
+    /// Decrypts one CENC buffer with the loaded keys. `subs` holds the clear and cipher byte
+    /// count of each subsample one after the other, and is empty when the whole buffer is
+    /// encrypted.
+    pub fn decrypt(&self, data: &[u8], key_id: &[u8], iv: &[u8], subs: &[u32]) -> Result<Vec<u8>> {
         let mut out = std::ptr::null_mut();
         let mut len = 0u32;
         let code = unsafe {
@@ -112,7 +103,7 @@ impl Shim {
                 iv.as_ptr(),
                 iv.len() as u32,
                 subs.as_ptr(),
-                subsamples.len() as u32,
+                (subs.len() / 2) as u32,
                 &mut out,
                 &mut len,
             )

@@ -159,6 +159,41 @@ pub fn entrance_span() -> Duration {
     Motion::Base.span() + ENTRANCE_EXTRA
 }
 
+/// One run of the entrance a screen makes as it appears. The renderer reads how much of the
+/// screen is still hidden on every frame and asks for another frame while it runs.
+#[derive(Clone, Copy, Debug)]
+pub struct Entrance {
+    started: Instant,
+    span: Duration,
+}
+
+impl Entrance {
+    pub fn start() -> Self {
+        Self {
+            started: Instant::now(),
+            span: entrance_span(),
+        }
+    }
+
+    pub fn span(self) -> Duration {
+        self.span
+    }
+
+    /// How much of the screen is still hidden, from 1 as the entrance starts to 0 once it ends.
+    pub fn hidden(self) -> f32 {
+        if self.span.is_zero() {
+            return 0.;
+        }
+        let elapsed = self.started.elapsed().as_secs_f32();
+        let progress = (elapsed / self.span.as_secs_f32()).clamp(0., 1.);
+        1. - ease_out_expo(progress)
+    }
+
+    pub fn running(self) -> bool {
+        self.started.elapsed() < self.span
+    }
+}
+
 fn entrance() -> Animation {
     Animation::new(entrance_span()).with_easing(ease_out_expo)
 }

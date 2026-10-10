@@ -1,9 +1,8 @@
 use std::f32::consts::TAU;
-use std::sync::Arc;
 
-use gpui::{App, AppContext as _, Hsla, ImgResourceLoader, RenderImage, Rgba, SharedString, Task};
+use gpui::{App, Hsla, RenderImage, Rgba, SharedString, Task};
 
-use crate::artwork::resource;
+use crate::artwork::sample_palette;
 
 const BINS: usize = 24;
 const SAMPLES: usize = 6000;
@@ -23,18 +22,6 @@ const SECONDARY_SHARE: f32 = 0.02;
 const SECONDARY_WEIGHT: f32 = 10.;
 const SECONDARY_GAP: usize = 3;
 const SECONDARY_HUE: f32 = 0.05;
-
-/// Decodes the artwork at `url` for a one-off read of its pixels and caches
-/// nothing. The asset entry is dropped right after the fetch is issued, so the
-/// decode belongs to the returned task alone: dropping the task cancels it, and
-/// the pixels go when the caller lets go of the frame. Anything that needs a
-/// cover drawn goes through `Artwork` and its cache instead.
-pub fn decode(url: impl Into<SharedString>, cx: &mut App) -> Task<Option<Arc<RenderImage>>> {
-    let resource = resource(url);
-    let (load, _) = cx.fetch_asset::<ImgResourceLoader>(&resource);
-    cx.remove_asset::<ImgResourceLoader>(&resource);
-    cx.spawn(async move |_| load.await.ok())
-}
 
 /// The palette of a frame that is already decoded, for artwork the cache has in
 /// hand. Sampling walks at most `SAMPLES` pixels, so this costs nothing beside
@@ -64,16 +51,10 @@ pub struct CoverPalette {
     pub lightness: f32,
 }
 
-/// Both hues of the artwork at `url` in a single pass over its pixels.
+/// Both hues of the artwork at `url` in a single pass over its pixels. A cover the
+/// artwork cache has drawn answers at once, and any other is decoded small and dropped.
 pub fn palette(url: impl Into<SharedString>, cx: &mut App) -> Task<CoverPalette> {
-    let load = decode(url, cx);
-
-    cx.spawn(async move |cx| {
-        let Some(image) = load.await else {
-            return CoverPalette::default();
-        };
-        cx.background_spawn(async move { of_image(&image) }).await
-    })
+    sample_palette(url.into(), cx)
 }
 
 #[derive(Clone, Copy, Default)]

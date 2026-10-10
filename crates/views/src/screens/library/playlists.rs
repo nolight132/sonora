@@ -93,7 +93,7 @@ impl PlaylistSource {
 
     fn index_cell(&self, cell: &Cell<PlaylistField>, playlist: &Playlist, cx: &App) -> AnyElement {
         let origin = Origin::playlist(playlist.id.clone()).named(playlist.name.clone());
-        let playing = self.playback.read(cx).playing_from(&origin);
+        let playing = self.playback.read(cx).playing_from(&origin, cx);
         let played = origin.clone();
         let press = cells::toggle(&self.playback, playing, move |playback, cx| {
             playback.play_origin(played.clone(), cx)
@@ -158,7 +158,7 @@ impl TableSource for PlaylistSource {
     fn playing(&self, row: usize, cx: &App) -> bool {
         self.playlists(cx).get(row).is_some_and(|playlist| {
             let origin = Origin::playlist(playlist.id.clone());
-            self.playback.read(cx).playing_from(&origin).is_some()
+            self.playback.read(cx).playing_from(&origin, cx).is_some()
         })
     }
 

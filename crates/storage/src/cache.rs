@@ -22,6 +22,12 @@ const SCHEMA: &str = "
         parent TEXT NOT NULL,
         mtime INTEGER NOT NULL,
         portrait TEXT
+    );
+    CREATE TABLE IF NOT EXISTS lyrics (
+        key TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        stored INTEGER NOT NULL,
+        value TEXT NOT NULL
     );";
 
 /// A key to text store for data the app can always fetch again. It lives in the cache directory
@@ -86,6 +92,56 @@ impl Cache {
         Ok(())
     }
 
+    /// The lyrics stored under `key` by format `version`, as the json they were written in.
+    pub fn lyrics(&self, key: &str, version: u32) -> Result<Option<String>> {
+        let connection = self.open()?;
+        connection
+            .query_row(
+                "SELECT value FROM lyrics WHERE key = ? AND version = ?",
+                params![key, version],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("cannot read cached lyrics")
+    }
+
+    /// Stores `entries` as `(key, stored_at, json)` in one transaction, then drops all but the
+    /// `keep` most recently stored. An entry never replaces one stored after it, so an old
+    /// answer moved in late cannot overwrite a newer one.
+    pub fn keep_lyrics(
+        &self,
+        version: u32,
+        entries: impl IntoIterator<Item = (String, i64, String)>,
+        keep: usize,
+    ) -> Result<()> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction()
+            .context("cannot start writing lyrics")?;
+        {
+            let mut insert = transaction
+                .prepare(
+                    "INSERT INTO lyrics (key, version, stored, value) VALUES (?, ?, ?, ?)
+                     ON CONFLICT(key) DO UPDATE SET version = excluded.version,
+                         stored = excluded.stored, value = excluded.value
+                     WHERE excluded.stored >= lyrics.stored",
+                )
+                .context("cannot prepare a lyrics write")?;
+            for (key, stored, value) in entries {
+                insert
+                    .execute(params![key, version, stored, value])
+                    .context("cannot write cached lyrics")?;
+            }
+        }
+        transaction
+            .execute(
+                "DELETE FROM lyrics WHERE key NOT IN
+                     (SELECT key FROM lyrics ORDER BY stored DESC LIMIT ?)",
+                params![keep as i64],
+            )
+            .context("cannot trim cached lyrics")?;
+        transaction.commit().context("cannot save cached lyrics")
+    }
     /// A connection with every cache table in place. The local scan index reaches for this
     /// directly, the way local playlists do with [`crate::Database`].
     pub fn open(&self) -> Result<rusqlite::Connection> {

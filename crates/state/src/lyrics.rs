@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +7,7 @@ use music::lyrics::LOCAL;
 use music::{Lyrics as Sheet, LyricsHit, LyricsProvider, LyricsQuery, Track, TrackKey};
 use tokio::task::JoinSet;
 
-use crate::sheets::Sheets;
+use crate::sheets::{Sheets, Unsaved};
 use crate::{AppSettings, Io, Playback, Queue, Session, join};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,6 +22,10 @@ pub enum LyricsState {
 
 const SAVE_DELAY: Duration = Duration::from_millis(800);
 
+/// How many tracks keep their answer in memory. The rest are read back from the cache database,
+/// so this only has to cover the track playing, the next one and a few just played.
+const RECENT: usize = 16;
+
 pub struct Lyrics {
     state: LyricsState,
     hits: Vec<LyricsHit>,
@@ -30,8 +34,11 @@ pub struct Lyrics {
     settled: bool,
     revision: u64,
     following: Option<String>,
-    cache: HashMap<String, Found>,
+    /// The answers looked at most recently, newest first.
+    recent: VecDeque<(String, Found)>,
     store: Sheets,
+    /// Answers found since the last save, written together once lookups go quiet.
+    unsaved: Vec<Unsaved>,
     providers: Vec<Arc<dyn LyricsProvider>>,
     enabled_providers: Vec<String>,
     prefer_local: bool,
@@ -44,6 +51,8 @@ pub struct Lyrics {
     ahead: Option<Task<()>>,
     ahead_of: Option<String>,
     save: Option<Task<()>>,
+    /// Moves the old lyrics.json into the cache database, once.
+    _migration: Task<()>,
 }
 
 impl Lyrics {
@@ -71,7 +80,7 @@ impl Lyrics {
             this.task = None;
             this.ahead = None;
             this.ahead_of = None;
-            this.cache.clear();
+            this.recent.clear();
             this.forget(cx);
             this.follow(cx);
         })
@@ -83,14 +92,11 @@ impl Lyrics {
                 settings.prefer_local_lyrics(),
             )
         };
-        cx.spawn(async move |this, cx| {
-            let loaded = cx
-                .background_executor()
-                .spawn(async move { Sheets::read() })
-                .await;
-            this.update(cx, |this, _| this.store.absorb(loaded)).ok();
-        })
-        .detach();
+        let store = Sheets::new(storage::Cache::standard());
+        let moving = store.clone();
+        let migration = cx
+            .background_executor()
+            .spawn(async move { moving.migrate() });
         Self {
             state: LyricsState::Idle,
             hits: Vec::new(),
@@ -99,8 +105,9 @@ impl Lyrics {
             settled: false,
             revision: 0,
             following: None,
-            cache: HashMap::new(),
-            store: Sheets::new(),
+            recent: VecDeque::new(),
+            store,
+            unsaved: Vec::new(),
             providers,
             enabled_providers,
             prefer_local,
@@ -113,6 +120,7 @@ impl Lyrics {
             ahead: None,
             ahead_of: None,
             save: None,
+            _migration: migration,
         }
     }
 
@@ -172,7 +180,7 @@ impl Lyrics {
 
         // A file's own lyrics are never cached, so an edit to its tags shows on the next play.
         if !self.reads_file(&id, cx)
-            && let Some(found) = self.remembered(&id, cx)
+            && let Some(found) = self.recall(&id)
         {
             self.show(found, cx);
             return;
@@ -189,14 +197,36 @@ impl Lyrics {
         self.prefetch(cx);
     }
 
-    fn remembered(&mut self, id: &str, cx: &mut Context<Self>) -> Option<Found> {
-        if let Some(found) = self.cache.get(id) {
-            return Some(found.clone());
-        }
-        let (hits, instrumental) = self.store.get(&self.key(id, cx), &self.known(cx))?;
-        let found = Found { hits, instrumental };
-        self.cache.insert(id.to_owned(), found.clone());
+    /// The answer held in memory for `id`, which becomes the most recently used.
+    fn recall(&mut self, id: &str) -> Option<Found> {
+        let index = self.recent.iter().position(|(held, _)| held == id)?;
+        let entry = self.recent.remove(index)?;
+        let found = entry.1.clone();
+        self.recent.push_front(entry);
         Some(found)
+    }
+
+    fn recalls(&self, id: &str) -> bool {
+        self.recent.iter().any(|(held, _)| held == id)
+    }
+
+    /// Holds `found` in memory as the newest answer, letting the oldest go past `RECENT`.
+    fn hold(&mut self, id: String, found: Found) {
+        self.recent.retain(|(held, _)| *held != id);
+        self.recent.push_front((id, found));
+        self.recent.truncate(RECENT);
+    }
+
+    /// Reads the answer stored for `id` off the main thread.
+    fn stored(&self, id: &str, cx: &Context<Self>) -> Task<Option<Found>> {
+        let key = self.key(id, cx);
+        let known = self.known(cx);
+        let store = self.store.clone();
+        cx.background_executor().spawn(async move {
+            store
+                .get(&key, &known)
+                .map(|(hits, instrumental)| Found { hits, instrumental })
+        })
     }
 
     fn key(&self, id: &str, cx: &Context<Self>) -> String {
@@ -285,18 +315,19 @@ impl Lyrics {
         let Some((track, id)) = next.and_then(|track| Some((track.clone(), track.id?))) else {
             return;
         };
-        if self.ahead_of.as_deref() == Some(id.as_str())
-            || self.cache.contains_key(&id)
-            || self.store.holds(&self.key(&id, cx))
-        {
+        if self.ahead_of.as_deref() == Some(id.as_str()) || self.recalls(&id) {
             return;
         }
         self.ahead_of = Some(id.clone());
         self.ahead = Some(self.fetch(id, track, cx));
     }
 
+    /// Looks a track up: in memory, then in the cache database, then with the providers. An
+    /// answer the database already had is shown as it is, unless the track is a file whose own
+    /// lyrics are read again on every play.
     fn fetch(&mut self, id: String, track: Track, cx: &mut Context<Self>) -> Task<()> {
         let online = self.online(&id, cx);
+        let reads_file = self.reads_file(&id, cx);
         let settings = self.settings.read(cx);
         let prefer_local = settings.prefer_local_lyrics();
         // A file's own lyrics never leave the computer, so only the services are held back.
@@ -307,22 +338,8 @@ impl Lyrics {
             .filter(|provider| online || provider.name() == LOCAL)
             .cloned()
             .collect();
-        if !online && providers.is_empty() {
-            log::info!(
-                "lyrics: local files are disabled, skipping {:?}",
-                track.name
-            );
-            self.state = LyricsState::Missing;
-            return Task::ready(());
-        }
-        let cached = match self.reads_file(&id, cx) {
-            true => self.remembered(&id, cx),
-            false => None,
-        };
-        if cached.is_some() {
-            // The services already answered for this track; only the file is read again.
-            providers.retain(|provider| provider.name() == LOCAL);
-        }
+        let remembered = self.recall(&id);
+        let stored = remembered.is_none().then(|| self.stored(&id, cx));
 
         let key = self
             .session
@@ -335,6 +352,44 @@ impl Lyrics {
         let query = query_for(&track, key);
         let io = self.io.clone();
         cx.spawn(async move |this, cx| {
+            let cached = match stored {
+                Some(stored) => stored.await,
+                None => remembered,
+            };
+            if let Some(found) = &cached {
+                let held = found.clone();
+                let id = id.clone();
+                this.update(cx, |this, _| this.hold(id, held)).ok();
+            }
+            if !reads_file && let Some(found) = cached {
+                this.update(cx, |this, cx| {
+                    if this.finished(&id) {
+                        log::debug!("lyrics: showing the stored answer");
+                        this.show(found, cx);
+                    }
+                })
+                .ok();
+                return;
+            }
+            if !online && providers.is_empty() {
+                log::info!(
+                    "lyrics: local files are disabled, skipping {:?}",
+                    track.name
+                );
+                this.update(cx, |this, cx| {
+                    if this.finished(&id) {
+                        this.state = LyricsState::Missing;
+                        cx.notify();
+                    }
+                })
+                .ok();
+                return;
+            }
+            if cached.is_some() {
+                // The services already answered for this track, so only the file is read again.
+                providers.retain(|provider| provider.name() == LOCAL);
+            }
+
             if prefer_local
                 && let Some(index) = providers
                     .iter()
@@ -503,17 +558,18 @@ impl Lyrics {
         keep_displayed_first(&mut hits, displayed);
         // A file's own lyrics are read again on every play. Services kept out of this lookup must
         // still be asked once allowed, and an answer already cached needs no second write.
-        if self.online(&id, cx) && !self.cache.contains_key(&id) {
+        if self.online(&id, cx) && !self.recalls(&id) {
             let kept: Vec<LyricsHit> = hits
                 .iter()
                 .filter(|hit| hit.source != LOCAL)
                 .cloned()
                 .collect();
             if !kept.is_empty() || instrumental {
-                self.store.put(self.key(&id, cx), &kept, instrumental);
+                let key = self.key(&id, cx);
+                self.unsaved.push(Sheets::unsaved(key, &kept, instrumental));
                 self.schedule_save(cx);
             }
-            self.cache.insert(
+            self.hold(
                 id,
                 Found {
                     hits: kept,
@@ -552,15 +608,19 @@ impl Lyrics {
         }
     }
 
+    /// Writes the unsaved answers once lookups have gone quiet for `SAVE_DELAY`. A write that
+    /// has begun always finishes, even when another answer reschedules the save.
     fn schedule_save(&mut self, cx: &mut Context<Self>) {
         self.save = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SAVE_DELAY).await;
-            let chore = this.update(cx, |this, _| this.store.chore()).ok().flatten();
-            if let Some(chore) = chore {
-                cx.background_executor()
-                    .spawn(async move { chore.write() })
-                    .await;
-            }
+            let Ok((store, unsaved)) = this.update(cx, |this, _| {
+                (this.store.clone(), std::mem::take(&mut this.unsaved))
+            }) else {
+                return;
+            };
+            cx.background_executor()
+                .spawn(async move { store.save(unsaved) })
+                .detach();
         }));
     }
 }

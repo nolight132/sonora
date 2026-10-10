@@ -4,13 +4,13 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
 use gpui::{
-    AnyView, App, Bounds, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render, ScrollWheelEvent,
-    SharedString, SpringState, Task,
+    AnyView, App, Bounds, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render,
+    ScrollWheelEvent, SharedString, SpringState, Task, TextShadow,
 };
 use gpui::{Window, canvas, deferred, div, phi, px, relative};
 use i18n::t;
-use input::{ToggleFullscreen, WORKSPACE_CONTEXT};
+use input::{ToggleFullscreen, ToggleWindowFullscreen, WORKSPACE_CONTEXT};
 use router::{Destination, navigate};
 use state::{AppSettings, Cover, FullscreenControlsAutohide, Playback, Queue, SideTab, Sonora};
 use ui::{
@@ -62,6 +62,10 @@ const VEIL: f32 = 0.34;
 /// and gets by on a pixel; a bar of the visualizer is a hard edge and needs a real radius
 /// before it stops reading through the text over it.
 const VEIL_BLUR: Pixels = px(12.);
+/// The blur of each shadow stacked under the title and the artist line. A single blurred shadow
+/// spreads the glyphs too thin to show, so a tight one gives it a core and wider ones soften its
+/// edge.
+const TEXT_SHADOW: [f32; 3] = [1.5, 4., 10.];
 const REST: Duration = Duration::from_millis(1500);
 const WAKE_DEBOUNCE: Duration = Duration::from_millis(400);
 const SPRING_REST: f32 = 0.001;
@@ -100,7 +104,7 @@ pub struct FullscreenView {
     focus: FocusHandle,
     visualizer: VisualizerDrive,
     root_bounds: Rc<Cell<Bounds<Pixels>>>,
-    artwork_bounds: Rc<Cell<Bounds<Pixels>>>,
+    meta_bounds: Rc<Cell<Bounds<Pixels>>>,
 }
 
 impl FullscreenView {
@@ -155,7 +159,7 @@ impl FullscreenView {
             focus: cx.focus_handle(),
             visualizer: VisualizerDrive::default(),
             root_bounds: Rc::new(Cell::new(Bounds::default())),
-            artwork_bounds: Rc::new(Cell::new(Bounds::default())),
+            meta_bounds: Rc::new(Cell::new(Bounds::default())),
         };
         this.stir(cx);
         this
@@ -355,12 +359,16 @@ impl FullscreenView {
         let album = track.as_ref().and_then(|track| track.album_id.clone());
         let small = track.as_ref().and_then(|track| track.cover.clone());
         let cover_large = self.cover.read(cx).large();
-        // Only upgrade to the cached large art when the track itself has a cover.
-        // Local folders share one album_id; Cover caches the first track's art for the
-        // album. Without this guard, a track with no art would show a sibling's cover
-        // after any track with art was played (issue #833).
+        let local = track
+            .as_ref()
+            .and_then(|track| track.id.as_deref())
+            .is_some_and(music::is_local_id)
+            || small.as_ref().is_some_and(|url| url.starts_with("file://"));
+        // Only upgrade resolution for non-local tracks, since a local cover is always
+        // the full resolution picture. The track's own embedded cover is prioritized
+        // over the cover of its album.
         let large = cover_large
-            .filter(|url| small.is_some() && Some(*url) != small.as_deref())
+            .filter(|url| !local && small.is_some() && Some(*url) != small.as_deref())
             .map(SharedString::from);
 
         if self.large != large {
@@ -368,13 +376,7 @@ impl FullscreenView {
             self.revision += 1;
         }
         let revision = self.revision;
-        let local = track
-            .as_ref()
-            .and_then(|track| track.id.as_deref())
-            .is_some_and(music::is_local_id)
-            || small.as_ref().is_some_and(|url| url.starts_with("file://"));
         let waiting = !local && album.is_some() && cover_large.is_none();
-        let artwork_bounds = self.artwork_bounds.clone();
 
         div()
             .id("fullscreen-artwork")
@@ -385,14 +387,6 @@ impl FullscreenView {
                 this.cursor_pointer()
                     .on_click(move |_, _, cx| open_album(&album, cx))
             })
-            .child(
-                canvas(
-                    move |bounds, _, _| artwork_bounds.set(bounds),
-                    |_, _, _, _| {},
-                )
-                .absolute()
-                .size_full(),
-            )
             .child(
                 div()
                     .absolute()
@@ -449,6 +443,29 @@ impl FullscreenView {
         let album = track.as_ref().and_then(|track| track.album_id.clone());
         let explicit = track.as_ref().is_some_and(|track| track.explicit);
         let held = track.clone();
+        let meta_bounds = self.meta_bounds.clone();
+        // Both lines carry a shadow in the page colour, so they stay legible where a visualizer
+        // peak or bright ambient art passes behind them. The title ellipsizes without
+        // `truncate`, whose `overflow_hidden` would clip the shadow to the line box.
+        let effects = shared::effects();
+        let shadow = TEXT_SHADOW.map(|blur| TextShadow::new(theme.background).blur(px(blur)));
+        let trailing = |track: Option<music::Track>, cx: &App| {
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_2()
+                .when(explicit, |this| {
+                    this.child(div().flex_none().child(ExplicitBadge::new()))
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .opacity(1. - hide)
+                        .child(like(track, cx).when(frosted, Button::frosted)),
+                )
+        };
 
         div()
             .relative()
@@ -461,23 +478,38 @@ impl FullscreenView {
             .min_w_0()
             .top(lift)
             .child(
+                canvas(move |bounds, _, _| meta_bounds.set(bounds), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
+            .child(
                 // Three-part row with equal flex sides, so the title stays truly centred:
                 // the heart and the explicit badge live in the right cell and never shift it.
-                // Both sides have to stay styled the same and the room around the title has to
-                // come from the row gap, since padding on a side floors that side flex basis
-                // and makes it the wider one.
+                // The left cell holds an invisible copy of the right one, so both sides floor
+                // at the same width and a long title truncates instead of pushing the heart out
+                // of the row. The room around the title comes from the row gap, since padding
+                // on a side would make that side the wider one.
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
                     .w_full()
                     .min_w_0()
-                    .child(div().flex_1().min_w_0())
+                    .child(
+                        div()
+                            .id("fullscreen-title-balance")
+                            .flex()
+                            .flex_1()
+                            .justify_end()
+                            .invisible()
+                            .child(trailing(None, cx)),
+                    )
                     .child(
                         div()
                             .id("fullscreen-title")
                             .min_w_0()
-                            .truncate()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
                             .text_size(theme.text(Text::Title))
                             .font_weight(FontWeight::SEMIBOLD)
                             .when_some(album, |this, album| {
@@ -496,26 +528,10 @@ impl FullscreenView {
                                     cx.stop_propagation();
                                 }),
                             )
+                            .when(effects, |this| this.text_shadow(shadow))
                             .child(title),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .items_center()
-                            .gap_2()
-                            .when(explicit, |this| {
-                                this.child(div().flex_none().child(ExplicitBadge::new()))
-                            })
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_none()
-                                    .opacity(1. - hide)
-                                    .child(like(track.clone(), cx).when(frosted, Button::frosted)),
-                            ),
-                    ),
+                    .child(div().flex().flex_1().child(trailing(track.clone(), cx))),
             )
             .when_some(track, |this, track| {
                 this.child(
@@ -530,6 +546,7 @@ impl FullscreenView {
                         )
                         .text_size(theme.text(Text::Body))
                         .truncate()
+                        .when(effects, |this| this.text_shadow(shadow))
                         .on_click(|id, cx| navigate(Destination::Artist(id), cx)),
                     ),
                 )
@@ -703,6 +720,7 @@ impl FullscreenView {
         };
 
         div()
+            .id("fullscreen-controls")
             .flex()
             .flex_col()
             .items_center()
@@ -710,6 +728,7 @@ impl FullscreenView {
             .w_full()
             .max_w(px(SEEK_MAX))
             .flex_none()
+            .on_click(|_, _, cx| cx.stop_propagation())
             .when(inline, |this| this.child(self.pill(cx)))
             .child(self.seek(cx))
             .child(
@@ -993,7 +1012,7 @@ impl FullscreenView {
                     .ghost()
                     .when(frosted, Button::frosted)
                     .small()
-                    .icon("icons/chevron-down.svg")
+                    .icon("icons/minimize.svg")
                     .tooltip_above("player-fullscreen-leave")
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(ToggleFullscreen), cx)
@@ -1107,9 +1126,16 @@ impl Render for FullscreenView {
             None => self.visualizer.hide(),
         }
         let bottom = |bounds: Bounds<Pixels>| bounds.origin.y + bounds.size.height;
-        let visualizer_max = (bottom(self.root_bounds.get()) - bottom(self.artwork_bounds.get()))
-            .max(px(VISUALIZER_MIN));
+        // The peaks stop an inset short of the artist line, so the glow never reaches the text.
+        let visualizer_max =
+            (bottom(self.root_bounds.get()) - bottom(self.meta_bounds.get()) - theme.metrics.inset)
+                .max(px(VISUALIZER_MIN));
         let root_bounds = self.root_bounds.clone();
+        // The visualizer and its veil sit flush with the window's bottom corners.
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        let corner = crate::chrome::window_radius(self.settings.read(cx), cx, window);
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let corner: Option<Pixels> = None;
 
         div()
             .id("fullscreen")
@@ -1124,6 +1150,11 @@ impl Render for FullscreenView {
             .gap_5()
             .px_8()
             .pb_6()
+            .on_click(|event: &ClickEvent, window, cx| {
+                if event.click_count() == 2 {
+                    window.dispatch_action(Box::new(ToggleWindowFullscreen), cx);
+                }
+            })
             .on_mouse_move(cx.listener(Self::hover))
             // Capture phase: every click stirs the idle timer, even one a
             // control underneath swallows for itself.
@@ -1139,6 +1170,7 @@ impl Render for FullscreenView {
                 this.child(
                     Visualizer::new(self.visualizer.levels(), visualizer_max)
                         .style_kind(style)
+                        .when_some(corner, |this, radius| this.corner_radius(radius))
                         .absolute()
                         .left_0()
                         .right_0()
@@ -1164,6 +1196,7 @@ impl Render for FullscreenView {
                             band,
                             VEIL_BLUR,
                             theme.background,
+                            corner,
                             window,
                         )),
                 )
@@ -1207,6 +1240,7 @@ impl Render for FullscreenView {
                     .when(self.panel.is_some(), |this| {
                         this.child(
                             div()
+                                .id("fullscreen-panel")
                                 .relative()
                                 .flex()
                                 .flex_col()
@@ -1214,6 +1248,7 @@ impl Render for FullscreenView {
                                 .min_w_0()
                                 .min_h_0()
                                 .h_full()
+                                .on_click(|_, _, cx| cx.stop_propagation())
                                 .child(self.aside.clone())
                                 .when(shown, |this| this.child(self.floating(hide, cx))),
                         )

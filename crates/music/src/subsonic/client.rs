@@ -17,7 +17,7 @@ use crate::subsonic::wire;
 use crate::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem,
     GenreSection, HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, Report, SUGGESTIONS,
-    SavedArtist, Track, UserProfile, distinct_covers,
+    SavedArtist, Track, UserProfile, distinct_covers, iso_8601_to_epoch,
 };
 
 const PORTRAIT_LIMIT: usize = 24;
@@ -161,7 +161,7 @@ impl SubsonicClient {
             },
             label: wire::labels(detail.record_labels.as_deref()),
             copyrights: Vec::new(),
-            added_at: None,
+            added_at: iso_8601_to_epoch(detail.created.as_deref()),
         }
     }
 

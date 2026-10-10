@@ -8,8 +8,8 @@
 //!
 //! Nothing here drives it on a schedule. `music::potoken` records the identifier the YouTube
 //! client is waiting on, this entity notices, mints once, and files the answer; the client uses a
-//! cold start token until then, which covers the start of a track and no more. A platform with no
-//! webview, the Flatpak runtime among them, never opens a window and never mints.
+//! cold start token until then, which covers the start of a track and no more. A host where
+//! webkit2gtk does not load never opens a window and never mints.
 
 use std::time::{Duration, Instant};
 

@@ -95,15 +95,17 @@ impl RenderOnce for InlineLinks {
         let empty = items.is_empty();
         let overrides = std::mem::take(base.style());
 
+        // A clipped list ellipsizes its text rather than hiding overflow, so a text shadow
+        // set on it is not cut off at the line box.
         let mut links = base
             .flex()
             .min_w_0()
-            .overflow_hidden()
+            .when(!clip, |this| this.overflow_hidden())
             .text_color(color)
             .when_some(text_size, |this, text_size| this.text_size(text_size))
             .when(clip, |this| this.whitespace_nowrap())
             .when(empty, |this| match clip {
-                true => this.child(div().min_w_0().truncate().child(fallback)),
+                true => this.child(div().min_w_0().text_ellipsis().child(fallback)),
                 false => this.child(fallback),
             })
             .when(!empty, |this| {
@@ -114,7 +116,7 @@ impl RenderOnce for InlineLinks {
                         .id(ElementId::NamedInteger(id.clone(), index as u64))
                         .min_w_0()
                         .when(lone, |this| this.flex_shrink(1.))
-                        .when(clip, |this| this.truncate());
+                        .when(clip, |this| this.text_ellipsis());
                     let item = match value {
                         Some(value) => {
                             let handler = on_click.clone();

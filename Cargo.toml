@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.42.0"
+version = "0.42.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/sonorahq/sonora"
@@ -38,8 +38,8 @@ env_logger = "0.11"
 fastrand = "2.5"
 futures = "0.3"
 fluent-bundle = "0.16"
-gpui = { git = "https://github.com/sonorahq/gpui", rev = "58cab2abf58257fef20a45cecda3784bfcac2286" }
-gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "58cab2abf58257fef20a45cecda3784bfcac2286", features = [
+gpui = { git = "https://github.com/sonorahq/gpui", rev = "5ff26c7dedb1c8e27b69f89be13ce2744484874a" }
+gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "5ff26c7dedb1c8e27b69f89be13ce2744484874a", features = [
   "font-kit",
   "wayland",
   "x11",
@@ -151,10 +151,11 @@ sha2 = "0.10"
 souvlaki = "0.8"
 sys-locale = "0.3"
 symphonia = { version = "0.5.5", default-features = false, features = ["mkv", "ogg", "isomp4"] }
+tempfile = "3.27"
 tray-icon = { version = "0.24", default-features = false }
 unic-langid = { version = "0.9", features = ["macros"] }
 unicode-segmentation = "1.12"
-ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "f213c0b" }
+ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "8b044c4" }
 
 librespot-core = { version = "0.8.0", default-features = false, features = [
   "rustls-tls-native-roots",
@@ -178,6 +179,7 @@ tokio = { version = "1.53", features = [
   "sync",
   "time",
 ] }
+time = { version = "0.3.55", features = ["parsing"] }
 
 [patch.crates-io]
 librespot-audio = { git = "https://github.com/sonorahq/librespot", rev = "d16b7fa014aef21c0786a68f07c685c30df5b646" }

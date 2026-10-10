@@ -3,6 +3,7 @@ use crate::palette::{CoverPalette, of_image};
 use crate::skeleton::Skeleton;
 use crate::theme::ActiveTheme as _;
 use futures::AsyncReadExt as _;
+use futures::channel::oneshot;
 use gpui::prelude::*;
 use gpui::{
     App, Asset, AssetLogger, Context, Div, ElementId, Entity, Global, Hsla, ImageCache,
@@ -14,33 +15,46 @@ use image::{
     codecs::{gif::GifDecoder, webp::WebPDecoder},
     imageops,
 };
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{Duration, Instant};
-use std::{collections::HashMap, sync::Arc};
 
 const FILE_PREFIX: &str = "file://";
 
 const FALLBACK_ICON: &str = "icons/music.svg";
 pub(crate) const ROUNDED: Pixels = px(4.);
-/// What the cache trims back to. It is allowed past this while a scroll pulls covers
-/// in, and only trims once it crosses `CACHE_CEILING`, since a trim asks every window
-/// to redraw and is worth doing in one batch rather than a cover at a time.
-const CACHE_BYTES: usize = 32 * 1024 * 1024;
-/// How far past the budget the cache runs before it trims.
-const CACHE_CEILING: usize = 48 * 1024 * 1024;
+/// What the cache trims back to at the least. The budget grows to one screenful of the
+/// largest window a cover was drawn in, so a HiDPI grid never trims what it shows. The
+/// cache is allowed half as much again past its budget while a scroll pulls covers in,
+/// since a trim asks every window to redraw and is worth doing in one batch.
+const CACHE_BYTES: usize = 16 * 1024 * 1024;
 const CACHE_ITEMS: usize = 256;
-const MAX_SAMPLE_EDGE: u32 = 1024;
+/// The largest edge a cover is decoded at. It sits above a fullscreen cover on a 5K screen at
+/// 2x, so it only ever stops a local original of several thousand pixels from being kept whole.
+const MAX_SAMPLE_EDGE: u32 = 4096;
+/// The step decode edges are rounded up to. A power of two would decode up to four times
+/// the pixels drawn.
+const EDGE_STEP: u32 = 64;
+/// The edge a cover is decoded at when only its palette is wanted.
+const PALETTE_EDGE: u32 = 128;
 const GRACE: Duration = Duration::from_secs(5);
 const KEEP_ITEMS: usize = 96;
 const IDLE: Duration = Duration::from_secs(120);
 const ORPHAN: Duration = Duration::from_secs(20);
 const SWEEP: Duration = Duration::from_secs(30);
-const SOFT_ITEMS: usize = 8;
+/// How many softened covers are kept. Only the cover waiting on its large art is drawn
+/// soft, so two cover the current track and a skip back.
+const SOFT_ITEMS: usize = 2;
 const SOFT_SIGMA: f32 = 1.6;
 const SMALL_BYTES: usize = 64 * 1024;
 const BIG_BYTES: usize = 256 * 1024;
 const MAX_PENDING: usize = 8;
+/// How many covers decode at once. A decode holds the whole source image, so this bounds
+/// the transient memory, and running decodes on their own threads keeps those buffers in a
+/// couple of malloc arenas rather than one per worker thread.
+const DECODERS: usize = 2;
 /// How long a condemned cover is held before it is dropped. One redraw of every window
 /// is all it takes for anything still on screen to ask for its cover again, and that
 /// redraw is already on its way when the batch is condemned.
@@ -51,6 +65,8 @@ const REPRIEVE: Duration = Duration::from_millis(250);
 const TINT_ITEMS: usize = 4096;
 
 type ArtworkKey = (Resource, u32);
+
+type Job = Box<dyn FnOnce() + Send>;
 
 #[derive(Clone, Hash)]
 struct ArtworkSource {
@@ -63,81 +79,132 @@ enum ArtworkAssetLoader {}
 
 type ArtworkResourceLoader = AssetLogger<ArtworkAssetLoader>;
 
-#[derive(Clone)]
-enum ArtworkBytesLoader {}
+/// Reads the encoded bytes of a cover. Nothing holds on to them once the decode has
+/// landed, because the HTTP disk cache makes a second read cheap.
+fn fetch(
+    resource: Resource,
+    cx: &App,
+) -> impl std::future::Future<Output = Result<Vec<u8>, ImageCacheError>> + Send + 'static {
+    let client = cx.http_client();
+    let asset_source = cx.asset_source().clone();
 
-impl Asset for ArtworkBytesLoader {
-    type Source = Resource;
-    type Output = Result<Arc<Vec<u8>>, ImageCacheError>;
-
-    fn load(
-        resource: Self::Source,
-        cx: &mut App,
-    ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
-        let client = cx.http_client();
-        let asset_source = cx.asset_source().clone();
-
-        async move {
-            let bytes = match resource {
-                Resource::Path(path) => std::fs::read(path.as_ref())?,
-                Resource::Uri(uri) => {
-                    let mut response = client.get(uri.as_ref(), ().into(), true).await?;
-                    let mut body = Vec::new();
-                    response.body_mut().read_to_end(&mut body).await?;
-                    if !response.status().is_success() {
-                        let mut body = String::from_utf8_lossy(&body).into_owned();
-                        let first_line = body.lines().next().unwrap_or("").trim_end();
-                        body.truncate(first_line.len());
-                        return Err(ImageCacheError::BadStatus {
-                            uri,
-                            status: response.status(),
-                            body,
-                        });
-                    }
-                    body
+    async move {
+        match resource {
+            Resource::Path(path) => Ok(std::fs::read(path.as_ref())?),
+            Resource::Uri(uri) => {
+                let mut response = client.get(uri.as_ref(), ().into(), true).await?;
+                let mut body = Vec::new();
+                response.body_mut().read_to_end(&mut body).await?;
+                if !response.status().is_success() {
+                    let mut body = String::from_utf8_lossy(&body).into_owned();
+                    let first_line = body.lines().next().unwrap_or("").trim_end();
+                    body.truncate(first_line.len());
+                    return Err(ImageCacheError::BadStatus {
+                        uri,
+                        status: response.status(),
+                        body,
+                    });
                 }
-                Resource::Embedded(path) => {
-                    let Some(data) = asset_source.load(&path)? else {
-                        return Err(ImageCacheError::Asset(
-                            format!("Embedded resource not found: {path}").into(),
-                        ));
-                    };
-                    data.into_owned()
-                }
-            };
-
-            Ok(Arc::new(bytes))
+                Ok(body)
+            }
+            Resource::Embedded(path) => {
+                let Some(data) = asset_source.load(&path)? else {
+                    return Err(ImageCacheError::Asset(
+                        format!("Embedded resource not found: {path}").into(),
+                    ));
+                };
+                Ok(data.into_owned())
+            }
         }
     }
 }
 
+/// A decoded cover with the palette sampled from it. The loader samples it on its own
+/// thread, so a cover landing mid-scroll costs the frame nothing beyond storing it.
+#[derive(Clone)]
+struct Decoded {
+    image: Arc<RenderImage>,
+    palette: CoverPalette,
+}
+
 impl Asset for ArtworkAssetLoader {
     type Source = ArtworkSource;
-    type Output = Result<Arc<RenderImage>, ImageCacheError>;
+    type Output = Result<Decoded, ImageCacheError>;
 
     fn load(
         source: Self::Source,
         cx: &mut App,
     ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
         let svg_renderer = cx.svg_renderer();
-        let (bytes, _) = cx.fetch_asset::<ArtworkBytesLoader>(&source.resource);
+        let bytes = fetch(source.resource, cx);
 
         async move {
             let bytes = bytes.await?;
 
             let Ok(format) = image::guess_format(&bytes) else {
-                return svg_renderer
-                    .render_single_frame(&bytes, 1.0)
-                    .map_err(Into::into);
+                let image = svg_renderer.render_single_frame(&bytes, 1.0)?;
+                let palette = of_image(&image);
+                return Ok(Decoded { image, palette });
             };
-
-            Ok(Arc::new(RenderImage::new(raster_frames(
-                &bytes,
-                format,
-                source.edge,
-            )?)))
+            on_decoder(move || {
+                let image = Arc::new(RenderImage::new(raster_frames(
+                    &bytes,
+                    format,
+                    source.edge,
+                )?));
+                let palette = of_image(&image);
+                Ok(Decoded { image, palette })
+            })
+            .await
+            .unwrap_or_else(|| Err(ImageCacheError::Asset("artwork decoder stopped".into())))
         }
     }
+}
+
+/// Runs `decode` on one of the `DECODERS` artwork threads and resolves with its result, or
+/// with none when the job died with its thread. A job whose caller stopped waiting is skipped.
+fn on_decoder<T: Send + 'static>(
+    decode: impl FnOnce() -> T + Send + 'static,
+) -> impl std::future::Future<Output = Option<T>> + Send + 'static {
+    static QUEUE: OnceLock<mpsc::Sender<Job>> = OnceLock::new();
+
+    let (sender, receiver) = oneshot::channel();
+    let job: Job = Box::new(move || {
+        if !sender.is_canceled() {
+            sender.send(decode()).ok();
+        }
+    });
+    if let Err(mpsc::SendError(job)) = QUEUE.get_or_init(decoders).send(job) {
+        job();
+    }
+
+    async move { receiver.await.ok() }
+}
+
+/// Starts the artwork decode threads and hands back the queue that feeds them. When none
+/// could start, the queue refuses every job and `on_decoder` runs it in place.
+fn decoders() -> mpsc::Sender<Job> {
+    let (sender, receiver) = mpsc::channel::<Job>();
+    let receiver = Arc::new(Mutex::new(receiver));
+    for index in 0..DECODERS {
+        let receiver = receiver.clone();
+        let started = std::thread::Builder::new()
+            .name(format!("artwork-{index}"))
+            .spawn(move || {
+                loop {
+                    let next = receiver.lock().ok().and_then(|queue| queue.recv().ok());
+                    let Some(job) = next else {
+                        return;
+                    };
+                    job();
+                }
+            });
+        if let Err(error) = started {
+            log::warn!("artwork: cannot start a decoder: {error}");
+        }
+    }
+
+    sender
 }
 
 fn raster_frames(
@@ -168,7 +235,7 @@ fn static_frame(mut decoder: impl ImageDecoder, edge: u32) -> Result<Vec<Frame>,
     let orientation = decoder.orientation()?;
     let mut image = DynamicImage::from_decoder(decoder)?;
     image.apply_orientation(orientation);
-    Ok(vec![Frame::new(artwork_frame(image.into_rgba8(), edge))])
+    Ok(vec![Frame::new(artwork_frame(image, edge))])
 }
 
 fn animated_frames<'a>(
@@ -181,7 +248,7 @@ fn animated_frames<'a>(
             Ok(frame) => {
                 let delay = frame.delay();
                 frames.push(Frame::from_parts(
-                    artwork_frame(frame.into_buffer(), edge),
+                    artwork_frame(DynamicImage::ImageRgba8(frame.into_buffer()), edge),
                     0,
                     0,
                     delay,
@@ -198,24 +265,27 @@ fn animated_frames<'a>(
     Ok(frames)
 }
 
-fn artwork_frame(mut image: RgbaImage, edge: u32) -> RgbaImage {
-    if edge == 0 {
-        bgra(&mut image);
-        return image;
-    }
-
-    let (width, height) = image.dimensions();
+/// Crops a decoded cover to its centre square, scales it down to `edge` and swaps it to
+/// BGRA. The scaling happens in the decoder's own pixel format, so an RGB JPEG only grows
+/// a fourth channel at the size it is drawn. An image no bigger than `edge`, or any image
+/// when `edge` is zero, keeps its size.
+fn artwork_frame(image: DynamicImage, edge: u32) -> RgbaImage {
+    let (width, height) = (image.width(), image.height());
     let side = width.min(height);
-    if side <= edge {
-        bgra(&mut image);
-        return image;
-    }
-
-    let square = imageops::crop_imm(&image, (width - side) / 2, (height - side) / 2, side, side);
-    let mut image = match side > edge.saturating_mul(2) {
-        true => imageops::thumbnail(&*square, edge, edge),
-        false => imageops::resize(&*square, edge, edge, imageops::FilterType::Triangle),
+    let image = match edge == 0 || side <= edge {
+        true => image,
+        false => {
+            let square = match width == height {
+                true => image,
+                false => image.crop_imm((width - side) / 2, (height - side) / 2, side, side),
+            };
+            match side > edge.saturating_mul(2) {
+                true => square.thumbnail_exact(edge, edge),
+                false => square.resize_exact(edge, edge, imageops::FilterType::Triangle),
+            }
+        }
     };
+    let mut image = image.into_rgba8();
     bgra(&mut image);
     image
 }
@@ -245,6 +315,8 @@ struct ArtworkCache {
     /// so an eviction never costs a button its colour.
     tints: HashMap<Resource, CoverPalette>,
     bytes: usize,
+    /// The size in bytes of the largest window a cover was drawn in, which sets the budget.
+    screen: usize,
     _sweep: Task<()>,
 }
 
@@ -264,6 +336,7 @@ impl ArtworkCache {
                 soft: HashMap::new(),
                 tints: HashMap::new(),
                 bytes: 0,
+                screen: 0,
                 _sweep: sweeper(cx),
             });
             cx.set_global(Installed(cache));
@@ -274,17 +347,17 @@ impl ArtworkCache {
     fn insert(
         &mut self,
         resource: ArtworkKey,
-        value: Result<Arc<RenderImage>, ImageCacheError>,
+        decoded: Result<Decoded, ImageCacheError>,
         cx: &mut App,
     ) {
-        let bytes = value.as_ref().map_or(0, |image| image_bytes(image));
-        if let Ok(image) = &value
+        if let Ok(decoded) = &decoded
             && !self.tints.contains_key(&resource.0)
         {
-            let palette = of_image(image);
             self.trim_tints();
-            self.tints.insert(resource.0.clone(), palette);
+            self.tints.insert(resource.0.clone(), decoded.palette);
         }
+        let value = decoded.map(|decoded| decoded.image);
+        let bytes = value.as_ref().map_or(0, |image| image_bytes(image));
         self.bytes = self.bytes.saturating_add(bytes);
         self.items.insert(
             resource,
@@ -329,16 +402,23 @@ impl ArtworkCache {
         self.condemned.insert(resource.clone(), cached);
     }
 
+    /// What the cache trims back to: `CACHE_BYTES`, or one screenful of the largest window
+    /// when that is more.
+    fn budget(&self) -> usize {
+        CACHE_BYTES.max(self.screen)
+    }
+
     /// Condemns the least recently drawn covers until the cache is back inside its budget,
     /// then asks every window to redraw. The redraw is what makes the condemned batch safe
     /// to drop: it rebuilds every cached view, so nothing is replayed from last frame's
     /// primitives and everything still on screen asks for its cover again.
     fn trim(&mut self, cx: &mut App) {
-        if self.bytes <= CACHE_CEILING && self.items.len() <= CACHE_ITEMS {
+        let budget = self.budget();
+        if self.bytes <= budget + budget / 2 && self.items.len() <= CACHE_ITEMS {
             return;
         }
         let before = self.condemned.len();
-        while self.items.len() > 1 && (self.bytes > CACHE_BYTES || self.items.len() > CACHE_ITEMS) {
+        while self.items.len() > 1 && (self.bytes > budget || self.items.len() > CACHE_ITEMS) {
             let Some((resource, _)) = self.oldest() else {
                 break;
             };
@@ -365,18 +445,9 @@ impl ArtworkCache {
             if let Ok(image) = cached.value {
                 cx.drop_image(image, None);
             }
-            self.release_bytes_if_unused(&resource.0, cx);
         }
         for image in std::mem::take(&mut self.condemned_soft) {
             cx.drop_image(image, None);
-        }
-    }
-
-    fn release_bytes_if_unused(&self, resource: &Resource, cx: &mut App) {
-        let is_used = self.items.keys().any(|key| &key.0 == resource)
-            || self.pending.keys().any(|key| &key.0 == resource);
-        if !is_used {
-            cx.remove_asset::<ArtworkBytesLoader>(resource);
         }
     }
 
@@ -431,7 +502,6 @@ impl ArtworkCache {
                 resource: resource.0.clone(),
                 edge: resource.1,
             });
-            self.release_bytes_if_unused(&resource.0, cx);
         }
 
         let mut ages: Vec<(ArtworkKey, Instant, usize)> = self
@@ -446,6 +516,7 @@ impl ArtworkCache {
             .filter(|(_, used, _)| used.elapsed() > IDLE)
             .count();
         let protected = ages.len().saturating_sub(KEEP_ITEMS);
+        let budget = self.budget();
         let mut bytes = self.bytes;
         let mut stale = Vec::new();
 
@@ -453,7 +524,7 @@ impl ArtworkCache {
             if index >= protected || used.elapsed() <= GRACE {
                 break;
             }
-            if bytes <= CACHE_BYTES && used.elapsed() <= IDLE {
+            if bytes <= budget && used.elapsed() <= IDLE {
                 break;
             }
             stale.push(resource.clone());
@@ -562,6 +633,11 @@ impl ArtworkCache {
             self.items.insert(key, cached);
             return Some(value);
         }
+        let viewport = window.viewport_size();
+        let scale = window.scale_factor();
+        let screen =
+            (viewport.width.as_f32() * viewport.height.as_f32() * scale * scale) as usize * 4;
+        self.screen = self.screen.max(screen);
 
         if !self.pending.contains_key(&key) && self.pending.len() >= MAX_PENDING {
             self.reap_pending(window, cx);
@@ -579,9 +655,25 @@ impl ArtworkCache {
             return None;
         };
 
+        let image = value.clone().map(|decoded| decoded.image);
         self.pending.remove(&key);
-        self.insert(key, value.clone(), cx);
-        Some(value)
+        self.insert(key, value, cx);
+        Some(image)
+    }
+
+    /// The largest decode the cache holds of the same cover at no less than half of `edge`, to
+    /// draw while the one at `edge` loads. A resize that moves a cover to the next edge step
+    /// keeps it on screen instead of flashing the skeleton.
+    fn stand_in(&mut self, resource: &Resource, edge: u32) -> Option<Arc<RenderImage>> {
+        let (_, cached) = self
+            .items
+            .iter_mut()
+            .filter(|((held, size), cached)| {
+                held == resource && *size >= edge / 2 && cached.value.is_ok()
+            })
+            .max_by_key(|((_, size), _)| *size)?;
+        cached.used = Instant::now();
+        cached.value.clone().ok()
     }
 }
 
@@ -610,12 +702,11 @@ fn blurred(image: &RenderImage) -> Option<Arc<RenderImage>> {
     Some(Arc::new(RenderImage::new(frames)))
 }
 
+/// The edge a cover drawn at `size` is decoded at: its physical size rounded up to the next
+/// `EDGE_STEP`, so nearby sizes share one decode, and never past `MAX_SAMPLE_EDGE`.
 fn sample_edge(size: Pixels, window: &Window) -> u32 {
     let physical = ((size / px(1.)) * window.scale_factor()).ceil().max(1.) as u32;
-    physical
-        .checked_next_power_of_two()
-        .filter(|edge| *edge <= MAX_SAMPLE_EDGE)
-        .unwrap_or(0)
+    physical.next_multiple_of(EDGE_STEP).min(MAX_SAMPLE_EDGE)
 }
 
 pub(crate) fn resource(url: impl Into<SharedString>) -> Resource {
@@ -634,6 +725,28 @@ pub fn cover_palette(url: &str, cx: &App) -> Option<CoverPalette> {
     let resource = resource(url.to_owned());
 
     installed.0.read(cx).tints.get(&resource).copied()
+}
+
+/// The palette of the cover at `url` without keeping its pixels. A cover the cache has
+/// drawn answers from its stored palette, and any other is decoded at `PALETTE_EDGE`,
+/// which is plenty for a hue count and costs a fraction of the full-size frame.
+pub(crate) fn sample_palette(url: SharedString, cx: &mut App) -> Task<CoverPalette> {
+    if let Some(palette) = cover_palette(&url, cx) {
+        return Task::ready(palette);
+    }
+    let load = ArtworkAssetLoader::load(
+        ArtworkSource {
+            resource: resource(url),
+            edge: PALETTE_EDGE,
+        },
+        cx,
+    );
+
+    cx.background_spawn(async move {
+        load.await
+            .map(|decoded| decoded.palette)
+            .unwrap_or_default()
+    })
 }
 
 pub fn artwork_usage(cx: &App) -> Option<(usize, usize)> {
@@ -800,13 +913,21 @@ impl RenderOnce for Artwork {
                         {
                             return Some(Ok(prepared));
                         }
-                        let loaded = cache
-                            .update(cx, |cache, cx| cache.load_at(&resource, edge, window, cx))?
-                            .map(|image| {
-                                cache.update(cx, |cache, cx| {
-                                    cache.prepare(&resource, edge, soft, image, cx)
-                                })
-                            });
+                        let Some(loaded) = cache
+                            .update(cx, |cache, cx| cache.load_at(&resource, edge, window, cx))
+                        else {
+                            return match soft {
+                                true => None,
+                                false => cache
+                                    .update(cx, |cache, _| cache.stand_in(&resource, edge))
+                                    .map(Ok),
+                            };
+                        };
+                        let loaded = loaded.map(|image| {
+                            cache.update(cx, |cache, cx| {
+                                cache.prepare(&resource, edge, soft, image, cx)
+                            })
+                        });
                         Some(loaded)
                     }
                 }));
@@ -865,7 +986,7 @@ mod tests {
     #[test]
     fn artwork_loader_targets_the_requested_edge() {
         let image = RgbaImage::from_pixel(240, 120, Rgba([20, 40, 60, 255]));
-        let frame = artwork_frame(image, 64);
+        let frame = artwork_frame(DynamicImage::ImageRgba8(image), 64);
 
         assert_eq!(frame.width(), 64);
         assert_eq!(frame.height(), 64);

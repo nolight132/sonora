@@ -10,12 +10,14 @@ use lofty::id3::v2::{Frame, SyncTextContentType, SynchronizedTextFrame, Timestam
 use lofty::mpeg::MpegFile;
 use lofty::prelude::{Accessor, ItemKey};
 use lofty::probe::Probe;
-use lofty::tag::Tag;
 use lofty::tag::items::Timestamp;
+use lofty::tag::{ItemValue, Tag, TagItem};
 
 use crate::engine::Loudness;
 use crate::lyrics::lrc;
 use crate::{Lyrics, LyricsLine, LyricsWord, TrackTags, Voice};
+
+use super::wire;
 
 const BREAKS: [char; 2] = ['\n', '\r'];
 
@@ -30,7 +32,7 @@ pub fn read(path: &Path) -> Result<TrackTags> {
 
     Ok(TrackTags {
         title: text(tag.title()),
-        artist: text(tag.artist()),
+        artists: wire::artists(tag),
         album: text(tag.album()),
         album_artist: held(tag, ItemKey::AlbumArtist),
         track_number: number(tag.track()),
@@ -197,9 +199,12 @@ fn millis(value: u32) -> Duration {
 pub fn write(path: &Path, tags: &TrackTags) -> Result<()> {
     update(path, |tag| {
         set(tag, ItemKey::TrackTitle, &tags.title);
-        set(tag, ItemKey::TrackArtist, &tags.artist);
+        set_artists(tag, &tags.artists);
         set(tag, ItemKey::AlbumTitle, &tags.album);
-        set(tag, ItemKey::AlbumArtist, &tags.album_artist);
+        if held(tag, ItemKey::AlbumArtist) != tags.album_artist.trim() {
+            tag.remove_key(ItemKey::AlbumArtists);
+            set(tag, ItemKey::AlbumArtist, &tags.album_artist);
+        }
         set(tag, ItemKey::Genre, &tags.genre);
         set(tag, ItemKey::Composer, &tags.composer);
         set(tag, ItemKey::Publisher, &tags.publisher);
@@ -362,6 +367,28 @@ fn set(tag: &mut Tag, key: ItemKey, value: &str) {
         false => {
             tag.insert_text(key, value.to_owned());
         }
+    }
+}
+
+/// Writes one value per artist under both artist keys. An unchanged list leaves the original
+/// credit untouched when editing another field.
+fn set_artists(tag: &mut Tag, artists: &[String]) {
+    let artists: Vec<String> = artists
+        .iter()
+        .map(|name| name.trim().to_owned())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if wire::artists(tag) == artists {
+        return;
+    }
+    tag.remove_key(ItemKey::TrackArtists);
+    tag.remove_key(ItemKey::TrackArtist);
+    for name in artists {
+        tag.push(TagItem::new(
+            ItemKey::TrackArtist,
+            ItemValue::Text(name.clone()),
+        ));
+        tag.push(TagItem::new(ItemKey::TrackArtists, ItemValue::Text(name)));
     }
 }
 

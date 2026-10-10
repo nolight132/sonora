@@ -1896,7 +1896,14 @@ impl Library {
         cx.notify();
     }
 
+    /// Forgets a playlist on the shelf and in the pin snapshot, notifying listeners of its removal.
     fn forget_playlist(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(targets) = self.pin_targets.as_mut() {
+            targets.retain(|target| {
+                target.kind != music::PinTargetKind::Playlist
+                    || target.uri.rsplit_once(':').map(|(_, id)| id) != Some(id)
+            });
+        }
         cx.emit(LibraryEvent::PlaylistGone(id.to_owned()));
         self.drop_playlist(id, cx);
     }

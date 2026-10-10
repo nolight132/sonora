@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, Div, DragMoveEvent, ElementId, Empty, Hsla, MouseButton, MouseDownEvent, Pixels,
-    Render, SharedString, Stateful, StyleRefinement, Window, canvas, div, px,
+    Render, SharedString, Stateful, StyleRefinement, Window, canvas, div, px, relative,
 };
 
 use crate::Sort;
@@ -307,10 +307,6 @@ impl RenderOnce for RangeScrubber {
             }
         };
 
-        let width = bounds.get().size.width;
-        let travel = (width - pin).max(Pixels::ZERO);
-        let measured = width > Pixels::ZERO;
-
         let mut scrubber = base
             .flex()
             .items_center()
@@ -329,19 +325,25 @@ impl RenderOnce for RangeScrubber {
                     .h(line)
                     .rounded_full()
                     .bg(empty)
-                    .when(measured, |this| {
-                        this.child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .h_full()
-                                .left(pin / 2. + travel * value.0)
-                                .w(travel * (value.1 - value.0).max(0.))
-                                .bg(filled),
-                        )
-                        .child(handle(travel * value.0, line, pin, thumb))
-                        .child(handle(travel * value.1, line, pin, thumb))
-                    })
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .left(pin / 2.)
+                            .right(pin / 2.)
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .left(relative(value.0))
+                                    .right(relative(1. - value.1.max(value.0)))
+                                    .bg(filled),
+                            )
+                            .child(handle(value.0, line, pin, thumb))
+                            .child(handle(value.1, line, pin, thumb)),
+                    )
                     .child(
                         canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
                             .absolute()
@@ -353,11 +355,13 @@ impl RenderOnce for RangeScrubber {
     }
 }
 
-fn handle(left: Pixels, line: Pixels, pin: Pixels, thumb: Hsla) -> impl IntoElement {
+/// A range handle centred on `share` of the rail it sits in.
+fn handle(share: f32, line: Pixels, pin: Pixels, thumb: Hsla) -> impl IntoElement {
     div()
         .absolute()
         .top((line - pin) / 2.)
-        .left(left)
+        .left(relative(share))
+        .ml(Pixels::ZERO - pin / 2.)
         .size(pin)
         .rounded_full()
         .bg(thumb)

@@ -1,5 +1,5 @@
 use gpui::prelude::*;
-use gpui::{App, Context, Entity, FocusHandle, Global, Render, SharedString, Window, div};
+use gpui::{App, Context, Div, Entity, FocusHandle, Global, Render, SharedString, Window, div};
 use i18n::t;
 use music::{Track, TrackTags};
 use state::{Io, Sonora, TagState, Tags};
@@ -23,33 +23,39 @@ impl Sheet {
         }
     }
 
-    fn fields(self) -> &'static [&'static [Field]] {
+    fn rows(self) -> &'static [Row] {
         match self {
             Sheet::Song => &[
-                &[Field::Title],
-                &[Field::Artist],
-                &[Field::TrackNumber, Field::TrackTotal],
-                &[Field::DiscNumber, Field::DiscTotal],
+                Row::Fields(&[Field::Title]),
+                Row::Artists,
+                Row::Fields(&[Field::TrackNumber, Field::TrackTotal]),
+                Row::Fields(&[Field::DiscNumber, Field::DiscTotal]),
             ],
             Sheet::Album => &[
-                &[Field::Album],
-                &[Field::AlbumArtist],
-                &[Field::Year, Field::Genre],
+                Row::Fields(&[Field::Album]),
+                Row::Fields(&[Field::AlbumArtist]),
+                Row::Fields(&[Field::Year, Field::Genre]),
             ],
             Sheet::Details => &[
-                &[Field::Composer],
-                &[Field::Publisher],
-                &[Field::Isrc],
-                &[Field::Comment],
+                Row::Fields(&[Field::Composer]),
+                Row::Fields(&[Field::Publisher]),
+                Row::Fields(&[Field::Isrc]),
+                Row::Fields(&[Field::Comment]),
             ],
         }
     }
 }
 
+/// One line of a sheet: single-value fields side by side, or the list of the track's artists.
+#[derive(Clone, Copy)]
+enum Row {
+    Fields(&'static [Field]),
+    Artists,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Field {
     Title,
-    Artist,
     TrackNumber,
     TrackTotal,
     DiscNumber,
@@ -65,9 +71,8 @@ enum Field {
 }
 
 impl Field {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 13] = [
         Self::Title,
-        Self::Artist,
         Self::TrackNumber,
         Self::TrackTotal,
         Self::DiscNumber,
@@ -92,7 +97,6 @@ impl Field {
     fn key(self) -> &'static str {
         match self {
             Field::Title => "tags-title",
-            Field::Artist => "tags-artist",
             Field::TrackNumber => "tags-track",
             Field::TrackTotal => "tags-track-total",
             Field::DiscNumber => "tags-disc",
@@ -111,7 +115,6 @@ impl Field {
     fn read(self, tags: &TrackTags) -> &str {
         match self {
             Field::Title => &tags.title,
-            Field::Artist => &tags.artist,
             Field::TrackNumber => &tags.track_number,
             Field::TrackTotal => &tags.track_total,
             Field::DiscNumber => &tags.disc_number,
@@ -130,7 +133,6 @@ impl Field {
     fn write(self, tags: &mut TrackTags, value: String) {
         let held = match self {
             Field::Title => &mut tags.title,
-            Field::Artist => &mut tags.artist,
             Field::TrackNumber => &mut tags.track_number,
             Field::TrackTotal => &mut tags.track_total,
             Field::DiscNumber => &mut tags.disc_number,
@@ -148,9 +150,13 @@ impl Field {
     }
 }
 
+/// The metadata editor for one local track. Single-value fields each keep one input, and the
+/// artists keep one input per name so a track can credit several.
 pub(crate) struct TagEditor {
     tags: Entity<Tags>,
     inputs: Vec<Entity<Input>>,
+    /// One input per artist, never empty, so a track with no artist still shows a field.
+    artists: Vec<Entity<Input>>,
     sheet: Sheet,
     filled: bool,
     focus: FocusHandle,
@@ -178,6 +184,7 @@ impl TagEditor {
                 Self {
                     tags,
                     inputs,
+                    artists: vec![artist_input(cx)],
                     sheet: Sheet::Song,
                     filled: false,
                     focus: cx.focus_handle(),
@@ -216,6 +223,18 @@ impl TagEditor {
             let value = field.read(tags).to_owned();
             self.inputs[field.slot()].update(cx, |input, cx| input.set_text(value, cx));
         }
+        let names = match tags.artists.is_empty() {
+            true => vec![String::new()],
+            false => tags.artists.clone(),
+        };
+        self.artists = names
+            .into_iter()
+            .map(|name| {
+                let input = artist_input(cx);
+                input.update(cx, |input, cx| input.set_text(name, cx));
+                input
+            })
+            .collect();
         self.filled = true;
     }
 
@@ -228,8 +247,30 @@ impl TagEditor {
             let value = self.inputs[field.slot()].read(cx).text().trim().to_owned();
             field.write(&mut edited, value);
         }
+        edited.artists = self
+            .artists
+            .iter()
+            .map(|input| input.read(cx).text().trim().to_owned())
+            .filter(|name| !name.is_empty())
+            .collect();
         self.tags.update(cx, |tags, cx| tags.save(edited, cx));
         cx.notify();
+    }
+
+    /// Adds an empty artist field below the others and puts the caret in it.
+    fn add_artist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let input = artist_input(cx);
+        input.update(cx, |input, cx| input.focus(window, cx));
+        self.artists.push(input);
+        cx.notify();
+    }
+
+    /// Drops the artist field at `slot`, keeping the last one so the list never goes empty.
+    fn remove_artist(&mut self, slot: usize, cx: &mut Context<Self>) {
+        if self.artists.len() > 1 && slot < self.artists.len() {
+            self.artists.remove(slot);
+            cx.notify();
+        }
     }
 
     fn sheets(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -252,28 +293,77 @@ impl TagEditor {
     }
 
     fn rows(&self, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .children(self.sheet.rows().iter().map(|row| {
+                match row {
+                    Row::Fields(fields) => div()
+                        .flex()
+                        .gap_3()
+                        .children(fields.iter().map(|field| {
+                            labelled(field.key(), cx)
+                                .flex_1()
+                                .min_w_0()
+                                .child(self.inputs[field.slot()].clone())
+                        }))
+                        .into_any_element(),
+                    Row::Artists => self.artist_rows(cx).into_any_element(),
+                }
+            }))
+    }
+
+    /// The artist fields, one per name, with a button to add another beside the label and one to
+    /// remove each field while there is more than one.
+    fn artist_rows(&self, cx: &Context<Self>) -> impl IntoElement {
+        let removable = self.artists.len() > 1;
         let theme = *cx.theme();
 
         div()
             .flex()
             .flex_col()
-            .gap_3()
-            .children(self.sheet.fields().iter().map(|row| {
-                div().flex().gap_3().children(row.iter().map(|field| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_size(theme.text(Text::Small))
-                                .text_color(theme.muted_foreground)
-                                .child(i18n::lookup(field.key(), None)),
+            .gap_1()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(theme.text(Text::Small))
+                            .text_color(theme.muted_foreground)
+                            .child(t!("tags-artists")),
+                    )
+                    .child(
+                        Button::new("tag-artist-add")
+                            .icon("icons/plus.svg")
+                            .tooltip("tags-add-artist")
+                            .small()
+                            .ghost()
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.add_artist(window, cx)),
+                            ),
+                    ),
+            )
+            .children(self.artists.iter().enumerate().map(|(slot, input)| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(div().flex_1().min_w_0().child(input.clone()))
+                    .when(removable, |row| {
+                        row.child(
+                            Button::new(("tag-artist-remove", slot))
+                                .icon("icons/x.svg")
+                                .tooltip("tags-remove-artist")
+                                .small()
+                                .ghost()
+                                .on_click(
+                                    cx.listener(move |this, _, _, cx| this.remove_artist(slot, cx)),
+                                ),
                         )
-                        .child(self.inputs[field.slot()].clone())
-                }))
+                    })
             }))
     }
 }
@@ -351,4 +441,19 @@ impl Render for TagEditor {
             )
             .into_any_element()
     }
+}
+
+fn artist_input(cx: &mut Context<TagEditor>) -> Entity<Input> {
+    cx.new(|cx| Input::new("tags-artist", cx))
+}
+
+/// A field's label above whatever the caller adds below it.
+fn labelled(key: &'static str, cx: &App) -> Div {
+    let theme = cx.theme();
+    div().flex().flex_col().gap_1().child(
+        div()
+            .text_size(theme.text(Text::Small))
+            .text_color(theme.muted_foreground)
+            .child(i18n::lookup(key, None)),
+    )
 }

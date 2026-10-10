@@ -97,7 +97,7 @@ impl HttpClient for Client {
                     _ => None,
                 };
                 if let Some(bytes) = cached {
-                    return Ok::<_, anyhow::Error>((reqwest::StatusCode::OK, bytes));
+                    return Ok::<_, anyhow::Error>((reqwest::StatusCode::OK, bytes.into()));
                 }
 
                 let mut outgoing = client.request(parts.method, &uri).headers(parts.headers);
@@ -123,7 +123,7 @@ impl HttpClient for Client {
                                 || value.eq_ignore_ascii_case("private")
                         })
                     });
-                let bytes = incoming.bytes().await?.to_vec();
+                let bytes = incoming.bytes().await?;
                 if cacheable
                     && status == reqwest::StatusCode::OK
                     && is_image

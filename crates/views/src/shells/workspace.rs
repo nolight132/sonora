@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{AnyView, App, Context, Entity, FocusHandle, Render, StyleRefinement};
@@ -6,8 +6,8 @@ use gpui::{Window, div};
 use input::WORKSPACE_CONTEXT;
 use state::{Playback, Queue, SideTab};
 use ui::{
-    Activate, ActiveTheme as _, Deselect, Remove, SelectNext, SelectPrevious, ease_out_expo,
-    entering, entrance_span, shown_listing, veiled,
+    Activate, ActiveTheme as _, Deselect, Entrance, Remove, SelectNext, SelectPrevious, entering,
+    shown_listing, veiled,
 };
 
 use crate::chrome::{
@@ -19,27 +19,6 @@ use crate::shared::playlist_editor::PlaylistEditor;
 use crate::shared::tag_editor::TagEditor;
 use crate::shared::widevine::WidevinePrompt;
 use crate::shells::Shell;
-
-#[derive(Clone, Copy)]
-struct ContentTransition {
-    started: Instant,
-    span: Duration,
-}
-
-impl ContentTransition {
-    fn hidden(self) -> f32 {
-        if self.span.is_zero() {
-            return 0.;
-        }
-        let elapsed = self.started.elapsed().as_secs_f32();
-        let progress = (elapsed / self.span.as_secs_f32()).clamp(0., 1.);
-        1. - ease_out_expo(progress)
-    }
-
-    fn running(self) -> bool {
-        self.started.elapsed() < self.span
-    }
-}
 
 pub(crate) struct Workspace {
     sidebar: Entity<SidebarLeft>,
@@ -56,7 +35,7 @@ pub(crate) struct Workspace {
     /// A screen's own header, floated over the top of the page and outside its transition.
     /// The page pads itself to start beneath it.
     header: Option<AnyView>,
-    transition: Option<ContentTransition>,
+    transition: Option<Entrance>,
     focus: FocusHandle,
 }
 
@@ -130,13 +109,10 @@ impl Workspace {
             return Duration::ZERO;
         }
 
-        let span = entrance_span();
-        self.transition = Some(ContentTransition {
-            started: Instant::now(),
-            span,
-        });
+        let entrance = Entrance::start();
+        self.transition = Some(entrance);
         cx.notify();
-        span
+        entrance.span()
     }
 
     pub fn finish_transition(&mut self, cx: &mut Context<Self>) {

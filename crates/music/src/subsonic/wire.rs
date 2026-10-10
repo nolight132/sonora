@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use opensubsonic::data::{AlbumId3, ArtistId3, Child, RecordLabel};
 
-use crate::{Album, ArtistRef, Playlist, ReleaseType, SavedArtist, Track, UserProfile};
+use crate::{
+    Album, ArtistRef, Playlist, ReleaseType, SavedArtist, Track, UserProfile, iso_8601_to_epoch,
+};
 
 pub fn track(song: Child, cover: Option<String>) -> Track {
     let (artists, artist_refs) = artists_of(
@@ -21,7 +23,7 @@ pub fn track(song: Child, cover: Option<String>) -> Track {
         album_id: song.album_id.filter(|id| !id.is_empty()),
         cover,
         duration: Duration::from_secs(song.duration.unwrap_or(0).max(0) as u64),
-        added_at: None,
+        added_at: iso_8601_to_epoch(song.created.as_deref()),
         added_by: None,
         playcount: song.play_count.map(|count| count as u64),
         popularity: 0,
@@ -59,7 +61,7 @@ pub fn album(source: AlbumId3, cover: Option<String>, cover_large: Option<String
         },
         label,
         copyrights: Vec::new(),
-        added_at: None,
+        added_at: iso_8601_to_epoch(source.created.as_deref()),
     }
 }
 

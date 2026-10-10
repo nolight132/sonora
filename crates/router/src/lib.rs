@@ -256,6 +256,11 @@ pub fn navigate(destination: Destination, cx: &mut App) {
     trail(cx).update(cx, |navigation, cx| navigation.go(destination, cx));
 }
 
+/// Replaces the current destination so Back and Forward do not revisit a page that disappeared.
+pub fn replace(destination: Destination, cx: &mut App) {
+    trail(cx).update(cx, |navigation, cx| navigation.replace(destination, cx));
+}
+
 pub fn back(cx: &mut App) {
     trail(cx).update(cx, |navigation, cx| navigation.back(cx));
 }

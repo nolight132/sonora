@@ -30,12 +30,16 @@ pub mod trouble;
 pub mod youtube;
 
 use std::collections::HashMap;
+use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use time::format_description::well_known::Iso8601;
+use time::parsing::Parsed;
+use time::{Month, OffsetDateTime};
 
 pub use equalizer::Equalizer;
 pub use models::{
@@ -689,5 +693,75 @@ pub trait MusicProvider: Send + Sync {
     /// sign-in, and the app offers no `Secret` option for it.
     fn web_sign_in(&self) -> Option<WebSignIn> {
         None
+    }
+}
+
+/// Leniently convert an ISO8601 timestamp to unix epoch seconds. Accepts only
+/// the date portion, date and time portions, or full date and time with offset.
+pub fn iso_8601_to_epoch(value: Option<&str>) -> Option<i64> {
+    let time_str = value?.as_bytes();
+    let defaults = Parsed::new()
+        .with_month(Month::January)
+        .and_then(|d| d.with_day(NonZero::<u8>::new(1)?))
+        .and_then(|d| d.with_hour_24(0))
+        .and_then(|d| d.with_minute(0))
+        .and_then(|d| d.with_second(0))
+        .and_then(|d| d.with_subsecond(0))
+        .and_then(|d| d.with_offset_hour(0))
+        .and_then(|d| d.with_offset_minute_signed(0))
+        .and_then(|d| d.with_offset_second_signed(0))?;
+    let timestamp = OffsetDateTime::parse_with_defaults(time_str, &Iso8601::PARSING, defaults)
+        .ok()?
+        .unix_timestamp();
+    Some(timestamp)
+}
+
+#[cfg(test)]
+mod tests {
+    use time::macros::datetime;
+
+    use super::*;
+
+    #[test]
+    fn iso_8601_to_epoch_parses_correctly() {
+        // None and malformed input
+        assert_eq!(iso_8601_to_epoch(None), None);
+        assert_eq!(iso_8601_to_epoch(Some("")), None);
+        assert_eq!(iso_8601_to_epoch(Some("malformed")), None);
+
+        // Basic epoch format
+        assert_eq!(iso_8601_to_epoch(Some("1970-01-01")), Some(0));
+        assert_eq!(iso_8601_to_epoch(Some("1970-01-01T00:00:00")), Some(0));
+        assert_eq!(iso_8601_to_epoch(Some("1970-01-01T00:00:00Z")), Some(0));
+        assert_eq!(
+            iso_8601_to_epoch(Some("1970-01-01T00:00:00+00:00")),
+            Some(0)
+        );
+
+        // A specific date with/without time/offset
+        assert_eq!(
+            iso_8601_to_epoch(Some("2021-03-20")),
+            Some(datetime!(2021-03-20 00:00:00 UTC).unix_timestamp())
+        );
+        assert_eq!(
+            iso_8601_to_epoch(Some("2021-03-20T13:45:07")),
+            Some(datetime!(2021-03-20 13:45:07 UTC).unix_timestamp())
+        );
+        assert_eq!(
+            iso_8601_to_epoch(Some("2021-03-20T13:45:07.123456")),
+            Some(datetime!(2021-03-20 13:45:07 UTC).unix_timestamp())
+        );
+        assert_eq!(
+            iso_8601_to_epoch(Some("2021-03-20T13:45:07Z")),
+            Some(datetime!(2021-03-20 13:45:07 UTC).unix_timestamp())
+        );
+        assert_eq!(
+            iso_8601_to_epoch(Some("2021-03-20T13:45:07+00:00")),
+            Some(datetime!(2021-03-20 13:45:07 UTC).unix_timestamp())
+        );
+        assert_eq!(
+            iso_8601_to_epoch(Some("2021-03-20T10:45:07-03:00")),
+            Some(datetime!(2021-03-20 13:45:07 UTC).unix_timestamp())
+        );
     }
 }

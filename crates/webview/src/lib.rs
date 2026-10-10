@@ -105,10 +105,22 @@ pub struct Page {
     retried: bool,
 }
 
+/// The argument that starts this executable as a throwaway check for webkit2gtk on Linux.
+pub const PROBE: &str = "--webview-probe";
+
 /// Whether this platform can open a browser window at all. On Linux the answer is only known once
-/// webkit2gtk has been looked for, so ask it where a pause would not be felt.
+/// a child process has looked for webkit2gtk, so ask it where a pause would not be felt.
 pub fn supported() -> bool {
     platform::supported()
+}
+
+/// The exit code for a [`PROBE`] launch, zero when webkit2gtk loads, or none when this process was
+/// started for anything else. Check it first thing in `main`.
+pub fn probed() -> Option<i32> {
+    #[cfg(target_os = "linux")]
+    return platform::probed().map(|loads| i32::from(!loads));
+    #[cfg(not(target_os = "linux"))]
+    None
 }
 
 impl Page {

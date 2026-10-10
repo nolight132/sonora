@@ -493,12 +493,30 @@ impl AppleClient {
         listings.retain(|_, listing| listing.at.elapsed() < LISTING_TTL);
         listings
             .entry(key)
-            .or_insert_with(|| Listing {
-                at: Instant::now(),
-                rows: Arc::default(),
+            .or_insert_with(|| {
+                self.expire();
+                Listing {
+                    at: Instant::now(),
+                    rows: Arc::default(),
+                }
             })
             .rows
             .clone()
+    }
+
+    /// Drops the listings that have outlived [`LISTING_TTL`] once it has passed, so the rows of
+    /// a startup load leave memory without waiting for the next listing to be asked for.
+    fn expire(&self) {
+        let listings = Arc::downgrade(&self.listings);
+        tokio::spawn(async move {
+            tokio::time::sleep(LISTING_TTL).await;
+            let Some(listings) = listings.upgrade() else {
+                return;
+            };
+            if let Ok(mut listings) = listings.lock() {
+                listings.retain(|_, listing| listing.at.elapsed() < LISTING_TTL);
+            }
+        });
     }
 
     /// A listing handed out a page at a time, read through `read`, on a channel that stays
@@ -577,19 +595,21 @@ impl AppleClient {
         asked.push(("limit", &limit));
         let started = Instant::now();
 
-        let first = self.get(path, &asked).await?;
-        let mut collected: Vec<Value> = rows(&first).to_vec();
-        let got = collected.len();
-        let mut spent = 1usize;
+        let mut first = self.get(path, &asked).await?;
         let total = first
             .pointer("/meta/total")
             .and_then(Value::as_u64)
             .and_then(|total| usize::try_from(total).ok());
+        let more = first.get("next").is_some();
+        let mut collected = take_rows(&mut first);
+        drop(first);
+        let got = collected.len();
+        let mut spent = 1usize;
         if let Some((sink, read)) = sink {
             let items = collected.iter().filter_map(read).collect();
             sink.send(Ok(Page { total, items })).await.ok();
         }
-        if got == page && first.get("next").is_some() {
+        if got == page && more {
             let left = total.map_or(PAGES - 1, |total| {
                 total.saturating_sub(got).div_ceil(page).min(PAGES - 1)
             });
@@ -604,15 +624,17 @@ impl AppleClient {
                     }
                 })
                 .buffered(FAN);
-            while let Some(answered) = answers.try_next().await? {
+            while let Some(mut answered) = answers.try_next().await? {
                 spent += 1;
-                let rows = rows(&answered);
-                let last = rows.len() < page || answered.get("next").is_none();
+                let more = answered.get("next").is_some();
+                let rows = take_rows(&mut answered);
+                drop(answered);
+                let last = rows.len() < page || !more;
                 if let Some((sink, read)) = sink {
                     let items = rows.iter().filter_map(read).collect();
                     sink.send(Ok(Page { total, items })).await.ok();
                 }
-                collected.extend_from_slice(rows);
+                collected.extend(rows);
                 if last {
                     break;
                 }
@@ -1511,6 +1533,8 @@ impl MusicApi for AppleClient {
 
     /// Every track of a playlist, paged the same way as a library listing rather than one
     /// `next` link at a time: a long playlist is hundreds of rows, and each page is a wait.
+    /// The rows skip the listing memo, since startup reads every playlist at once and only the
+    /// tracks read from them are used.
     async fn playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
         let path = match Self::is_mine(playlist_id) {
             true => format!(
@@ -1523,16 +1547,17 @@ impl MusicApi for AppleClient {
             )),
         };
         let walked = self
-            .walk(
+            .pages::<Track>(
                 &path,
                 PAGE,
                 &[
                     ("include[songs]", "artists,albums"),
                     ("include[library-songs]", "catalog"),
                 ],
-                wire::playlist_track,
+                None,
             )
-            .await;
+            .await
+            .map(|rows| rows.iter().filter_map(wire::playlist_track).collect());
         match walked {
             Err(error) if error.is::<Missing>() => Ok(Vec::new()),
             walked => walked,
@@ -1868,6 +1893,14 @@ fn rows(answered: &Value) -> &[Value] {
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or_default()
+}
+
+/// Moves the `data` array out of an answer, so its rows are kept without a copy.
+fn take_rows(answered: &mut Value) -> Vec<Value> {
+    match answered.get_mut("data").map(Value::take) {
+        Some(Value::Array(rows)) => rows,
+        _ => Vec::new(),
+    }
 }
 
 /// The recently played part of Quick picks: the albums and playlists recent plays came from in

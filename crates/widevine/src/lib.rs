@@ -10,7 +10,9 @@
 //!   so no release carries the module; every copy is fetched on the machine that uses it.
 //! - [`pssh`] builds the init data a CDM wants from a key id.
 //! - [`Cdm`] drives the system module: a license challenge, the license back, and samples
-//!   decrypted. The device key stays sealed inside it and nothing is read out.
+//!   decrypted. The device key stays sealed inside it and nothing is read out. The module runs
+//!   in a host process of its own, the app's executable started again through [`host`], so its
+//!   memory is only spent while a protected track is loaded.
 //! - [`cenc`] reads just enough ISO-BMFF to say where every encrypted sample is, what its IV is
 //!   and where each fragment starts on the media timeline.
 //! - [`cenc::unlock`] relabels the sample entry so an ordinary decoder will open the cleartext.
@@ -27,8 +29,14 @@ mod cdm;
 pub mod cenc;
 mod fetch;
 #[cfg(feature = "cdm")]
+mod host;
+#[cfg(feature = "cdm")]
 mod shim;
 mod source;
+#[cfg(feature = "cdm")]
+mod wire;
+
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
@@ -42,6 +50,10 @@ pub const CDM_PATH: &str = "SONORA_WIDEVINE_CDM";
 /// The environment variable that, when set to anything, skips the browser search. For trying
 /// the download on a machine that has a browser's copy.
 pub const SKIP_BROWSERS: &str = "SONORA_WIDEVINE_SKIP_BROWSERS";
+
+/// The argument that starts the Sonora executable as the CDM host rather than the app. The
+/// module path follows it.
+pub const HOST_ARG: &str = "--widevine-host";
 
 /// The Widevine DRM system id, as it appears in a `pssh` box and in an HLS `KEYFORMAT`.
 pub const SYSTEM_ID: [u8; 16] = [
@@ -106,6 +118,32 @@ static LICENSING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// lets one track play while the next is licensed.
 pub async fn licensing() -> tokio::sync::MutexGuard<'static, ()> {
     LICENSING.lock().await
+}
+
+/// The module this process was started to host, when it is the CDM host rather than the app.
+/// The executable asks this before anything else and hands the path to [`host`].
+pub fn hosted() -> Option<PathBuf> {
+    let mut args = std::env::args_os().skip(1);
+    match args.next()? == HOST_ARG {
+        true => args.next().map(PathBuf::from),
+        false => None,
+    }
+}
+
+/// Runs this process as the CDM host for `module` until the app closes its stdin. The app
+/// starts it from [`Cdm::open`], and nothing else should.
+#[cfg(feature = "cdm")]
+pub fn host(module: &Path) -> Result<()> {
+    host::serve(module)
+}
+
+/// Fails at once, because this build has no host to run.
+#[cfg(not(feature = "cdm"))]
+pub fn host(module: &Path) -> Result<()> {
+    bail!(
+        "this build carries no widevine host, so {} cannot be hosted",
+        module.display()
+    )
 }
 
 /// Whether this build has a host for a CDM. It says nothing about whether the machine has a

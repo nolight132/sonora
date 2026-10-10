@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
-use gpui::{Context, Entity, Task};
+use gpui::{Context, Entity, EventEmitter, Task};
 use music::{Album, Artist, ArtistCatalogue, Track};
 use tokio::task::AbortHandle;
 
 use crate::{Io, Library, LibraryEvent, Session, SessionEvent, join};
+
+/// Signals that a local artist no longer has a page after the library changes.
+pub enum ArtistDetailEvent {
+    Gone(String),
+}
 
 pub struct ArtistDetail {
     id: Option<String>,
@@ -20,6 +25,8 @@ pub struct ArtistDetail {
     fill: Option<Task<()>>,
     filling_request: Option<AbortHandle>,
 }
+
+impl EventEmitter<ArtistDetailEvent> for ArtistDetail {}
 
 impl ArtistDetail {
     pub fn new(
@@ -149,9 +156,23 @@ impl ArtistDetail {
         cx.notify();
 
         let id = id.to_owned();
+        let local = music::is_local_id(&id)
+            .then(|| self.session.read(cx).local_client())
+            .flatten();
         let request = self.io.spawn({
             let id = id.clone();
-            async move { catalog.artist(&id).await }
+            async move {
+                if let Some(client) = local
+                    && !client
+                        .all_artists()
+                        .await?
+                        .iter()
+                        .any(|artist| artist.id == id)
+                {
+                    return Ok(None);
+                }
+                catalog.artist(&id).await.map(Some)
+            }
         });
         self.request = Some(request.abort_handle());
         self.task = Some(cx.spawn(async move |this, cx| {
@@ -165,9 +186,13 @@ impl ArtistDetail {
                 this.loading = false;
                 this.request = None;
                 match crate::settled(loaded, cx) {
-                    Ok(artist) => {
+                    Ok(Some(artist)) => {
                         this.artist = Some(artist);
                         this.fill(&id, cx);
+                    }
+                    Ok(None) => {
+                        this.clear();
+                        cx.emit(ArtistDetailEvent::Gone(id));
                     }
                     Err(reason) => this.error = Some(reason),
                 }

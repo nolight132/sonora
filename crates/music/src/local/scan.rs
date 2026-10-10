@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use crate::progress;
-use crate::{Album, ReleaseType, Track};
+use crate::{Album, ReleaseType, SavedArtist, Track};
 
 use super::index::{Changes, Index, Remembered};
 use super::wire::{self, Tagged};
@@ -14,13 +14,15 @@ const SEPARATORS: [char; 8] = ['-', '–', '—', '.', '_', '·', ':', ' '];
 const MAX_READERS: usize = 8;
 
 const AUDIO_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "opus", "wav", "wv", "ape", "webm", "mka",
+    "mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "opus", "wav", "aiff", "aif", "aifc", "wv",
+    "ape", "webm", "mka",
 ];
 
 #[derive(Default)]
 pub struct Scanned {
     pub tracks: Vec<Track>,
     pub albums: Vec<Album>,
+    pub artists: Vec<SavedArtist>,
     pub portraits: HashMap<String, String>,
 }
 
@@ -110,6 +112,7 @@ pub fn scan(roots: &[PathBuf], cache_dir: &Path, index: &Index) -> Scanned {
     scanned.portraits = name_portraits(&looks, &readings);
     let parsed: Vec<Tagged> = readings.into_iter().map(|reading| reading.tagged).collect();
     scanned.albums = group_albums(&parsed);
+    scanned.artists = group_artists(&parsed, &scanned.portraits, &scanned.albums);
     scanned.tracks = parsed.into_iter().map(|tagged| tagged.track).collect();
     index.save(&changes);
 
@@ -231,7 +234,8 @@ fn look_for_portraits(
 ) -> Vec<Look> {
     let named: HashSet<String> = readings
         .iter()
-        .map(|reading| wire::normalize(&reading.tagged.track.artists))
+        .flat_map(|reading| &reading.tagged.track.artist_refs)
+        .map(|artist| wire::artist_id(&artist.name))
         .collect();
 
     spread(folders, progress, |folder| {
@@ -242,7 +246,7 @@ fn look_for_portraits(
         let portrait = match known {
             Some(seen) => seen.portrait.clone(),
             None => named
-                .contains(&wire::normalize(&folder_name(&folder.path)))
+                .contains(&wire::artist_id(&folder_name(&folder.path)))
                 .then(|| wire::artist_cover(&folder.path))
                 .flatten(),
         };
@@ -258,21 +262,21 @@ fn look_for_portraits(
 
 /// Files each portrait under the artist its folder is named after, first one in walk order.
 fn name_portraits(looks: &[Look], readings: &[Reading]) -> HashMap<String, String> {
-    let mut by_normalized: HashMap<String, String> = HashMap::new();
-    for reading in readings {
-        by_normalized
-            .entry(wire::normalize(&reading.tagged.track.artists))
-            .or_insert_with(|| reading.tagged.track.artists.clone());
-    }
+    let artists: HashSet<String> = readings
+        .iter()
+        .flat_map(|reading| &reading.tagged.track.artist_refs)
+        .map(|artist| wire::artist_id(&artist.name))
+        .collect();
 
     let mut portraits = HashMap::new();
     for look in looks {
         let Some(portrait) = &look.portrait else {
             continue;
         };
-        let Some(artist) = by_normalized.get(&wire::normalize(&folder_name(&look.path))) else {
+        let artist = wire::artist_id(&folder_name(&look.path));
+        if !artists.contains(&artist) {
             continue;
-        };
+        }
         portraits
             .entry(artist.clone())
             .or_insert_with(|| portrait.clone());
@@ -304,9 +308,11 @@ fn group_albums(parsed: &[Tagged]) -> Vec<Album> {
             let mut tracks: Vec<Track> = indices.iter().map(|&i| parsed[i].track.clone()).collect();
             tracks.sort_by_key(|track| (track.disc_number, track.track_number, track.name.clone()));
 
-            let album_artist = indices
+            let album_artists = indices
                 .iter()
-                .find_map(|&i| parsed[i].album_artist.clone())
+                .map(|&i| &parsed[i].album_artists)
+                .find(|artists| !artists.is_empty())
+                .cloned()
                 .unwrap_or_else(|| wire::shared_artists(&tracks));
             let name = tracks[0].album.clone();
             let year = album_year(indices, parsed);
@@ -318,7 +324,7 @@ fn group_albums(parsed: &[Tagged]) -> Vec<Album> {
             Some(wire::album_from_tracks(
                 &id,
                 &name,
-                &album_artist,
+                &album_artists,
                 &tracks,
                 year,
                 release,
@@ -344,6 +350,66 @@ fn album_year(indices: &[usize], parsed: &[Tagged]) -> i32 {
                 .and_then(|dir| dated(&folder_name(dir)).1)
         })
         .unwrap_or(0)
+}
+
+/// Groups track credits by artist id, keeping the first spelling and best available cover.
+fn group_artists(
+    parsed: &[Tagged],
+    portraits: &HashMap<String, String>,
+    albums: &[Album],
+) -> Vec<SavedArtist> {
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for (index, tagged) in parsed.iter().enumerate() {
+        let track = &tagged.track;
+        for artist_ref in &track.artist_refs {
+            let id = artist_ref
+                .id
+                .clone()
+                .unwrap_or_else(|| wire::artist_id(&artist_ref.name));
+            if !groups.contains_key(&id) {
+                order.push(id.clone());
+            }
+            groups.entry(id).or_default().push(index);
+        }
+    }
+
+    order
+        .into_iter()
+        .filter_map(|id| {
+            let indices = groups.get(&id)?;
+            let name = indices.iter().find_map(|&i| {
+                parsed[i].track.artist_refs.iter().find_map(|artist_ref| {
+                    (artist_ref.id.as_deref() == Some(id.as_str())).then(|| artist_ref.name.clone())
+                })
+            })?;
+            let cover = portraits
+                .get(&id)
+                .cloned()
+                .or_else(|| {
+                    albums
+                        .iter()
+                        .find(|album| {
+                            album
+                                .artist_refs
+                                .iter()
+                                .any(|album_ref| album_ref.id.as_deref() == Some(id.as_str()))
+                        })
+                        .and_then(|album| album.cover.clone())
+                })
+                .or_else(|| indices.iter().find_map(|&i| parsed[i].track.cover.clone()));
+            Some(SavedArtist {
+                id,
+                name,
+                cover,
+                added_at: indices
+                    .iter()
+                    .filter_map(|&i| parsed[i].track.added_at)
+                    .max(),
+            })
+        })
+        .collect()
 }
 
 /// One pass over a folder tree, collecting the audio files to read and the folders to look for

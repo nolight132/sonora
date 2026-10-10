@@ -33,7 +33,7 @@ mod usage;
 mod wake;
 mod window_shape;
 
-pub use artist::ArtistDetail;
+pub use artist::{ArtistDetail, ArtistDetailEvent};
 pub use cover::Cover;
 pub use detail::{Collection, Detail, Header};
 pub use drm::{CdmState, Drm};
@@ -69,6 +69,7 @@ pub use window_shape::{apply_window_rounding, install_rounded_window_hook};
 
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use gpui::{App, AppContext as _, Entity, Global};
@@ -85,15 +86,20 @@ impl Global for Io {}
 /// answer with, never a long computation, so the default of one worker per core buys nothing
 /// and costs a stack and an allocator arena each.
 const WORKERS: usize = 4;
-/// The ceiling on blocking threads, which is where the sqlite reads and the tag writes go. The
-/// default is 512, far past anything Sonora queues at once.
-const BLOCKING: usize = 16;
+/// The ceiling on blocking threads, which is where the sqlite reads, the artwork disk cache and
+/// DNS lookups go. The artwork cache sits behind one lock, so threads past a handful only queue
+/// on it while each holds a stack and an allocator arena. The default is 512.
+const BLOCKING: usize = 8;
+/// How long an idle blocking thread lingers before it exits. A burst of cover reads should not
+/// leave its threads parked for the default ten seconds.
+const LINGER: Duration = Duration::from_secs(2);
 
 impl Io {
     pub fn new() -> Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(WORKERS)
             .max_blocking_threads(BLOCKING)
+            .thread_keep_alive(LINGER)
             .thread_name("sonora-io")
             .enable_all()
             .build()?;

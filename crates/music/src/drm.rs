@@ -6,5 +6,6 @@
 //! the `widevine` crate.
 
 pub use widevine::{
-    CDM_PATH, Found, Offer, Origin, available, fetch, find, offer, supported, uninstall,
+    CDM_PATH, Found, Offer, Origin, available, fetch, find, host, hosted, offer, supported,
+    uninstall,
 };
