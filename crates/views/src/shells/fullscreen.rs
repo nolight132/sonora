@@ -21,7 +21,7 @@ use ui::{
 
 use crate::chrome::{Aside, TitleBarOptions};
 use crate::shared::menus::ItemMenu;
-use crate::shared::transport::{NOTCH, like, moved, percent, transport, volume_icon};
+use crate::shared::transport::{NOTCH, fraction, like, moved, percent, transport, volume_icon};
 use crate::shared::veil::{Edge, veil};
 use crate::shared::visualizer::VisualizerDrive;
 use crate::shared::{self, ambient};
@@ -360,7 +360,7 @@ impl FullscreenView {
         let radius = cx.theme().radius * 2.;
         let pad = px(COVER_LAYER_PAD);
         let inset = (layout_side - raster_side) / 2. - pad;
-        let track = self.playback.read(cx).track().cloned();
+        let track = self.playback.read(cx).shown_track(cx);
         let album = track.as_ref().and_then(|track| track.album_id.clone());
         let small = track.as_ref().and_then(|track| track.cover.clone());
         let cover_large = self.cover.read(cx).large();
@@ -440,7 +440,7 @@ impl FullscreenView {
     fn meta(&self, hide: f32, lift: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let frosted = ambient::shown(cx);
-        let track = self.playback.read(cx).track().cloned();
+        let track = self.playback.read(cx).shown_track(cx);
         let title = match &track {
             Some(track) => SharedString::from(track.name.clone()),
             None => t!("player-nothing-playing"),
@@ -562,7 +562,7 @@ impl FullscreenView {
         let theme = *cx.theme();
         let frosted = ambient::shown(cx);
         let cover = ui::snapped(theme.metrics.row, window);
-        let track = self.playback.read(cx).track().cloned();
+        let track = self.playback.read(cx).shown_track(cx);
         let title = match &track {
             Some(track) => SharedString::from(track.name.clone()),
             None => t!("player-nothing-playing"),
@@ -660,13 +660,9 @@ impl FullscreenView {
         let empty = muted.opacity(0.3);
         let text = theme.text(Text::Tiny);
         let playback = self.playback.read(cx);
-        let seekable = playback.track().is_some();
-        let progress = self.pending.unwrap_or_else(|| playback.progress());
-        let elapsed = playback.position();
-        let total = playback
-            .track()
-            .map(|track| track.duration)
-            .unwrap_or(Duration::ZERO);
+        let seekable = playback.shown_track(cx).is_some();
+        let (elapsed, total) = playback.shown_time(cx);
+        let progress = self.pending.unwrap_or_else(|| fraction(elapsed, total));
         let width = text
             * match total.as_secs() >= 3600 {
                 true => CLOCK_LONG,

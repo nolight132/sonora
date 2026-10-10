@@ -158,11 +158,19 @@ impl Lyrics {
         let music::Lyrics::Synced { lines } = &self.current()?.lyrics else {
             return None;
         };
-        music::lyrics::active(lines, self.playback.read(cx).position())
+        let playback = self.playback.read(cx);
+        let position = playback
+            .steered(cx)
+            .map_or_else(|| playback.position(), |steered| steered.position);
+        music::lyrics::active(lines, position)
     }
 
     fn follow(&mut self, cx: &mut Context<Self>) {
-        let track = self.playback.read(cx).track().cloned();
+        let playback = self.playback.read(cx);
+        let track = match playback.steered(cx) {
+            Some(steered) => steered.track,
+            None => playback.track().cloned(),
+        };
         let Some(track) = track else {
             return self.forget(cx);
         };
