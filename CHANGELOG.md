@@ -32,6 +32,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   off for the last moment.
 - Signing in to Spotify on Windows on ARM no longer fails with "Spotify turned down the
   sign-in".
+- Spotify and Deezer accounts now show profile picture in Settings instead of initials.
 
 ## [0.42.2] - 2026-10-07
 

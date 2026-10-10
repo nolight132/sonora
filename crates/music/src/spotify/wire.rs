@@ -1,7 +1,6 @@
 use std::fmt::Write as _;
 
 use librespot_protocol::playlist4_external::{ListAttributes, SelectedListContent as RootList};
-use serde::Deserialize;
 
 use crate::models;
 
@@ -56,21 +55,6 @@ fn playlist_cover(attributes: &ListAttributes) -> Option<String> {
         .filter(|url| fetchable(url))
         .map(str::to_owned)
         .or_else(|| image_url(attributes.picture()))
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct Named {
-    pub display_name: Option<String>,
-    pub name: Option<String>,
-}
-
-impl Named {
-    pub fn label(&self) -> Option<&str> {
-        self.display_name
-            .as_deref()
-            .or(self.name.as_deref())
-            .filter(|label| !label.is_empty())
-    }
 }
 
 pub fn playlist_from(id: &str, content: &RootList, username: &str) -> models::Playlist {

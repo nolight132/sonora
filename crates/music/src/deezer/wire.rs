@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::{Album, ArtistRef, Playlist, ReleaseType, SavedArtist, Track};
+use crate::{Album, ArtistRef, Playlist, ReleaseType, SavedArtist, Track, UserProfile};
 
 /// A track id is a numeric string. Zero and negative ids are user uploads, which the
 /// streaming endpoints treat differently; the sign stays in the string.
@@ -95,6 +95,16 @@ fn days(year: i64, month: i64, day: i64) -> i64 {
     let doy = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146_097 + doe - 719_468
+}
+
+/// The signed-in account from the `USER` of `deezer.getUserData`. A refused arl answers user
+/// id 0, which comes back as an empty id.
+pub fn profile(user: &Value) -> UserProfile {
+    UserProfile {
+        id: id(&user["USER_ID"]).unwrap_or_default(),
+        display_name: text(user, &["BLOG_NAME"]).unwrap_or("Deezer").to_owned(),
+        avatar: image("user", text(user, &["USER_PICTURE"]), 300),
+    }
 }
 
 /// The `https://cdn-images.dzcdn.net/images/<kind>/<md5>/<size>x<size>-000000-80-0-0.jpg`
