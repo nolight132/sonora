@@ -66,6 +66,11 @@ const VEIL_BLUR: Pixels = px(12.);
 /// spreads the glyphs too thin to show, so a tight one gives it a core and wider ones soften its
 /// edge.
 const TEXT_SHADOW: [f32; 3] = [1.5, 4., 10.];
+/// How hard the docked controls blur once they are all but hidden. The dock shrinks over them as
+/// they leave, so without it the last frames show the tops of the seek row cut off by its edge.
+const DOCK_BLUR: Pixels = px(8.);
+/// Below this the dock's blur is not worth a layer of its own.
+const DOCK_BLUR_LEAST: Pixels = px(0.05);
 const REST: Duration = Duration::from_millis(1500);
 const WAKE_DEBOUNCE: Duration = Duration::from_millis(400);
 const SPRING_REST: f32 = 0.001;
@@ -766,6 +771,10 @@ impl FullscreenView {
                 this.max_h(cap * (1. - hide))
                     .overflow_hidden()
                     .opacity(1. - hide)
+            })
+            .map(|this| match DOCK_BLUR * hide {
+                blur if blur > DOCK_BLUR_LEAST && hide < 1. && shared::effects() => this.blur(blur),
+                _ => this,
             })
             .when(hide < 1., |this| {
                 this.child(

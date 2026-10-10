@@ -24,6 +24,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Appears on row of an artist page no longer sits flush against the Show all button.
 - Seeking in the last few seconds of a song now moves within that song, instead of jumping into
   the next one or doing nothing.
+- The fullscreen controls blur away as they hide, instead of leaving the top of the seek bar cut
+  off for the last moment.
 
 ## [0.42.2] - 2026-10-07
 
